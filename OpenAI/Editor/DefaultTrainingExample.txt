@@ -1,0 +1,1 @@
+is a training example for converting Unity C# code to BabylonJS TypeScript code.
