@@ -80,8 +80,8 @@ Shader "Babylon/Custom/#NAME#" {
 
     CGINCLUDE
     #ifdef SHADER_CONTROLLER
-    Shader: "Albedo"
-    Material: "BABYLON.PBRMaterial"
+    Shader: "Standard"
+    Material: "#ROOTNAMESPACE#.#SHADERNAME#"
     #endif //SHADER_CONTROLLER
     ENDCG
 
