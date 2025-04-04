@@ -32,13 +32,12 @@ namespace #ROOTNAMESPACE# {
             super(customMaterial, shaderName, 100, { #SHADERDEFINE#: false });
         }
 
-        public getClassName(): string {
-            return "#SHADERNAME#Plugin";
+        public isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean {
+            return (shaderLanguage === BABYLON.ShaderLanguage.WGSL || shaderLanguage === BABYLON.ShaderLanguage.GLSL);
         }
 
-        /** This is used to inform the system which languages are supported */
-        public isCompatible(shaderLanguage:BABYLON.ShaderLanguage): boolean {
-            return (shaderLanguage === BABYLON.ShaderLanguage.WGSL || shaderLanguage === BABYLON.ShaderLanguage.GLSL);
+        public getClassName(): string {
+            return "#SHADERNAME#Plugin";
         }
 
         /** This is used to create custom shader code
