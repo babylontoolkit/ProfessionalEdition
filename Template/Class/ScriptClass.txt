@@ -4,6 +4,9 @@ namespace #ROOTNAMESPACE# {
      * @class #BACKINGCLASS#
      */
     export class #BACKINGCLASS# extends TOOLKIT.ScriptComponent {
+        constructor(transform: BABYLON.TransformNode, scene: BABYLON.Scene, properties?: any, validate:boolean = true) {
+            super(transform, scene, properties, "#ROOTNAMESPACE#.#BACKINGCLASS#", validate);
+        }
 
         protected awake(): void {
             /* Init component function */
