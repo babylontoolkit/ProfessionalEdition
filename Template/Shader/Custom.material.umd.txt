@@ -128,4 +128,7 @@ namespace #ROOTNAMESPACE# {
             this.getCustomShaderMaterial().updateCustomBindings(uniformBuffer);
         }
     }
+
+    TOOLKIT.SceneManager.RegisterClass("#ROOTNAMESPACE#.#SHADERNAME#", #SHADERNAME#);
+    TOOLKIT.SceneManager.RegisterClass("#ROOTNAMESPACE#.#SHADERNAME#Plugin", #SHADERNAME#Plugin);
 }
