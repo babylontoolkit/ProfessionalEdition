@@ -1,7 +1,7 @@
 {
   "name": "com.babylontoolkit.editor",
   "displayName": "Babylon Toolkit",
-  "version": "8.15.1",
+  "version": "8.16.1",
   "unity": "2022.3",
   "description": "Babylon Toolkit Professional Edition",
   "keywords": [
@@ -11,7 +11,9 @@
     "babylonjs"
   ],
   "category": "Editor",
-  "dependencies": {},
+  "dependencies": {
+    "com.unity.cloud.gltfast": "6.13.0"
+  },
   "author": {
     "name": "CODEWRX",
     "email": "mackeyk24@gmail.com",
