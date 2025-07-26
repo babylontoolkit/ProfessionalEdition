@@ -48,7 +48,7 @@ AI Code Assistant Keys
 }
 
 ========================
-Other References
+3rd Party References
 ========================
 
 Hammer Touch - https://hammerjs.github.io/
@@ -66,7 +66,7 @@ Animation Combiner - https://nilooy.github.io/character-animation-combiner/
 Profanity Cleaner - https://www.jsdelivr.com/package/npm/profanity-cleaner
 
 ========================
-UnityGLTF
+Khronos Unity GLTF 2.0
 ========================
 
 The Babylon Toolkit ships with the latest available version of the package and any dependent packages.
