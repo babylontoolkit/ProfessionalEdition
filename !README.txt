@@ -47,6 +47,10 @@ AI Code Assistant Keys
     "vscode-openai.scmModel": "gpt-4o-mini"
 }
 
+========================
+Other References
+========================
+
 Hammer Touch - https://hammerjs.github.io/
 
 
@@ -61,8 +65,13 @@ Animation Combiner - https://nilooy.github.io/character-animation-combiner/
 
 Profanity Cleaner - https://www.jsdelivr.com/package/npm/profanity-cleaner
 
+========================
+UnityGLTF
+========================
 
-GLTF Model Import Tools - Ready Player Me Edition (https://github.com/Siccity/GLTFUtility)
+The Babylon Toolkit ships with the latest available version of the package and any dependent packages.
+
+GLTF Model Import Tools - Ready Player Me Edition (https://github.com/babylontoolkit/UnityGLTF)
   - To ensure that Unity includes the GLTFUtility shaders in builds, you must add these shaders to the 'Always Included Shaders' list.
   - Open Edit -> Project Settings
   - Open Graphics

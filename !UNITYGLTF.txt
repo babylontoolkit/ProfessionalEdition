@@ -1,0 +1,6 @@
+UnityGLTF
+========================
+
+The Babylon Toolkit ships with the latest available version of the package and any dependent packages.
+
+https://github.com/babylontoolkit/UnityGLTF
