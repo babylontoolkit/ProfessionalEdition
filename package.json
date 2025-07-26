@@ -12,7 +12,6 @@
   ],
   "category": "Editor",
   "dependencies": {
-    "com.unity.cloud.gltfast": "6.13.0"
   },
   "author": {
     "name": "CODEWRX",
