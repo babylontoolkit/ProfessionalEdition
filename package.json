@@ -1,0 +1,25 @@
+{
+  "name": "com.babylontoolkit.editor",
+  "displayName": "Babylon Toolkit",
+  "version": "8.24.0",
+  "unity": "2022.3",
+  "description": "Babylon Toolkit Professional Edition",
+  "keywords": [
+    "tools",
+    "editor",
+    "toolkit",
+    "babylonjs"
+  ],
+  "category": "Editor",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "2.0.0",
+    "com.unity.modules.imageconversion": "1.0.0",
+    "com.unity.shadergraph": "10.0.0",
+    "com.unity.mathematics": "1.0.0"
+  },
+  "author": {
+    "name": "CODEWRX",
+    "email": "mackeyk24@gmail.com",
+    "url": "https://www.babylontoolkit.com"
+  }
+}
