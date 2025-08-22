@@ -2,57 +2,6 @@
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
     /**
-     * Interface for tween options
-     */
-    interface ITweenOptions {
-        /** Duration in seconds (default: 1) */
-        duration?: number;
-        /** Delay before starting the animation in seconds (default: 0) */
-        delay?: number;
-        /** Easing function name or BABYLON.EasingFunction instance */
-        ease?: string | BABYLON.EasingFunction;
-        /** Whether to automatically start the animation (default: true) */
-        autoStart?: boolean;
-        /** Whether to loop the animation (default: false) */
-        loop?: boolean;
-        /** Number of times to repeat the animation (default: 0) */
-        repeat?: number;
-        /** Whether to reverse the animation on repeat (yoyo effect) (default: false) */
-        yoyo?: boolean;
-        /** Number of yoyo cycles (default: 0) */
-        yoyoCount?: number;
-        /** Speed multiplier for the animation (default: 1) */
-        speed?: number;
-        /** Callback function called when animation starts */
-        onStart?: () => void;
-        /** Callback function called when animation completes */
-        onComplete?: () => void;
-        /** Callback function called when animation updates */
-        onUpdate?: () => void;
-        /** Callback function called when animation repeats */
-        onRepeat?: () => void;
-    }
-    /**
-     * Interface for group tween options
-     */
-    interface IGroupTweenOptions {
-        /** Execution mode: "all" (parallel) or "sequence" (sequential) */
-        mode?: "all" | "sequence";
-        /** Stagger delay between animations in milliseconds (only for "all" mode) */
-        stagger?: number;
-        /** Callback function called when all animations complete */
-        onComplete?: () => void;
-    }
-    /**
-     * Interface for tween result containing the animation and promise
-     */
-    interface ITweenResult {
-        /** The BABYLON animation instance */
-        animation: BABYLON.Animatable;
-        /** Promise that resolves when the animation completes */
-        finished: Promise<void>;
-    }
-    /**
     * Babylon toolkit scene manager class
     * @class SceneManager - All rights reserved (c) 2024 Mackey Kinard
     */
@@ -396,10 +345,26 @@ declare namespace TOOLKIT {
         static HasTransformTags(transform: BABYLON.TransformNode, query: string): boolean;
         /** Checks if the scene sound manager is available. */
         static HasSoundManager(): boolean;
-        /** Play ambient music track from the scene sound manager. */
-        static PlayAmbientMusic(name: string, time?: number, offset?: number, length?: number): Promise<boolean>;
         /** Play a sound effect from the scene sound manager. */
-        static PlaySoundEffect(name: string, time?: number, offset?: number, length?: number): Promise<boolean>;
+        static PlayOneShot(name: string, time?: number, offset?: number, length?: number): Promise<boolean>;
+        /** Play ambient music track from the scene sound manager. */
+        static PlayMusicTrack(name: string, time?: number, offset?: number, length?: number): Promise<boolean>;
+        /** Play ambient music track from the scene sound manager. */
+        static PauseMusicTrack(name: string): boolean;
+        /** Play ambient music track from the scene sound manager. */
+        static MuteMusicTrack(name: string, time?: number): boolean;
+        /** Unmute ambient music track from the scene sound manager. */
+        static UnmuteMusicTrack(name: string, time?: number): boolean;
+        /** Stop ambient music track from the scene sound manager. */
+        static StopMusicTrack(name: string, time?: number): boolean;
+        /** Stop all ambient music tracks from the scene sound manager. */
+        static StopAllMusicTracks(): void;
+        /** Pause all ambient music tracks from the scene sound manager. */
+        static PauseAllMusicTracks(): void;
+        /** Mute all ambient music tracks from the scene sound manager. */
+        static MuteAllMusicTracks(time?: number): void;
+        /** Unmute all ambient music tracks from the scene sound manager. */
+        static UnmuteAllMusicTracks(time?: number): void;
         /** Are half or full texture floats supported */
         static TextureFloatSupported(scene: BABYLON.Scene): boolean;
         /** Registers an on pick trigger click action */
@@ -554,6 +519,29 @@ declare namespace TOOLKIT {
          */
         private static SetPropertyValue;
         /**
+         * Determines if a target is a BABYLON.GUI control
+         */
+        private static IsGUIControl;
+        /**
+         * Determines if a property is a GUI positioning/sizing property that needs special handling
+         */
+        private static IsGUIPositionProperty;
+        /**
+         * Extracts numeric value from GUI property using proper InPixels getters
+         * Handles both string ("100px", "50%") and numeric values with flags
+         */
+        private static ExtractGUINumericValue;
+        /**
+         * Creates a proxy object that makes GUI controls compatible with scene.beginAnimation
+         *
+         * This proxy is ESSENTIAL for GUI animations to work because:
+         * 1. BabylonJS scene.beginAnimation requires numeric properties to interpolate
+         * 2. GUI controls use string properties ("100px") and InPixels setters
+         * 3. The proxy provides a numeric interface that converts to InPixels setters
+         * 4. Without this, GUI position properties cannot be animated with scene.beginAnimation
+         */
+        private static CreateGUIAnimationProxy;
+        /**
          * Determines the animation type based on the property value
          */
         private static GetAnimationType;
@@ -568,7 +556,7 @@ declare namespace TOOLKIT {
          * @param to - Object containing target property values (supports dot notation)
          * @param options - Animation options (duration, easing, callbacks, etc.)
          * @param scene - Optional BabylonJS scene (defaults to last created scene)
-         * @returns ITweenResult containing animation reference and completion promise
+         * @returns ITweenResult containing animation references and completion promise
          *
          * @example
          * ```typescript
@@ -580,6 +568,9 @@ declare namespace TOOLKIT {
          *
          * // Wait for completion
          * await tween.finished;
+         *
+         * // Stop all animations if needed
+         * tween.animations.forEach(anim => anim.stop());
          *
          * // Material fade out
          * SceneManager.TweenTo(material,
@@ -602,10 +593,18 @@ declare namespace TOOLKIT {
          * - Handles Vector2, Vector3, Color3, Quaternion, and numeric values
          * - Automatically detects property types and creates appropriate animations
          *
+         * **Animation Control:**
+         * - Returns array of all BABYLON.Animatable instances (one per animated property)
+         * - Use `tween.animations.forEach(anim => anim.stop())` to stop all animations
+         * - Each property gets its own animatable for precise control
+         *
          * **Async Integration:**
-         * - Returns both animation reference and completion promise
+         * - Returns both animation references and completion promise
          * - Use `await tween.finished` for sequential animations
          * - Chain with other async operations seamlessly
+         *
+         * @github
+         * https://github.com/BabylonJS/BabylonToolkit/tree/master/Tweening
          */
         static TweenTo(target: any, to: any, options?: TOOLKIT.ITweenOptions, scene?: BABYLON.Scene): TOOLKIT.ITweenResult;
         /**
@@ -647,6 +646,9 @@ declare namespace TOOLKIT {
          * - When you don't need the animation reference
          * - For straightforward property animations
          * - When timing is more important than control
+         *
+         * @github
+         * https://github.com/BabylonJS/BabylonToolkit/tree/master/Tweening
          */
         static TweenToAsync(target: any, to: any, options?: TOOLKIT.ITweenOptions, scene?: BABYLON.Scene): Promise<void>;
         /**
@@ -698,6 +700,9 @@ declare namespace TOOLKIT {
          * - Full dot notation support: `"transform.position.x"`, `"material.diffuseColor.r"`
          * - Automatic type detection for Vector2/3, Color3, Quaternions, and numbers
          * - Overwrites current property values with `from` values before animating
+         *
+         * @github
+         * https://github.com/BabylonJS/BabylonToolkit/tree/master/Tweening
          */
         static TweenFromTo(target: any, from: any, to: any, options?: TOOLKIT.ITweenOptions, scene?: BABYLON.Scene): TOOLKIT.ITweenResult;
         /**
@@ -758,6 +763,9 @@ declare namespace TOOLKIT {
          * - Chain animations with precise control over each step
          * - Create complex sequences without callback nesting
          * - Easy integration with other async operations
+         *
+         * @github
+         * https://github.com/BabylonJS/BabylonToolkit/tree/master/Tweening
          */
         static TweenFromToAsync(target: any, from: any, to: any, options?: TOOLKIT.ITweenOptions, scene?: BABYLON.Scene): Promise<void>;
         /**
@@ -829,8 +837,62 @@ declare namespace TOOLKIT {
          * - Mix TweenTo, TweenFromTo, and custom async operations
          * - Create reusable animation sequences
          * - Build dynamic animations based on runtime conditions
+         *
+         * @github
+         * https://github.com/BabylonJS/BabylonToolkit/tree/master/Tweening
          */
         static TweenGroupAsync(tweenFunctions: (() => Promise<any> | TOOLKIT.ITweenResult)[], options?: TOOLKIT.IGroupTweenOptions, scene?: BABYLON.Scene): Promise<void>;
+    }
+    /**
+     * Interface for tween options
+     */
+    interface ITweenOptions {
+        /** Duration in seconds (default: 1) */
+        duration?: number;
+        /** Delay before starting the animation in seconds (default: 0) */
+        delay?: number;
+        /** Easing function name or BABYLON.EasingFunction instance */
+        ease?: string | BABYLON.EasingFunction;
+        /** Whether to automatically start the animation (default: true) */
+        autoStart?: boolean;
+        /** Whether to loop the animation (default: false) */
+        loop?: boolean;
+        /** Number of times to repeat the animation (default: 0) */
+        repeat?: number;
+        /** Whether to reverse the animation on repeat (yoyo effect) (default: false) */
+        yoyo?: boolean;
+        /** Number of yoyo cycles (default: 0) */
+        yoyoCount?: number;
+        /** Speed multiplier for the animation (default: 1) */
+        speed?: number;
+        /** Callback function called when animation starts */
+        onStart?: () => void;
+        /** Callback function called when animation completes */
+        onComplete?: () => void;
+        /** Callback function called when animation updates */
+        onUpdate?: () => void;
+        /** Callback function called when animation repeats */
+        onRepeat?: () => void;
+    }
+    /**
+     * Interface for group tween options
+     */
+    interface IGroupTweenOptions {
+        /** Execution mode: "all" (parallel) or "sequence" (sequential) */
+        mode?: "all" | "sequence";
+        /** Stagger delay between animations in milliseconds (only for "all" mode) */
+        stagger?: number;
+        /** Callback function called when all animations complete */
+        onComplete?: () => void;
+    }
+    /**
+     * Interface for tween result containing the animations and promise
+     */
+    interface ITweenResult {
+        /** Array of BABYLON animation instances (one per animated property) */
+        animations: BABYLON.Animatable[];
+        /** Promise that resolves when all animations complete */
+        finished: Promise<void>;
     }
 }
 /** Babylon Toolkit Namespace */
@@ -925,20 +987,6 @@ declare namespace TOOLKIT {
         getChildWithScript(klass: string, directDecendantsOnly?: boolean, predicate?: (node: BABYLON.Node) => boolean): BABYLON.TransformNode;
         /** Get all child transforms with the specified script component. */
         getChildrenWithScript(klass: string, directDecendantsOnly?: boolean, predicate?: (node: BABYLON.Node) => boolean): BABYLON.TransformNode[];
-        /** Checks if the scene sound manager is available. */
-        hasSoundManager(): boolean;
-        /** Play ambient music track from the scene sound manager. */
-        playAmbientMusic(name: string, time?: number, offset?: number, length?: number): Promise<boolean>;
-        /** Play a sound effect from the scene sound manager. */
-        playSoundEffect(name: string, time?: number, offset?: number, length?: number): Promise<boolean>;
-        /** Gets the managed screen canvas element */
-        getCanvasElement(name: string): BABYLON.GUI.Control;
-        /** Shows the specified canvas element */
-        showCanvasElement(element: BABYLON.GUI.Control, fadeSpeedRatio?: number, onAnimationComplete?: () => void): void;
-        /** Hides the specified canvas element */
-        hideCanvasElement(element: BABYLON.GUI.Control, fadeSpeedRatio?: number, onAnimationComplete?: () => void): void;
-        /** Attach a handler to the user interface loaded event */
-        onUserInterfaceLoaded(handler: (canvas: string) => void): BABYLON.Observer<string>;
         private _bodyCollisionObserver;
         private _bodyCollisionEndedObserver;
         private _worldTriggerEventObserver;
@@ -5866,7 +5914,7 @@ declare namespace TOOLKIT {
         private static LoadForegroundInterfaceData;
         private static LoadBackgroundInterfaceData;
         private static ParseUserInterfaceObject;
-        private static FixRenderNinePatchFunction;
+        private static FixUserInterfacePrototypes;
         private static ProcessHdrColors;
         private static emulateUnityHDR;
         private static applyUnityHDRToneMapping;
@@ -5887,9 +5935,9 @@ declare namespace TOOLKIT {
         static IsBackgroundReady(scene: BABYLON.Scene): boolean;
         static SetBackgroundTexture(scene: BABYLON.Scene, adt: BABYLON.GUI.AdvancedDynamicTexture): void;
         static GetBackgroundTexture(scene: BABYLON.Scene, createOptions?: any): BABYLON.GUI.AdvancedDynamicTexture;
-        static GetCanvasElement(scene: BABYLON.Scene, name: string): BABYLON.GUI.Control;
-        static ShowCanvasElement(element: BABYLON.GUI.Control, fadeSpeedRatio?: number, onAnimationComplete?: () => void): BABYLON.Animatable;
-        static HideCanvasElement(element: BABYLON.GUI.Control, fadeSpeedRatio?: number, onAnimationComplete?: () => void): BABYLON.Animatable;
+        static GetCanvasElement(name: string, scene?: BABYLON.Scene): BABYLON.GUI.Control;
+        static ShowCanvasElement(element: BABYLON.GUI.Control, fadeDuration?: number, fadeSpeedRatio?: number): Promise<void>;
+        static HideCanvasElement(element: BABYLON.GUI.Control, fadeDuration?: number, fadeSpeedRatio?: number): Promise<void>;
     }
 }
 /** Babylon Toolkit Namespace */
@@ -5978,8 +6026,9 @@ declare namespace TOOLKIT {
         addPreloaderTasks(assetsManager: TOOLKIT.PreloadAssetsManager): void;
     }
 }
-//declare var SM: typeof TOOLKIT.SceneManager;
-//declare var WM: typeof TOOLKIT.WindowManager;
-//declare var IC: typeof TOOLKIT.InputController;
+declare var SM: typeof TOOLKIT.SceneManager;
+declare var WM: typeof TOOLKIT.WindowManager;
+declare var UI: typeof TOOLKIT.UserInterface;
+declare var IC: typeof TOOLKIT.InputController;
 
 export as namespace TOOLKIT;
