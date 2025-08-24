@@ -10,11 +10,14 @@ using UnityEngine;
 [Babylon(Class="#ROOTNAMESPACE#.#BACKINGCLASS#"), AddComponentMenu("Scripts/My Project/#SCRIPTNAME#")]
 public class #SCRIPTNAME# : EditorScriptComponent
 {
-    /* Add Editor Properties To Script Component */
+    /** Add Editor Properties To Script Component */
     // Example: [Tooltip("Example hello world property")]
     // Example: [Auto] public string helloWorld = "Hello World";
 
-	/* [Serializable, HideInInspector] public string exportProperty = null; */
+    /** Add Editor Proxy Events To Script Component */
+    // Example: public void onButtonClicked() {}
+
+	/** [Serializable, HideInInspector] public string exportProperty = null; */
     public override void OnUpdateProperties(Transform transform, SceneExporterTool exporter)
     {
         // Example: this.helloWorld = "Update Hello World";
