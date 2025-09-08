@@ -1,3 +1,26 @@
+Blender Art Tools
+================================================
+Mesh Combiner (BlenderMeshCombiner.py)
+
+In Blender: Edit → Preferences → Add-ons → Install…
+pick join_lightmap_uv_addon.py, then Enable it (checkbox).
+
+(Optional) Click Save Preferences so it stays enabled next time.
+
+Use it via:
+
+F3 → “Join Children + Generate Lightmap UVs”
+
+Object menu (3D Viewport top bar) → “Join Children + Generate Lightmap UVs”
+
+Ctrl+Alt+J (hotkey added by the add-on; you can remove it in prefs)
+
+Manual install path (if you prefer):
+~/Library/Application Support/Blender/<your-version>/scripts/addons/
+Drop the .py there, restart Blender, then enable it in Add-ons.
+
+
+=========================================
 Canvas Maya Art Tools
 =========================================
 1. Install Maya art tool scripts (.mel) in your scripts folder.
