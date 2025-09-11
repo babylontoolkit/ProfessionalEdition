@@ -161,12 +161,15 @@ declare module BABYLON {
          */
         enabled?: boolean;
     } & BaseExtensionOptions;
-    abstract class GLTFLoaderOptions {
-        protected copyFrom(options?: Partial<Readonly<GLTFLoaderOptions>>): void;
-        /**
-         * Raised when the asset has been parsed
-         */
-        abstract onParsed?: ((loaderData: IGLTFLoaderData) => void) | undefined;
+    /**
+     * This class contains all the concrete (not abstract) glTF options, excluding callbacks.
+     * The purpose of this class is to make it easy to provide a way to mutate the default
+     * loader options (see the GLTFLoaderDefaultOptions instance below) without duplicating
+     * all the options in yet another object. Since this class is instantiated for the default
+     * options object, abstract properties and callbacks are not included, it's more just
+     * flag-type options.
+     */
+    class GLTFLoaderBaseOptions {
         /**
          * Defines if the loader should always compute the bounding boxes of meshes and not use the min/max values from the position accessor. Defaults to false.
          */
@@ -180,10 +183,6 @@ declare module BABYLON {
          * The animation start mode. Defaults to FIRST.
          */
         animationStartMode: GLTFLoaderAnimationStartMode;
-        /**
-         * Defines if the loader should capture performance counters.
-         */
-        abstract capturePerformanceCounters: boolean;
         /**
          * Defines if the loader should compile materials before raising the success callback. Defaults to false.
          */
@@ -200,19 +199,6 @@ declare module BABYLON {
          * Defines if the loader should create instances when multiple glTF nodes point to the same glTF mesh. Defaults to true.
          */
         createInstances: boolean;
-        /**
-         * Defines the node to use as the root of the hierarchy when loading the scene (default: undefined). If not defined, a root node will be automatically created.
-         * You can also pass null if you don't want a root node to be created.
-         */
-        customRootNode?: Nullable<TransformNode>;
-        /**
-         * Defines options for glTF extensions.
-         */
-        extensionOptions: {
-            [Extension in keyof GLTFLoaderExtensionOptions]?: {
-                [Option in keyof DefaultExtensionOptions<GLTFLoaderExtensionOptions[Extension]>]: DefaultExtensionOptions<GLTFLoaderExtensionOptions[Extension]>[Option];
-            };
-        };
         /**
          * If true, load all materials defined in the file, even if not used by any mesh. Defaults to false.
          */
@@ -234,42 +220,6 @@ declare module BABYLON {
          * Defines if the loader should load skins. Defaults to true.
          */
         loadSkins: boolean;
-        /**
-         * If true, enable logging for the loader. Defaults to false.
-         */
-        abstract loggingEnabled: boolean;
-        /**
-         * Callback raised when the loader creates a camera after parsing the glTF properties of the camera.
-         */
-        abstract onCameraLoaded?: (camera: Camera) => void;
-        /**
-         * Callback raised when the loader creates a material after parsing the glTF properties of the material.
-         */
-        abstract onMaterialLoaded?: (material: Material) => void;
-        /**
-         * Callback raised when the loader creates a mesh after parsing the glTF properties of the mesh.
-         * Note that the callback is called as soon as the mesh object is created, meaning some data may not have been setup yet for this mesh (vertex data, morph targets, material, ...)
-         */
-        abstract onMeshLoaded?: (mesh: AbstractMesh) => void;
-        /**
-         * Callback raised when the loader creates a skin after parsing the glTF properties of the skin node.
-         * @see https://doc.babylonjs.com/features/featuresDeepDive/importers/glTF/glTFSkinning#ignoring-the-transform-of-the-skinned-mesh
-         */
-        abstract onSkinLoaded?: (node: TransformNode, skinnedNode: TransformNode) => void;
-        /**
-         * Callback raised when the loader creates a texture after parsing the glTF properties of the texture.
-         */
-        abstract onTextureLoaded?: (texture: BaseTexture) => void;
-        /**
-         * Callback raised after the asset is validated.
-         */
-        abstract onValidated?: (results: GLTF2.IGLTFValidationResults) => void;
-        /**
-         * Function called before loading a url referenced by the asset.
-         * @param url url referenced by the asset
-         * @returns Async url to load
-         */
-        preprocessUrlAsync: (url: string) => Promise<string>;
         /**
          * If true, do not load any materials defined in the file. Defaults to false.
          */
@@ -307,6 +257,72 @@ declare module BABYLON {
          * Defines if the loader should validate the asset.
          */
         validate: boolean;
+    }
+    /**
+     * The default GLTF loader options.
+     * Override the properties of this object to globally change the default loader options.
+     * To specify options for a specific load call, pass those options into the associated load function.
+     */
+    export var GLTFLoaderDefaultOptions: GLTFLoaderBaseOptions;
+    abstract class GLTFLoaderOptions extends GLTFLoaderBaseOptions {
+        protected copyFrom(options?: Partial<Readonly<GLTFLoaderOptions>>): void;
+        /**
+         * Raised when the asset has been parsed
+         */
+        abstract onParsed?: ((loaderData: IGLTFLoaderData) => void) | undefined;
+        /**
+         * Defines if the loader should capture performance counters.
+         */
+        abstract capturePerformanceCounters: boolean;
+        /**
+         * Defines the node to use as the root of the hierarchy when loading the scene (default: undefined). If not defined, a root node will be automatically created.
+         * You can also pass null if you don't want a root node to be created.
+         */
+        customRootNode?: Nullable<TransformNode>;
+        /**
+         * Defines options for glTF extensions.
+         */
+        extensionOptions: {
+            [Extension in keyof GLTFLoaderExtensionOptions]?: {
+                [Option in keyof DefaultExtensionOptions<GLTFLoaderExtensionOptions[Extension]>]: DefaultExtensionOptions<GLTFLoaderExtensionOptions[Extension]>[Option];
+            };
+        };
+        /**
+         * If true, enable logging for the loader. Defaults to false.
+         */
+        abstract loggingEnabled: boolean;
+        /**
+         * Callback raised when the loader creates a camera after parsing the glTF properties of the camera.
+         */
+        abstract onCameraLoaded?: (camera: Camera) => void;
+        /**
+         * Callback raised when the loader creates a material after parsing the glTF properties of the material.
+         */
+        abstract onMaterialLoaded?: (material: Material) => void;
+        /**
+         * Callback raised when the loader creates a mesh after parsing the glTF properties of the mesh.
+         * Note that the callback is called as soon as the mesh object is created, meaning some data may not have been setup yet for this mesh (vertex data, morph targets, material, ...)
+         */
+        abstract onMeshLoaded?: (mesh: AbstractMesh) => void;
+        /**
+         * Callback raised when the loader creates a skin after parsing the glTF properties of the skin node.
+         * @see https://doc.babylonjs.com/features/featuresDeepDive/importers/glTF/glTFSkinning#ignoring-the-transform-of-the-skinned-mesh
+         */
+        abstract onSkinLoaded?: (node: TransformNode, skinnedNode: TransformNode) => void;
+        /**
+         * Callback raised when the loader creates a texture after parsing the glTF properties of the texture.
+         */
+        abstract onTextureLoaded?: (texture: BaseTexture) => void;
+        /**
+         * Callback raised after the asset is validated.
+         */
+        abstract onValidated?: (results: GLTF2.IGLTFValidationResults) => void;
+        /**
+         * Function called before loading a url referenced by the asset.
+         * @param url url referenced by the asset
+         * @returns Async url to load
+         */
+        preprocessUrlAsync: (url: string) => Promise<string>;
     }
     /**
      * File loader for loading glTF files into a scene.

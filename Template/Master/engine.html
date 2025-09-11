@@ -316,7 +316,7 @@
     var adaptparam = window.getUrlParameter("adaptive");
     if (adaptparam != null && adaptparam !== "") {
         adaptparam = adaptparam.toLowerCase();
-        adaptive = (adaptparam === "true" || adaptparam === "yes");
+        adaptive = parseInt(adaptparam);
     }
     var renderquality = window.getUrlParameter("quality") || "0";
     if (renderquality != null) TOOLKIT.SceneManager.SetRenderQuality(parseFloat(renderquality));
@@ -801,7 +801,7 @@
         // ************************************************************************ //
         // Support Adaptive Device Ratios                                           //
         // ************************************************************************ //
-        if (adaptive === true)
+        if (adaptive === 1 || (adaptive === 0 && window.isMobileDevice() === false))
         {
             var devicePixelRatio = window.devicePixelRatio || 1.0;
             var hardwareScaling = (1.0 / devicePixelRatio);
