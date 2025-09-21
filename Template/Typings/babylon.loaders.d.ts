@@ -844,6 +844,11 @@ declare module BABYLON.GLTF2.Loader {
         /** @hidden */
         _babylonLight?: Light;
     }
+    /** @internal */
+    export interface IEXTLightsArea_Light extends GLTF2.IEXTLightsArea_Light, IArrayItem {
+        /** @hidden */
+        _babylonLight?: Light;
+    }
 
 
 
@@ -3507,6 +3512,48 @@ declare module BABYLON {
          * Defines options for the EXT_lights_ies extension.
          */
         ["EXT_lights_ies"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_lights_area/README.md)
+     */
+    export class EXT_lights_area implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "EXT_lights_area";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /** hidden */
+        private _loader;
+        private _lights?;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /** @internal */
+        onLoading(): void;
+        /**
+         * @internal
+         */
+        loadNodeAsync(context: string, node: BABYLON.GLTF2.Loader.INode, assign: (babylonTransformNode: TransformNode) => void): Nullable<Promise<TransformNode>>;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the EXT_lights_area extension.
+         */
+        ["EXT_lights_area"]: {};
     }
 
 }
