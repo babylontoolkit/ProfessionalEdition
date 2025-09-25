@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using UnityGLTF.Interactivity.Schema;
+using UnityEngine;
 
 namespace UnityGLTF.Interactivity.Export
 {
@@ -9,7 +10,7 @@ namespace UnityGLTF.Interactivity.Export
 #if UNITY_EDITOR
         [UnityEditor.InitializeOnLoadMethod]
 #else
-        [RuntimeInitializeOnLoadMethod]
+        [UnityEngine.RuntimeInitializeOnLoadMethod]
 #endif
         private static void Register()
         {

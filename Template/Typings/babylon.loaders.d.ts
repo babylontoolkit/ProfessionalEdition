@@ -257,6 +257,11 @@ declare module BABYLON {
          * Defines if the loader should validate the asset.
          */
         validate: boolean;
+        /**
+         * Load the glTF files using the OpenPBR material.
+         * @experimental
+         */
+        useOpenPBR: boolean;
     }
     /**
      * The default GLTF loader options.
@@ -584,6 +589,1537 @@ declare module BABYLON {
         private _endPerformanceCounterDisabled;
     }
 
+
+
+}
+declare module BABYLON.GLTF2 {
+        /**
+     * Material Loading Adapter for PBR materials that provides a unified OpenPBR-like interface.
+     */
+    export class PBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
+        private _material;
+        /**
+         * Creates a new instance of the PBRMaterialLoadingAdapter.
+         * @param material - The PBR material to adapt.
+         */
+        constructor(material: Material);
+        /**
+         * Gets the underlying material
+         */
+        get material(): PBRMaterial;
+        /**
+         * Whether the material should be treated as unlit
+         */
+        get isUnlit(): boolean;
+        /**
+         * Sets whether the material should be treated as unlit
+         */
+        set isUnlit(value: boolean);
+        /**
+         * Sets whether back face culling is enabled.
+         * @param value True to enable back face culling
+         */
+        set backFaceCulling(value: boolean);
+        /**
+         * Gets whether back face culling is enabled.
+         * @returns True if back face culling is enabled
+         */
+        get backFaceCulling(): boolean;
+        /**
+         * Sets whether two-sided lighting is enabled.
+         * @param value True to enable two-sided lighting
+         */
+        set twoSidedLighting(value: boolean);
+        /**
+         * Gets whether two-sided lighting is enabled.
+         * @returns True if two-sided lighting is enabled
+         */
+        get twoSidedLighting(): boolean;
+        /**
+         * Sets the alpha cutoff value for alpha testing.
+         * @param value The alpha cutoff threshold (0-1)
+         */
+        set alphaCutOff(value: number);
+        /**
+         * Gets the alpha cutoff value.
+         * @returns The alpha cutoff threshold (0-1)
+         */
+        get alphaCutOff(): number;
+        /**
+         * Sets whether to use alpha from the albedo texture.
+         * @param value True to use alpha from albedo texture
+         */
+        set useAlphaFromBaseColorTexture(value: boolean);
+        /**
+         * Gets whether alpha is used from the albedo texture.
+         * @returns True if using alpha from albedo texture
+         */
+        get useAlphaFromBaseColorTexture(): boolean;
+        /**
+         * Gets whether the transparency is treated as alpha coverage.
+         */
+        get transparencyAsAlphaCoverage(): boolean;
+        /**
+         * Sets/Gets whether the transparency is treated as alpha coverage
+         */
+        set transparencyAsAlphaCoverage(value: boolean);
+        /**
+         * Sets the base color of the material (mapped to PBR albedoColor).
+         * @param value The base color as a Color3
+         */
+        set baseColor(value: Color3);
+        /**
+         * Gets the base color of the material.
+         * @returns The base color as a Color3
+         */
+        get baseColor(): Color3;
+        /**
+         * Sets the base color texture of the material (mapped to PBR albedoTexture).
+         * @param value The base color texture or null
+         */
+        set baseColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the base color texture of the material.
+         * @returns The base color texture or null
+         */
+        get baseColorTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the base diffuse roughness of the material.
+         * @param value The diffuse roughness value (0-1)
+         */
+        set baseDiffuseRoughness(value: number);
+        /**
+         * Gets the base diffuse roughness of the material.
+         * @returns The diffuse roughness value (0-1), defaults to 0 if not set
+         */
+        get baseDiffuseRoughness(): number;
+        /**
+         * Sets the base diffuse roughness texture of the material.
+         * @param value The diffuse roughness texture or null
+         */
+        set baseDiffuseRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the base diffuse roughness texture of the material.
+         * @returns The diffuse roughness texture or null
+         */
+        get baseDiffuseRoughnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the base metalness value of the material (mapped to PBR metallic).
+         * @param value The metalness value (0-1)
+         */
+        set baseMetalness(value: number);
+        /**
+         * Gets the base metalness value of the material.
+         * @returns The metalness value (0-1), defaults to 1 if not set
+         */
+        get baseMetalness(): number;
+        /**
+         * Sets the base metalness texture of the material (mapped to PBR metallicTexture).
+         * @param value The metalness texture or null
+         */
+        set baseMetalnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the base metalness texture of the material.
+         * @returns The metalness texture or null
+         */
+        get baseMetalnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets whether to use roughness from the metallic texture's green channel.
+         * Also disables using roughness from the alpha channel when enabled.
+         * @param value True to use green channel for roughness
+         */
+        set useRoughnessFromMetallicTextureGreen(value: boolean);
+        /**
+         * Sets whether to use metalness from the metallic texture's blue channel.
+         * @param value True to use blue channel for metalness
+         */
+        set useMetallicFromMetallicTextureBlue(value: boolean);
+        /**
+         * Configures specular properties and optionally enables OpenPBR BRDF model for edge color support.
+         * @param enableEdgeColor Whether to enable OpenPBR BRDF models for edge color support
+         */
+        enableSpecularEdgeColor(enableEdgeColor?: boolean): void;
+        /**
+         * Sets the specular weight (mapped to PBR metallicF0Factor).
+         * @param value The specular weight value
+         */
+        set specularWeight(value: number);
+        /**
+         * Gets the specular weight.
+         * @returns The specular weight value, defaults to 1 if not set
+         */
+        get specularWeight(): number;
+        /**
+         * Sets the specular weight texture (mapped to PBR metallicReflectanceTexture).
+         * Configures the material to use only metalness from this texture when set.
+         * @param value The specular weight texture or null
+         */
+        set specularWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the specular weight texture.
+         * @returns The specular weight texture or null
+         */
+        get specularWeightTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the specular color (mapped to PBR metallicReflectanceColor).
+         * @param value The specular color as a Color3
+         */
+        set specularColor(value: Color3);
+        /**
+         * Gets the specular color.
+         * @returns The specular color as a Color3
+         */
+        get specularColor(): Color3;
+        /**
+         * Sets the specular color texture (mapped to PBR reflectanceTexture).
+         * @param value The specular color texture or null
+         */
+        set specularColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the specular color texture.
+         * @returns The specular color texture or null
+         */
+        get specularColorTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the specular roughness (mapped to PBR roughness).
+         * @param value The roughness value (0-1)
+         */
+        set specularRoughness(value: number);
+        /**
+         * Gets the specular roughness.
+         * @returns The roughness value (0-1), defaults to 1 if not set
+         */
+        get specularRoughness(): number;
+        /**
+         * Sets the specular roughness texture.
+         * Note: PBR uses the same texture for both metallic and roughness,
+         * so this only sets the texture if no base metalness texture exists.
+         * @param value The roughness texture or null
+         */
+        set specularRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the specular roughness texture.
+         * @returns The roughness texture (same as metallic texture for PBR) or null
+         */
+        get specularRoughnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the specular index of refraction (mapped to PBR indexOfRefraction).
+         * @param value The IOR value
+         */
+        set specularIor(value: number);
+        /**
+         * Gets the specular index of refraction.
+         * @returns The IOR value
+         */
+        get specularIor(): number;
+        /**
+         * Sets the emission color (mapped to PBR emissiveColor).
+         * @param value The emission color as a Color3
+         */
+        set emissionColor(value: Color3);
+        /**
+         * Gets the emission color.
+         * @returns The emission color as a Color3
+         */
+        get emissionColor(): Color3;
+        /**
+         * Sets the emission luminance/intensity (mapped to PBR emissiveIntensity).
+         * @param value The emission intensity value
+         */
+        set emissionLuminance(value: number);
+        /**
+         * Gets the emission luminance/intensity.
+         * @returns The emission intensity value
+         */
+        get emissionLuminance(): number;
+        /**
+         * Sets the emission color texture (mapped to PBR emissiveTexture).
+         * @param value The emission texture or null
+         */
+        set emissionColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the emission color texture.
+         * @returns The emission texture or null
+         */
+        get emissionColorTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the ambient occlusion texture (mapped to PBR ambientTexture).
+         * Automatically enables grayscale mode when set.
+         * @param value The ambient occlusion texture or null
+         */
+        set ambientOcclusionTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the ambient occlusion texture.
+         * @returns The ambient occlusion texture or null
+         */
+        get ambientOcclusionTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the ambient occlusion texture strength.
+         * @param value The strength value (typically 0-1)
+         */
+        set ambientOcclusionTextureStrength(value: number);
+        /**
+         * Gets the ambient occlusion texture strength.
+         * @returns The strength value, defaults to 1.0 if not set
+         */
+        get ambientOcclusionTextureStrength(): number;
+        /**
+         * Configures clear coat for PBR material.
+         * Enables clear coat and sets up proper configuration.
+         */
+        configureCoat(): void;
+        /**
+         * Sets the coat weight (mapped to PBR clearCoat.intensity).
+         * Automatically enables clear coat.
+         * @param value The coat weight value (0-1)
+         */
+        set coatWeight(value: number);
+        /**
+         * Gets the coat weight.
+         * @returns The coat weight value
+         */
+        get coatWeight(): number;
+        /**
+         * Sets the coat weight texture (mapped to PBR clearCoat.texture).
+         * Automatically enables clear coat.
+         * @param value The coat weight texture or null
+         */
+        set coatWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the coat weight texture.
+         * @returns The coat weight texture or null
+         */
+        get coatWeightTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the coat color (mapped to PBR clearCoat.tintColor).
+         * @param value The coat tint color as a Color3
+         */
+        set coatColor(value: Color3);
+        /**
+         * Sets the coat color texture (mapped to PBR clearCoat.tintTexture).
+         * @param value The coat color texture or null
+         */
+        set coatColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the coat roughness (mapped to PBR clearCoat.roughness).
+         * Automatically enables clear coat.
+         * @param value The coat roughness value (0-1)
+         */
+        set coatRoughness(value: number);
+        /**
+         * Gets the coat roughness.
+         * @returns The coat roughness value, defaults to 0 if not set
+         */
+        get coatRoughness(): number;
+        /**
+         * Sets the coat roughness texture (mapped to PBR clearCoat.textureRoughness).
+         * Automatically enables clear coat and disables using roughness from main texture.
+         * @param value The coat roughness texture or null
+         */
+        set coatRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the coat roughness texture.
+         * @returns The coat roughness texture or null
+         */
+        get coatRoughnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the coat darkening value.
+         * Note: PBR doesn't have a direct coat darkening property, so this is a no-op.
+         * @param value The coat darkening value (ignored for PBR)
+         */
+        set coatDarkening(value: number);
+        /**
+         * Sets the coat darkening texture
+         * @param value The coat darkening texture or null
+         */
+        set coatDarkeningTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the coat roughness anisotropy.
+         * Note: PBR clearCoat doesn't support anisotropy yet, so this is a placeholder.
+         * @param value The coat anisotropy intensity value (currently ignored)
+         */
+        set coatRoughnessAnisotropy(value: number);
+        /**
+         * Gets the coat roughness anisotropy.
+         * Note: PBR clearCoat doesn't support anisotropy yet, so this returns 0.
+         * @returns Currently returns 0 as clearCoat anisotropy is not yet available
+         */
+        get coatRoughnessAnisotropy(): number;
+        /**
+         * Sets the coat tangent angle for anisotropy.
+         * Note: PBR clearCoat doesn't support anisotropy yet, so this is a placeholder.
+         * @param value The coat anisotropy rotation angle in radians (currently ignored)
+         */
+        set geometryCoatTangentAngle(value: number);
+        /**
+         * Sets the coat tangent texture for anisotropy.
+         * Note: PBR clearCoat doesn't support anisotropy textures yet, so this is a placeholder.
+         * @param value The coat anisotropy texture (currently ignored)
+         */
+        set geometryCoatTangentTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the coat tangent texture for anisotropy.
+         * Note: PBR clearCoat doesn't support anisotropy textures yet, so this returns null.
+         * @returns Currently returns null as clearCoat anisotropy is not yet available
+         */
+        get geometryCoatTangentTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the transmission weight (mapped to PBR subSurface.refractionIntensity).
+         * Enables refraction when value \> 0.
+         * @param value The transmission weight value (0-1)
+         */
+        set transmissionWeight(value: number);
+        /**
+         * Gets the transmission weight.
+         * @returns The transmission weight value
+         */
+        get transmissionWeight(): number;
+        /**
+         * Sets the transmission weight texture (mapped to PBR subSurface.refractionIntensityTexture).
+         * Automatically enables refraction and glTF-style textures.
+         * @param value The transmission weight texture or null
+         */
+        set transmissionWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the attenuation distance for volume scattering.
+         * @param value The attenuation distance value
+         */
+        set transmissionDepth(value: number);
+        /**
+         * Sets the attenuation color (mapped to PBR subSurface.tintColor).
+         * @param value The attenuation color as a Color3
+         */
+        set transmissionColor(value: Color3);
+        /**
+         * Gets the transmission dispersion Abbe number.
+         * @param value The Abbe number value
+         */
+        set transmissionDispersionAbbeNumber(value: number);
+        /**
+         * Configures transmission for thin-surface transmission (KHR_materials_transmission).
+         * Sets up the material for proper thin-surface transmission behavior.
+         */
+        configureTransmission(): void;
+        /**
+         * Sets the thickness texture (mapped to PBR subSurface.thicknessTexture).
+         * Automatically enables refraction.
+         * @param value The thickness texture or null
+         */
+        set volumeThicknessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the thickness factor (mapped to PBR subSurface.maximumThickness).
+         * Automatically enables refraction.
+         * @param value The thickness value
+         */
+        set volumeThickness(value: number);
+        /**
+         * Configures subsurface properties for PBR material
+         */
+        configureSubsurface(): void;
+        /**
+         * Sets the subsurface weight
+         */
+        set subsurfaceWeight(value: number);
+        /**
+         * Gets the subsurface weight
+         * @returns The subsurface weight value
+         */
+        get subsurfaceWeight(): number;
+        /**
+         * Sets the subsurface weight texture
+         */
+        set subsurfaceWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the subsurface color.
+         * @param value The subsurface tint color as a Color3
+         */
+        set subsurfaceColor(value: Color3);
+        /**
+         * Sets the subsurface color texture.
+         * @param value The subsurface tint texture or null
+         */
+        set subsurfaceColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Configures sheen for PBR material.
+         * Enables sheen and sets up proper configuration.
+         */
+        configureFuzz(): void;
+        /**
+         * Sets the sheen weight (mapped to PBR sheen.intensity).
+         * Automatically enables sheen.
+         * @param value The sheen weight value
+         */
+        set fuzzWeight(value: number);
+        /**
+         * Sets the sheen color (mapped to PBR sheen.color).
+         * Automatically enables sheen.
+         * @param value The sheen color as a Color3
+         */
+        set fuzzColor(value: Color3);
+        /**
+         * Sets the sheen color texture (mapped to PBR sheen.texture).
+         * Automatically enables sheen.
+         * @param value The sheen color texture or null
+         */
+        set fuzzColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the sheen roughness (mapped to PBR sheen.roughness).
+         * Automatically enables sheen.
+         * @param value The sheen roughness value (0-1)
+         */
+        set fuzzRoughness(value: number);
+        /**
+         * Sets the sheen roughness texture (mapped to PBR sheen.textureRoughness).
+         * Automatically enables sheen.
+         * @param value The sheen roughness texture or null
+         */
+        set fuzzRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the specular roughness anisotropy (mapped to PBR anisotropy.intensity).
+         * Automatically enables anisotropy.
+         * @param value The anisotropy intensity value
+         */
+        set specularRoughnessAnisotropy(value: number);
+        /**
+         * Gets the specular roughness anisotropy.
+         * @returns The anisotropy intensity value
+         */
+        get specularRoughnessAnisotropy(): number;
+        /**
+         * Sets the anisotropy rotation (mapped to PBR anisotropy.angle).
+         * Automatically enables anisotropy.
+         * @param value The anisotropy rotation angle in radians
+         */
+        set geometryTangentAngle(value: number);
+        /**
+         * Sets the geometry tangent texture (mapped to PBR anisotropy.texture).
+         * Automatically enables anisotropy.
+         * @param value The anisotropy texture or null
+         */
+        set geometryTangentTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the geometry tangent texture.
+         * @returns The anisotropy texture or null
+         */
+        get geometryTangentTexture(): Nullable<BaseTexture>;
+        /**
+         * Configures glTF-style anisotropy for the material.
+         * Note: PBR materials don't need this configuration, so this is a no-op.
+         * @param useGltfStyle Whether to use glTF-style anisotropy (ignored for PBR)
+         */
+        configureGltfStyleAnisotropy(useGltfStyle?: boolean): void;
+        /**
+         * Sets the iridescence weight (mapped to PBR iridescence.intensity).
+         * Automatically enables iridescence.
+         * @param value The iridescence intensity value
+         */
+        set iridescenceWeight(value: number);
+        /**
+         * Sets the iridescence IOR (mapped to PBR iridescence.indexOfRefraction).
+         * Automatically enables iridescence.
+         * @param value The iridescence IOR value
+         */
+        set iridescenceIor(value: number);
+        /**
+         * Sets the iridescence thickness minimum (mapped to PBR iridescence.minimumThickness).
+         * Automatically enables iridescence.
+         * @param value The minimum thickness value in nanometers
+         */
+        set iridescenceThicknessMinimum(value: number);
+        /**
+         * Sets the iridescence thickness maximum (mapped to PBR iridescence.maximumThickness).
+         * Automatically enables iridescence.
+         * @param value The maximum thickness value in nanometers
+         */
+        set iridescenceThicknessMaximum(value: number);
+        /**
+         * Sets the iridescence texture (mapped to PBR iridescence.texture).
+         * Automatically enables iridescence.
+         * @param value The iridescence intensity texture or null
+         */
+        set iridescenceTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the iridescence thickness texture (mapped to PBR iridescence.thicknessTexture).
+         * Automatically enables iridescence.
+         * @param value The iridescence thickness texture or null
+         */
+        set iridescenceThicknessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the transmission dispersion value.
+         * Note: PBR doesn't have direct dispersion support, so this stores it as metadata.
+         * @param value The dispersion value (stored as metadata)
+         */
+        set transmissionDispersion(value: number);
+        /**
+         * Sets whether the material is unlit.
+         * @param value True to make the material unlit
+         */
+        set unlit(value: boolean);
+        /**
+         * Sets the geometry opacity (mapped to PBR alpha).
+         * @param value The opacity value (0-1)
+         */
+        set geometryOpacity(value: number);
+        /**
+         * Gets the geometry opacity.
+         * @returns The opacity value (0-1)
+         */
+        get geometryOpacity(): number;
+        /**
+         * Sets the geometry normal texture (mapped to PBR bumpTexture).
+         * Also forces irradiance computation in fragment shader for better lighting.
+         * @param value The normal texture or null
+         */
+        set geometryNormalTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the geometry normal texture.
+         * @returns The normal texture or null
+         */
+        get geometryNormalTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the normal map inversions for the material.
+         * @param invertX Whether to invert the normal map on the X axis
+         * @param invertY Whether to invert the normal map on the Y axis
+         */
+        setNormalMapInversions(invertX: boolean, invertY: boolean): void;
+        /**
+         * Sets the geometry coat normal texture (mapped to PBR clearCoat.bumpTexture).
+         * Automatically enables clear coat.
+         * @param value The coat normal texture or null
+         */
+        set geometryCoatNormalTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the geometry coat normal texture.
+         * @returns The coat normal texture or null
+         */
+        get geometryCoatNormalTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the geometry coat normal texture scale.
+         * @param value The scale value for the coat normal texture
+         */
+        set geometryCoatNormalTextureScale(value: number);
+    }
+
+
+
+}
+declare module BABYLON {
+
+
+}
+declare module BABYLON.GLTF2 {
+        /**
+     * Material Loading Adapter for OpenPBR materials that provides a unified OpenPBR-like interface.
+     */
+    export class OpenPBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
+        private _material;
+        /**
+         * Creates a new instance of the OpenPBRMaterialLoadingAdapter.
+         * @param material - The OpenPBR material to adapt.
+         */
+        constructor(material: Material);
+        /**
+         * Gets the underlying material
+         */
+        get material(): OpenPBRMaterial;
+        /**
+         * Whether the material should be treated as unlit
+         */
+        get isUnlit(): boolean;
+        /**
+         * Sets whether the material should be treated as unlit
+         */
+        set isUnlit(value: boolean);
+        /**
+         * Sets whether back face culling is enabled.
+         * @param value True to enable back face culling
+         */
+        set backFaceCulling(value: boolean);
+        /**
+         * Gets whether back face culling is enabled.
+         * @returns True if back face culling is enabled
+         */
+        get backFaceCulling(): boolean;
+        /**
+         * Sets whether two-sided lighting is enabled.
+         * @param value True to enable two-sided lighting
+         */
+        set twoSidedLighting(value: boolean);
+        /**
+         * Gets whether two-sided lighting is enabled.
+         * @returns True if two-sided lighting is enabled
+         */
+        get twoSidedLighting(): boolean;
+        /**
+         * Sets the alpha cutoff value for alpha testing.
+         * Note: OpenPBR doesn't have a direct equivalent, so this is a no-op.
+         * @param value The alpha cutoff threshold (ignored for OpenPBR)
+         */
+        set alphaCutOff(value: number);
+        /**
+         * Gets the alpha cutoff value.
+         * @returns Default value of 0.5 (OpenPBR doesn't support this directly)
+         */
+        get alphaCutOff(): number;
+        /**
+         * Sets whether to use alpha from the base color texture.
+         * Note: OpenPBR handles this differently through the baseColorTexture alpha channel.
+         * @param value True to use alpha from base color texture (handled automatically in OpenPBR)
+         */
+        set useAlphaFromBaseColorTexture(value: boolean);
+        /**
+         * Gets whether alpha is used from the base color texture.
+         * @returns Always false for OpenPBR as it's handled automatically
+         */
+        get useAlphaFromBaseColorTexture(): boolean;
+        /**
+         * Gets whether the transparency is treated as alpha coverage.
+         */
+        get transparencyAsAlphaCoverage(): boolean;
+        /**
+         * Sets/Gets whether the transparency is treated as alpha coverage
+         */
+        set transparencyAsAlphaCoverage(value: boolean);
+        /**
+         * Sets the base color of the OpenPBR material.
+         * @param value The base color as a Color3
+         */
+        set baseColor(value: Color3);
+        /**
+         * Gets the base color of the OpenPBR material.
+         * @returns The base color as a Color3
+         */
+        get baseColor(): Color3;
+        /**
+         * Sets the base color texture of the OpenPBR material.
+         * @param value The base color texture or null
+         */
+        set baseColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the base color texture of the OpenPBR material.
+         * @returns The base color texture or null
+         */
+        get baseColorTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the base diffuse roughness of the OpenPBR material.
+         * @param value The diffuse roughness value (0-1)
+         */
+        set baseDiffuseRoughness(value: number);
+        /**
+         * Gets the base diffuse roughness of the OpenPBR material.
+         * @returns The diffuse roughness value (0-1)
+         */
+        get baseDiffuseRoughness(): number;
+        /**
+         * Sets the base diffuse roughness texture of the OpenPBR material.
+         * @param value The diffuse roughness texture or null
+         */
+        set baseDiffuseRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the base diffuse roughness texture of the OpenPBR material.
+         * @returns The diffuse roughness texture or null
+         */
+        get baseDiffuseRoughnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the base metalness value of the OpenPBR material.
+         * @param value The metalness value (0-1)
+         */
+        set baseMetalness(value: number);
+        /**
+         * Gets the base metalness value of the OpenPBR material.
+         * @returns The metalness value (0-1)
+         */
+        get baseMetalness(): number;
+        /**
+         * Sets the base metalness texture of the OpenPBR material.
+         * @param value The metalness texture or null
+         */
+        set baseMetalnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the base metalness texture of the OpenPBR material.
+         * @returns The metalness texture or null
+         */
+        get baseMetalnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets whether to use roughness from the metallic texture's green channel.
+         * @param value True to use green channel for roughness
+         */
+        set useRoughnessFromMetallicTextureGreen(value: boolean);
+        /**
+         * Sets whether to use metalness from the metallic texture's blue channel.
+         * @param value True to use blue channel for metalness
+         */
+        set useMetallicFromMetallicTextureBlue(value: boolean);
+        /**
+         * Configures specular properties for OpenPBR material.
+         * @param _enableEdgeColor Whether to enable edge color support (ignored for OpenPBR)
+         */
+        enableSpecularEdgeColor(_enableEdgeColor?: boolean): void;
+        /**
+         * Sets the specular weight of the OpenPBR material.
+         * @param value The specular weight value (0-1)
+         */
+        set specularWeight(value: number);
+        /**
+         * Gets the specular weight of the OpenPBR material.
+         * @returns The specular weight value (0-1)
+         */
+        get specularWeight(): number;
+        /**
+         * Sets the specular weight texture of the OpenPBR material.
+         * If the same texture is used for specular color, optimizes by using alpha channel for weight.
+         * @param value The specular weight texture or null
+         */
+        set specularWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the specular weight texture of the OpenPBR material.
+         * @returns The specular weight texture or null
+         */
+        get specularWeightTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the specular color of the OpenPBR material.
+         * @param value The specular color as a Color3
+         */
+        set specularColor(value: Color3);
+        /**
+         * Gets the specular color of the OpenPBR material.
+         * @returns The specular color as a Color3
+         */
+        get specularColor(): Color3;
+        /**
+         * Sets the specular color texture of the OpenPBR material.
+         * If the same texture is used for specular weight, optimizes by using alpha channel for weight.
+         * @param value The specular color texture or null
+         */
+        set specularColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the specular color texture of the OpenPBR material.
+         * @returns The specular color texture or null
+         */
+        get specularColorTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the specular roughness of the OpenPBR material.
+         * @param value The roughness value (0-1)
+         */
+        set specularRoughness(value: number);
+        /**
+         * Gets the specular roughness of the OpenPBR material.
+         * @returns The roughness value (0-1)
+         */
+        get specularRoughness(): number;
+        /**
+         * Sets the specular roughness texture of the OpenPBR material.
+         * @param value The roughness texture or null
+         */
+        set specularRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the specular roughness texture of the OpenPBR material.
+         * @returns The roughness texture or null
+         */
+        get specularRoughnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the specular index of refraction (IOR) of the OpenPBR material.
+         * @param value The IOR value
+         */
+        set specularIor(value: number);
+        /**
+         * Gets the specular index of refraction (IOR) of the OpenPBR material.
+         * @returns The IOR value
+         */
+        get specularIor(): number;
+        /**
+         * Sets the emission color of the OpenPBR material.
+         * @param value The emission color as a Color3
+         */
+        set emissionColor(value: Color3);
+        /**
+         * Gets the emission color of the OpenPBR material.
+         * @returns The emission color as a Color3
+         */
+        get emissionColor(): Color3;
+        /**
+         * Sets the emission luminance of the OpenPBR material.
+         * @param value The emission luminance value
+         */
+        set emissionLuminance(value: number);
+        /**
+         * Gets the emission luminance of the OpenPBR material.
+         * @returns The emission luminance value
+         */
+        get emissionLuminance(): number;
+        /**
+         * Sets the emission color texture of the OpenPBR material.
+         * @param value The emission texture or null
+         */
+        set emissionColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the emission color texture of the OpenPBR material.
+         * @returns The emission texture or null
+         */
+        get emissionColorTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the ambient occlusion texture of the OpenPBR material.
+         * @param value The ambient occlusion texture or null
+         */
+        set ambientOcclusionTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the ambient occlusion texture of the OpenPBR material.
+         * @returns The ambient occlusion texture or null
+         */
+        get ambientOcclusionTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the ambient occlusion texture strength by modifying the texture's level.
+         * @param value The strength value (typically 0-1)
+         */
+        set ambientOcclusionTextureStrength(value: number);
+        /**
+         * Gets the ambient occlusion texture strength from the texture's level property.
+         * @returns The strength value, defaults to 1.0 if no texture or level is set
+         */
+        get ambientOcclusionTextureStrength(): number;
+        /**
+         * Configures coat parameters for OpenPBR material.
+         * OpenPBR coat is already built-in, so no configuration is needed.
+         */
+        configureCoat(): void;
+        /**
+         * Sets the coat weight of the OpenPBR material.
+         * @param value The coat weight value (0-1)
+         */
+        set coatWeight(value: number);
+        /**
+         * Gets the coat weight of the OpenPBR material.
+         * @returns The coat weight value (0-1)
+         */
+        get coatWeight(): number;
+        /**
+         * Sets the coat weight texture of the OpenPBR material.
+         * @param value The coat weight texture or null
+         */
+        set coatWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the coat weight texture of the OpenPBR material.
+         * @returns The coat weight texture or null
+         */
+        get coatWeightTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the coat color of the OpenPBR material.
+         * @param value The coat color as a Color3
+         */
+        set coatColor(value: Color3);
+        /**
+         * Sets the coat color texture of the OpenPBR material.
+         * @param value The coat color texture or null
+         */
+        set coatColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the coat roughness of the OpenPBR material.
+         * @param value The coat roughness value (0-1)
+         */
+        set coatRoughness(value: number);
+        /**
+         * Gets the coat roughness of the OpenPBR material.
+         * @returns The coat roughness value (0-1)
+         */
+        get coatRoughness(): number;
+        /**
+         * Sets the coat roughness texture of the OpenPBR material.
+         * @param value The coat roughness texture or null
+         */
+        set coatRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the coat roughness texture of the OpenPBR material.
+         * @returns The coat roughness texture or null
+         */
+        get coatRoughnessTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the coat darkening value of the OpenPBR material.
+         * @param value The coat darkening value
+         */
+        set coatDarkening(value: number);
+        /**
+         * Sets the coat darkening texture (OpenPBR: coatDarkeningTexture, no PBR equivalent)
+         */
+        set coatDarkeningTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the coat roughness anisotropy.
+         * TODO: Implementation pending OpenPBR coat anisotropy feature availability.
+         * @param value The coat anisotropy intensity value
+         */
+        set coatRoughnessAnisotropy(value: number);
+        /**
+         * Gets the coat roughness anisotropy.
+         * TODO: Implementation pending OpenPBR coat anisotropy feature availability.
+         * @returns Currently returns 0 as coat anisotropy is not yet available
+         */
+        get coatRoughnessAnisotropy(): number;
+        /**
+         * Sets the coat tangent angle for anisotropy.
+         * TODO: Implementation pending OpenPBR coat anisotropy feature availability.
+         * @param value The coat anisotropy rotation angle in radians
+         */
+        set geometryCoatTangentAngle(value: number);
+        /**
+         * Sets the coat tangent texture for anisotropy.
+         * TODO: Implementation pending OpenPBR coat anisotropy feature availability.
+         * @param value The coat anisotropy texture or null
+         */
+        set geometryCoatTangentTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the coat tangent texture for anisotropy.
+         * TODO: Implementation pending OpenPBR coat anisotropy feature availability.
+         * @returns Currently returns null as coat anisotropy is not yet available
+         */
+        get geometryCoatTangentTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the transmission weight.
+         * TODO: Implementation pending OpenPBR transmission feature availability.
+         * @param value The transmission weight value (0-1)
+         */
+        set transmissionWeight(value: number);
+        /**
+         * Sets the transmission weight texture.
+         * TODO: Implementation pending OpenPBR transmission feature availability.
+         * @param value The transmission weight texture or null
+         */
+        set transmissionWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the transmission weight.
+         * TODO: Implementation pending OpenPBR transmission feature availability.
+         * @returns Currently returns 0 as transmission is not yet available
+         */
+        get transmissionWeight(): number;
+        /**
+         * Gets the transmission dispersion Abbe number.
+         * @param value The Abbe number value
+         */
+        set transmissionDispersionAbbeNumber(value: number);
+        /**
+         * Configures transmission for OpenPBR material.
+         * TODO: Implementation pending OpenPBR transmission feature availability.
+         */
+        configureTransmission(): void;
+        /**
+         * Sets the attenuation distance for volume scattering.
+         * TODO: Implementation pending OpenPBR volume feature availability.
+         * @param value The attenuation distance value
+         */
+        set transmissionDepth(value: number);
+        /**
+         * Sets the attenuation color for volume scattering.
+         * TODO: Implementation pending OpenPBR volume feature availability.
+         * @param value The attenuation color as a Color3
+         */
+        set transmissionColor(value: Color3);
+        /**
+         * Sets the thickness texture for volume scattering.
+         * TODO: Implementation pending OpenPBR volume feature availability.
+         * @param value The thickness texture or null
+         */
+        set volumeThicknessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the thickness factor for volume scattering.
+         * TODO: Implementation pending OpenPBR volume feature availability.
+         * @param value The thickness value
+         */
+        set volumeThickness(value: number);
+        /**
+         * Configures subsurface properties for PBR material
+         */
+        configureSubsurface(): void;
+        /**
+         * Sets the subsurface weight
+         */
+        set subsurfaceWeight(value: number);
+        get subsurfaceWeight(): number;
+        /**
+         * Sets the subsurface weight texture
+         */
+        set subsurfaceWeightTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the subsurface color.
+         * @param value The subsurface tint color as a Color3
+         */
+        set subsurfaceColor(value: Color3);
+        /**
+         * Sets the subsurface color texture.
+         * @param value The subsurface tint texture or null
+         */
+        set subsurfaceColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Configures fuzz for OpenPBR.
+         * Enables fuzz and sets up proper configuration.
+         */
+        configureFuzz(): void;
+        /**
+         * Sets the fuzz weight.
+         * TODO: Implementation pending OpenPBR fuzz feature availability.
+         * @param value The fuzz weight value
+         */
+        set fuzzWeight(value: number);
+        /**
+         * Sets the fuzz color.
+         * TODO: Implementation pending OpenPBR fuzz feature availability.
+         * @param value The fuzz color as a Color3
+         */
+        set fuzzColor(value: Color3);
+        /**
+         * Sets the fuzz color texture.
+         * TODO: Implementation pending OpenPBR fuzz feature availability.
+         * @param value The fuzz color texture or null
+         */
+        set fuzzColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the fuzz roughness.
+         * TODO: Implementation pending OpenPBR fuzz feature availability.
+         * @param value The fuzz roughness value (0-1)
+         */
+        set fuzzRoughness(value: number);
+        /**
+         * Sets the fuzz roughness texture.
+         * TODO: Implementation pending OpenPBR fuzz feature availability.
+         * @param value The fuzz roughness texture or null
+         */
+        set fuzzRoughnessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the specular roughness anisotropy of the OpenPBR material.
+         * @param value The anisotropy intensity value
+         */
+        set specularRoughnessAnisotropy(value: number);
+        /**
+         * Gets the specular roughness anisotropy of the OpenPBR material.
+         * @returns The anisotropy intensity value
+         */
+        get specularRoughnessAnisotropy(): number;
+        /**
+         * Sets the anisotropy rotation angle.
+         * @param value The anisotropy rotation angle in radians
+         */
+        set geometryTangentAngle(value: number);
+        /**
+         * Sets the geometry tangent texture for anisotropy.
+         * Automatically enables using anisotropy from the tangent texture.
+         * @param value The anisotropy texture or null
+         */
+        set geometryTangentTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the geometry tangent texture for anisotropy.
+         * @returns The anisotropy texture or null
+         */
+        get geometryTangentTexture(): Nullable<BaseTexture>;
+        /**
+         * Configures glTF-style anisotropy for the OpenPBR material.
+         * @param useGltfStyle Whether to use glTF-style anisotropy
+         */
+        configureGltfStyleAnisotropy(useGltfStyle?: boolean): void;
+        /**
+         * Sets the iridescence weight.
+         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * @param value The iridescence intensity value
+         */
+        set iridescenceWeight(value: number);
+        /**
+         * Sets the iridescence IOR.
+         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * @param value The iridescence IOR value
+         */
+        set iridescenceIor(value: number);
+        /**
+         * Sets the iridescence thickness minimum.
+         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * @param value The minimum thickness value in nanometers
+         */
+        set iridescenceThicknessMinimum(value: number);
+        /**
+         * Sets the iridescence thickness maximum.
+         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * @param value The maximum thickness value in nanometers
+         */
+        set iridescenceThicknessMaximum(value: number);
+        /**
+         * Sets the iridescence texture.
+         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * @param value The iridescence intensity texture or null
+         */
+        set iridescenceTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the iridescence thickness texture.
+         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * @param value The iridescence thickness texture or null
+         */
+        set iridescenceThicknessTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets whether the OpenPBR material is unlit.
+         * @param value True to make the material unlit
+         */
+        set unlit(value: boolean);
+        /**
+         * Sets the geometry opacity of the OpenPBR material.
+         * @param value The opacity value (0-1)
+         */
+        set geometryOpacity(value: number);
+        /**
+         * Gets the geometry opacity of the OpenPBR material.
+         * @returns The opacity value (0-1)
+         */
+        get geometryOpacity(): number;
+        /**
+         * Sets the geometry normal texture of the OpenPBR material.
+         * @param value The normal texture or null
+         */
+        set geometryNormalTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the geometry normal texture of the OpenPBR material.
+         * @returns The normal texture or null
+         */
+        get geometryNormalTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the normal map inversions for the OpenPBR material.
+         * Note: OpenPBR may handle normal map inversions differently or may not need them.
+         * @param invertX Whether to invert the normal map on the X axis (may be ignored)
+         * @param invertY Whether to invert the normal map on the Y axis (may be ignored)
+         */
+        setNormalMapInversions(invertX: boolean, invertY: boolean): void;
+        /**
+         * Sets the geometry coat normal texture of the OpenPBR material.
+         * @param value The coat normal texture or null
+         */
+        set geometryCoatNormalTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the geometry coat normal texture of the OpenPBR material.
+         * @returns The coat normal texture or null
+         */
+        get geometryCoatNormalTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the geometry coat normal texture scale.
+         * @param value The scale value for the coat normal texture
+         */
+        set geometryCoatNormalTextureScale(value: number);
+    }
+
+
+
+}
+declare module BABYLON {
+
+
+}
+declare module BABYLON.GLTF2 {
+        /**
+     * Interface for material loading adapters that provides a unified OpenPBR-like interface
+     * for both OpenPBR and PBR materials, eliminating conditional branches in extensions.
+     */
+    export interface IMaterialLoadingAdapter {
+        /**
+         * Gets the underlying material
+         */
+        readonly material: Material;
+        /**
+         * Whether the material should be treated as unlit
+         */
+        isUnlit: boolean;
+        /**
+         * Sets/gets the back face culling
+         */
+        backFaceCulling: boolean;
+        /**
+         * Sets/gets the two sided lighting
+         */
+        twoSidedLighting: boolean;
+        /**
+         * Sets/gets the alpha cutoff value (used for alpha test mode)
+         */
+        alphaCutOff: number;
+        /**
+         * Sets/gets whether to use alpha from albedo/base color texture
+         */
+        useAlphaFromBaseColorTexture: boolean;
+        /**
+         * Sets/Gets whether the transparency is treated as alpha coverage
+         */
+        transparencyAsAlphaCoverage: boolean;
+        /**
+         * Sets/gets the base color (OpenPBR: baseColor, PBR: albedoColor)
+         */
+        baseColor: Color3;
+        /**
+         * Sets/gets the base color texture (OpenPBR: baseColorTexture, PBR: albedoTexture)
+         */
+        baseColorTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the base diffuse roughness (OpenPBR: baseDiffuseRoughness, PBR: baseDiffuseRoughness)
+         */
+        baseDiffuseRoughness: number;
+        /**
+         * Sets/gets the base diffuse roughness texture (OpenPBR: baseDiffuseRoughnessTexture, PBR: baseDiffuseRoughnessTexture)
+         */
+        baseDiffuseRoughnessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the base metalness (OpenPBR: baseMetalness, PBR: metallic)
+         */
+        baseMetalness: number;
+        /**
+         * Sets/gets the base metalness texture (OpenPBR: baseMetalnessTexture, PBR: metallicTexture)
+         */
+        baseMetalnessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets whether to use roughness from metallic texture green channel
+         */
+        useRoughnessFromMetallicTextureGreen: boolean;
+        /**
+         * Sets whether to use metallic from metallic texture blue channel
+         */
+        useMetallicFromMetallicTextureBlue: boolean;
+        /**
+         * Configures specular properties and enables OpenPBR BRDF model for edge color support
+         * @param enableEdgeColor - Whether to enable edge color support
+         */
+        enableSpecularEdgeColor(enableEdgeColor?: boolean): void;
+        /**
+         * Sets/gets the specular weight (OpenPBR: specularWeight, PBR: metallicF0Factor)
+         */
+        specularWeight: number;
+        /**
+         * Sets/gets the specular weight texture (OpenPBR: specularWeightTexture, PBR: metallicReflectanceTexture)
+         */
+        specularWeightTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the specular color (OpenPBR: specularColor, PBR: reflectance)
+         */
+        specularColor: Color3;
+        /**
+         * Sets/gets the specular color texture (OpenPBR: specularColorTexture, PBR: reflectanceTexture)
+         */
+        specularColorTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the specular roughness (OpenPBR: specularRoughness, PBR: roughness)
+         */
+        specularRoughness: number;
+        /**
+         * Sets/gets the specular roughness texture
+         */
+        specularRoughnessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the specular IOR (OpenPBR: specularIor, PBR: indexOfRefraction)
+         */
+        specularIor: number;
+        /**
+         * Sets/gets the emissive color (OpenPBR: emissionColor, PBR: emissiveColor)
+         */
+        emissionColor: Color3;
+        /**
+         * Sets/gets the emissive luminance (OpenPBR: emissionLuminance, PBR: emissiveIntensity)
+         */
+        emissionLuminance: number;
+        /**
+         * Sets/gets the emissive texture
+         */
+        emissionColorTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the ambient occlusion texture (OpenPBR: ambientOcclusionTexture, PBR: ambientTexture)
+         */
+        ambientOcclusionTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the ambient occlusion texture strength/level
+         */
+        ambientOcclusionTextureStrength: number;
+        /**
+         * Configures clear coat for PBR material
+         */
+        configureCoat(): void;
+        /**
+         * Sets/gets the coat weight (OpenPBR: coatWeight, PBR: clearCoat.intensity)
+         */
+        coatWeight: number;
+        /**
+         * Sets/gets the coat weight texture (OpenPBR: coatWeightTexture, PBR: clearCoat.texture)
+         */
+        coatWeightTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the coat color (OpenPBR: coatColor, no PBR equivalent)
+         */
+        coatColor: Color3;
+        /**
+         * Sets the coat color texture (OpenPBR: coatColorTexture, no PBR equivalent)
+         */
+        coatColorTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the coat roughness (OpenPBR: coatRoughness, PBR: clearCoat.roughness)
+         */
+        coatRoughness: number;
+        /**
+         * Sets/gets the coat roughness texture (OpenPBR: coatRoughnessTexture, PBR: clearCoat.textureRoughness)
+         */
+        coatRoughnessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the coat darkening (OpenPBR: coatDarkening, no PBR equivalent)
+         */
+        coatDarkening: number;
+        /**
+         * Sets the coat darkening texture (OpenPBR: coatDarkeningTexture, no PBR equivalent)
+         */
+        coatDarkeningTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the coat roughness anisotropy (OpenPBR: coatRoughnessAnisotropy, PBR: clearCoat.anisotropy.intensity)
+         */
+        coatRoughnessAnisotropy: number;
+        /**
+         * Sets the coat tangent angle for anisotropy (OpenPBR: geometryCoatTangentAngle, PBR: clearCoat.anisotropy.angle)
+         */
+        geometryCoatTangentAngle: number;
+        /**
+         * Sets the coat tangent texture for anisotropy (OpenPBR: geometryCoatTangentTexture, PBR: clearCoat.anisotropy.texture)
+         */
+        geometryCoatTangentTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the transmission weight (OpenPBR: transmissionWeight, PBR: subSurface.refractionIntensity)
+         */
+        transmissionWeight: number;
+        /**
+         * Sets the transmission weight texture (OpenPBR: transmissionWeightTexture, PBR: subSurface.refractionIntensityTexture)
+         */
+        transmissionWeightTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the attenuation distance (OpenPBR: attenuationDistance, PBR: subSurface.volumeIndexOfRefraction)
+         */
+        transmissionDepth: number;
+        /**
+         * Sets the attenuation color (OpenPBR: attenuationColor, PBR: subSurface.tintColor)
+         */
+        transmissionColor: Color3;
+        /**
+         * Sets the dispersion Abbe number
+         */
+        transmissionDispersionAbbeNumber: number;
+        /**
+         * Configures transmission for thin-surface transmission (KHR_materials_transmission)
+         */
+        configureTransmission(): void;
+        /**
+         * Sets the thickness texture (OpenPBR: thicknessTexture, PBR: subSurface.thicknessTexture)
+         */
+        volumeThicknessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the thickness factor (OpenPBR: thickness, PBR: subSurface.maximumThickness)
+         */
+        volumeThickness: number;
+        /**
+         * Configures subsurface properties for PBR material
+         */
+        configureSubsurface(): void;
+        /**
+         * Sets/gets the subsurface weight
+         */
+        subsurfaceWeight: number;
+        /**
+         * Sets/gets the subsurface weight texture
+         */
+        subsurfaceWeightTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the subsurface color (OpenPBR: subsurfaceColor, PBR: subSurface.tintColor)
+         */
+        subsurfaceColor: Color3;
+        /**
+         * Sets/gets the subsurface color texture (OpenPBR: subsurfaceColorTexture, PBR: subSurface.tintColorTexture)
+         */
+        subsurfaceColorTexture: Nullable<BaseTexture>;
+        /**
+         * Configures initial settings for fuzz for material.
+         */
+        configureFuzz(): void;
+        /**
+         * Sets the fuzz weight (OpenPBR: fuzzWeight, PBR: fuzz.intensity)
+         */
+        fuzzWeight: number;
+        /**
+         * Sets the fuzz color (OpenPBR: fuzzColor, PBR: fuzz.color)
+         */
+        fuzzColor: Color3;
+        /**
+         * Sets the fuzz color texture (OpenPBR: fuzzColorTexture, PBR: fuzz.texture)
+         */
+        fuzzColorTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the fuzz roughness (OpenPBR: fuzzRoughness, PBR: fuzz.roughness)
+         */
+        fuzzRoughness: number;
+        /**
+         * Sets the fuzz roughness texture (OpenPBR: fuzzRoughnessTexture, PBR: fuzz.textureRoughness)
+         */
+        fuzzRoughnessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the specular roughness anisotropy (OpenPBR: specularRoughnessAnisotropy, PBR: anisotropy.intensity)
+         */
+        specularRoughnessAnisotropy: number;
+        /**
+         * Sets the anisotropy rotation (OpenPBR: anisotropyRotation, PBR: anisotropy.angle)
+         */
+        geometryTangentAngle: number;
+        /**
+         * Sets/gets the anisotropy texture (OpenPBR: geometryTangentTexture, PBR: anisotropy.texture)
+         */
+        geometryTangentTexture: Nullable<BaseTexture>;
+        /**
+         * Configures glTF-style anisotropy for OpenPBR materials
+         * @param useGltfStyle - Whether to use glTF-style anisotropy (default: true)
+         */
+        configureGltfStyleAnisotropy(useGltfStyle?: boolean): void;
+        /**
+         * Sets the iridescence weight (OpenPBR: iridescenceWeight, PBR: iridescence.intensity)
+         */
+        iridescenceWeight: number;
+        /**
+         * Sets the iridescence IOR (OpenPBR: iridescenceIor, PBR: iridescence.indexOfRefraction)
+         */
+        iridescenceIor: number;
+        /**
+         * Sets the iridescence thickness minimum (OpenPBR: iridescenceThicknessMinimum, PBR: iridescence.minimumThickness)
+         */
+        iridescenceThicknessMinimum: number;
+        /**
+         * Sets the iridescence thickness maximum (OpenPBR: iridescenceThicknessMaximum, PBR: iridescence.maximumThickness)
+         */
+        iridescenceThicknessMaximum: number;
+        /**
+         * Sets the iridescence texture (OpenPBR: iridescenceTexture, PBR: iridescence.intensityTexture)
+         */
+        iridescenceTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the iridescence thickness texture (OpenPBR: iridescenceThicknessTexture, PBR: iridescence.thicknessTexture)
+         */
+        iridescenceThicknessTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the unlit flag (OpenPBR: unlit, PBR: unlit)
+         */
+        unlit: boolean;
+        /**
+         * Sets/gets the geometry opacity (OpenPBR: geometryOpacity, PBR: alpha)
+         */
+        geometryOpacity: number;
+        /**
+         * Sets/gets the geometry normal texture (OpenPBR: geometryNormalTexture, PBR: bumpTexture)
+         */
+        geometryNormalTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the normal map inversions for PBR material only
+         * @param invertX - Whether to invert the normal map on the X axis
+         * @param invertY - Whether to invert the normal map on the Y axis
+         */
+        setNormalMapInversions(invertX: boolean, invertY: boolean): void;
+        /**
+         * Sets/gets the coat normal texture (OpenPBR: geometryCoatNormalTexture, PBR: clearCoat.bumpTexture)
+         */
+        geometryCoatNormalTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the coat normal texture scale
+         */
+        geometryCoatNormalTextureScale: number;
+    }
+
+
+
+}
+declare module BABYLON {
 
 
 }
@@ -1161,6 +2697,11 @@ declare module BABYLON.GLTF2 {
         private _rootBabylonMesh;
         private _defaultBabylonMaterialData;
         private readonly _postSceneLoadActions;
+        private readonly _materialAdapterCache;
+        /** @internal */
+        _pbrMaterialClass: typeof PBRMaterial | typeof OpenPBRMaterial | null;
+        /** @internal */
+        _pbrMaterialAdapterClass: typeof BABYLON.GLTF2.OpenPBRMaterialLoadingAdapter | typeof BABYLON.GLTF2.PBRMaterialLoadingAdapter | null;
         /**
          * The default glTF sampler.
          */
@@ -1207,6 +2748,13 @@ declare module BABYLON.GLTF2 {
          * @internal
          */
         constructor(parent: GLTFFileLoader);
+        /**
+         * Creates or gets a cached material loading adapter with dynamic imports
+         * @param material The material to adapt
+         * @returns Promise that resolves to the appropriate adapter
+         * @internal
+         */
+        _getOrCreateMaterialAdapter(material: Material): BABYLON.GLTF2.IMaterialLoadingAdapter;
         /** @internal */
         dispose(): void;
         /**
@@ -2917,6 +4465,180 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/fdee35425ae560ea378092e38977216d63a094ec/extensions/2.0/Khronos/KHR_materials_diffuse_roughness/README.md)
+     * @experimental
+     */
+    export class KHR_materials_diffuse_roughness implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_diffuse_roughness";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadDiffuseRoughnessPropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_diffuse_roughness extension.
+         */
+        ["KHR_materials_diffuse_roughness"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * [Proposed Specification](https://github.com/KhronosGroup/glTF/pull/2518)
+     * !!! Experimental Extension Subject to Changes !!!
+     */
+    export class KHR_materials_clearcoat_darkening implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_clearcoat_darkening";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadDarkeningPropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_clearcoat_darkening extension.
+         */
+        ["KHR_materials_clearcoat_darkening"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * !!! Experimental Extension Subject to Changes !!!
+     */
+    export class KHR_materials_clearcoat_color implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_clearcoat_color";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadColorPropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_clearcoat_color extension.
+         */
+        ["KHR_materials_clearcoat_color"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * [Specification](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat_anisotropy)
+     */
+    export class KHR_materials_clearcoat_anisotropy implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_clearcoat_anisotropy";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadAnisotropyPropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_clearcoat_anisotropy extension.
+         */
+        ["KHR_materials_clearcoat_anisotropy"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md)
      * [Playground Sample](https://www.babylonjs-playground.com/frame.html#7F7PN6#8)
      */
@@ -2987,7 +4709,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          * @internal
          */
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
-        private _loadIridescencePropertiesAsync;
+        private _loadAnisotropyPropertiesAsync;
     }
 
 
@@ -3379,50 +5101,6 @@ declare module BABYLON {
          * Defines options for the EXT_mesh_gpu_instancing extension.
          */
         ["EXT_mesh_gpu_instancing"]: {};
-    }
-
-}
-declare module BABYLON.GLTF2.Loader.Extensions {
-        /**
-     * [Specification](https://github.com/KhronosGroup/glTF/blob/fdee35425ae560ea378092e38977216d63a094ec/extensions/2.0/Khronos/EXT_materials_diffuse_roughness/README.md)
-     * @experimental
-     */
-    export class EXT_materials_diffuse_roughness implements BABYLON.GLTF2.IGLTFLoaderExtension {
-        /**
-         * The name of this extension.
-         */
-        readonly name = "EXT_materials_diffuse_roughness";
-        /**
-         * Defines whether this extension is enabled.
-         */
-        enabled: boolean;
-        /**
-         * Defines a number that determines the order the extensions are applied.
-         */
-        order: number;
-        private _loader;
-        /**
-         * @internal
-         */
-        constructor(loader: BABYLON.GLTF2.GLTFLoader);
-        /** @internal */
-        dispose(): void;
-        /**
-         * @internal
-         */
-        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
-        private _loadDiffuseRoughnessPropertiesAsync;
-    }
-
-
-
-}
-declare module BABYLON {
-    interface GLTFLoaderExtensionOptions {
-        /**
-         * Defines options for the EXT_materials_diffuse_roughness extension.
-         */
-        ["EXT_materials_diffuse_roughness"]: {};
     }
 
 }
@@ -4994,13 +6672,14 @@ declare module BABYLON {
          * If a tuple of (position, normal) is not set, add the data into the corresponding array
          * If the tuple already exist, add only their indice
          *
-         * @param indicePositionFromObj Integer The index in positions array
-         * @param indiceUvsFromObj Integer The index in uvs array
-         * @param indiceNormalFromObj Integer The index in normals array
-         * @param positionVectorFromOBJ Vector3 The value of position at index objIndice
-         * @param textureVectorFromOBJ Vector3 The value of uvs
-         * @param normalsVectorFromOBJ Vector3 The value of normals at index objNormale
-         * @param positionColorsFromOBJ
+         * @param data The vertex's data
+         * * indicesPositionFromObj: The index in positions array
+         * * indicesUvsFromObj: The index in uvs array
+         * * indicesNormalFromObj: The index in normals array
+         * * positionVectorFromOBJ: The value of position at index objIndice
+         * * textureVectorFromOBJ: The value of uvs
+         * * normalsVectorFromOBJ: The value of normals at index objNormale
+         * * positionColorsFromOBJ: The value of color at index objIndice
          */
         private _setData;
         /**
