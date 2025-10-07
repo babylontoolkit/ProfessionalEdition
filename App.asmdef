@@ -1,8 +1,10 @@
 {
     "name": "App",
     "rootNamespace": "",
-    "references": [],
-    "includePlatforms": [],
+    "references": [
+        "Unity.Newtonsoft.Json"
+    ],
+    "includePlatforms": ["Editor"],
     "excludePlatforms": [],
     "allowUnsafeCode": true,
     "overrideReferences": false,

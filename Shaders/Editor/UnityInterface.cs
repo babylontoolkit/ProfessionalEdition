@@ -2,6 +2,7 @@
 // Unity built-in shader source. Copyright (c) 2016 Unity Technologies. MIT license (see license.txt)
 
 using System;
+using System.Reflection;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -334,28 +335,115 @@ namespace UnityEditor
             string AddtionalReservedPropertyNames = "";
             // Get custom properties
             List<MaterialProperty> customProps = new List<MaterialProperty>();
-            if (props != null && props.Length > 0) {
-                foreach (MaterialProperty prop in props) {
-                    if ((prop.flags & (MaterialProperty.PropFlags.HideInInspector | MaterialProperty.PropFlags.PerRendererData)) != 0) continue;
-                    if (SystemPredefinedPropertyNames.IndexOf(prop.name, StringComparison.OrdinalIgnoreCase) == -1) {
-                        if (AddtionalReservedPropertyNames.IndexOf(prop.name, StringComparison.OrdinalIgnoreCase) == -1) {
+            if (props != null && props.Length > 0)
+            {
+                foreach (MaterialProperty prop in props)
+                {
+                    // Use reflection-based method to get property flags
+                    var flags = GetPropertyFlag(prop);
+                    if ((flags & (UnityEngine.Rendering.ShaderPropertyFlags.HideInInspector | UnityEngine.Rendering.ShaderPropertyFlags.PerRendererData)) != 0) continue;
+                    if (SystemPredefinedPropertyNames.IndexOf(prop.name, StringComparison.OrdinalIgnoreCase) == -1)
+                    {
+                        if (AddtionalReservedPropertyNames.IndexOf(prop.name, StringComparison.OrdinalIgnoreCase) == -1)
+                        {
                             customProps.Add(prop);
                         }
                     }
                 }
             }
             // Render custom properties
-            if (customProps.Count > 0) {
+            if (customProps.Count > 0)
+            {
                 EditorGUILayout.Space();
                 GUILayout.Label(Styles.exporterText, EditorStyles.boldLabel);
-                for (var i = 0; i < customProps.Count; i++) {
-                    if ((customProps[i].flags & (MaterialProperty.PropFlags.HideInInspector | MaterialProperty.PropFlags.PerRendererData)) != 0) continue;
+                for (var i = 0; i < customProps.Count; i++)
+                {
+                    // Use reflection-based method to get property flags
+                    var flags = GetPropertyFlag(customProps[i]);
+                    if ((flags & (UnityEngine.Rendering.ShaderPropertyFlags.HideInInspector | UnityEngine.Rendering.ShaderPropertyFlags.PerRendererData)) != 0) continue;
                     float h = materialEditor.GetPropertyHeight(customProps[i], customProps[i].displayName);
                     Rect r = EditorGUILayout.GetControlRect(true, h, EditorStyles.layerMaskField);
                     materialEditor.ShaderProperty(r, customProps[i], customProps[i].displayName);
                 }
             }
         }
+
+
+    public static UnityEngine.Rendering.ShaderPropertyFlags GetPropertyFlag(MaterialProperty prop)
+    {
+        if (prop == null)
+            return UnityEngine.Rendering.ShaderPropertyFlags.None;
+        
+        System.Type propertyType = prop.GetType();
+        
+        // Try to get the flags value (property or field)
+        object flagsValue = null;
+        
+        // First try "flags" (Unity 2022 and earlier)
+        PropertyInfo flagsProperty = propertyType.GetProperty("flags", BindingFlags.Public | BindingFlags.Instance);
+        if (flagsProperty != null)
+        {
+            flagsValue = flagsProperty.GetValue(prop);
+        }
+        else
+        {
+            // Try as a field
+            FieldInfo flagsField = propertyType.GetField("flags", BindingFlags.Public | BindingFlags.Instance);
+            if (flagsField != null)
+            {
+                flagsValue = flagsField.GetValue(prop);
+            }
+        }
+        
+        // If "flags" doesn't exist, try "propertyFlags" (Unity 6.2+)
+        if (flagsValue == null)
+        {
+            PropertyInfo propertyFlagsProperty = propertyType.GetProperty("propertyFlags", BindingFlags.Public | BindingFlags.Instance);
+            if (propertyFlagsProperty != null)
+            {
+                flagsValue = propertyFlagsProperty.GetValue(prop);
+            }
+            else
+            {
+                // Try as a field
+                FieldInfo propertyFlagsField = propertyType.GetField("propertyFlags", BindingFlags.Public | BindingFlags.Instance);
+                if (propertyFlagsField != null)
+                {
+                    flagsValue = propertyFlagsField.GetValue(prop);
+                }
+            }
+        }
+        
+        // Convert to PropFlags enum
+        if (flagsValue != null)
+        {
+            return (UnityEngine.Rendering.ShaderPropertyFlags)flagsValue;
+        }
+        
+        return UnityEngine.Rendering.ShaderPropertyFlags.None;
+    }
+    
+    /// <summary>
+    /// Helper method to get a specific value from MaterialProperty using reflection
+    /// </summary>
+    private static object GetMemberValue(object obj, System.Type type, string memberName)
+    {
+        // Try as property first
+        PropertyInfo prop = type.GetProperty(memberName, BindingFlags.Public | BindingFlags.Instance);
+        if (prop != null)
+        {
+            return prop.GetValue(obj);
+        }
+        
+        // Try as field
+        FieldInfo field = type.GetField(memberName, BindingFlags.Public | BindingFlags.Instance);
+        if (field != null)
+        {
+            return field.GetValue(obj);
+        }
+        
+        return null;
+    }
 
         internal void DetermineWorkflow(MaterialProperty[] props)
         {
