@@ -39,8 +39,8 @@ public static class RenderPathTools
             {
                 if (!silent)
                 {
-                    EditorUtility.DisplayDialog("Babylon Toolkit - Render Pipeline Check",
-                        "This project is using the Built-in Render Pipeline (not URP).",
+                    EditorUtility.DisplayDialog("Render Pipeline Check",
+                        "The universal render pipeline is not enabled for this project.",
                         "OK");
                 }
                 return;
@@ -58,7 +58,7 @@ public static class RenderPathTools
                 // Non-URP project - just show message if manual check
                 if (!silent)
                 {
-                    EditorUtility.DisplayDialog("Babylon Toolkit - Render Pipeline Check",
+                    EditorUtility.DisplayDialog("Render Pipeline Check",
                         $"This project is not using URP (Current: {assetTypeName}).",
                         "OK");
                 }
@@ -101,7 +101,7 @@ public static class RenderPathTools
             {
                 string message = $"Current URP Rendering Path: {currentRenderPath}\n\n{reason}\n\nWould you like to change to {suggestedPath} rendering?";
 
-                if (EditorUtility.DisplayDialog("Babylon Toolkit - URP Render Path Recommendation", message, "Yes, Change", "No, Keep Current"))
+                if (EditorUtility.DisplayDialog("URP Render Path Recommendation", message, "Yes, Change", "No, Keep Current"))
                 {
                     if (SetURPRenderPath(suggestedPath))
                     {
@@ -117,7 +117,7 @@ public static class RenderPathTools
             {
                 // If called manually and no issues found, show confirmation
                 string message = $"Current URP Rendering Path: {currentRenderPath}\n\nThis render path is compatible with Babylon Toolkit.";
-                EditorUtility.DisplayDialog("Babylon Toolkit - URP Render Path Check", message, "OK");
+                EditorUtility.DisplayDialog("URP Render Path Check", message, "OK");
             }
         }
         catch (System.Exception ex)
