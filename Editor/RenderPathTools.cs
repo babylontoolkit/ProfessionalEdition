@@ -7,16 +7,25 @@ using System.Reflection;
 
 public static class RenderPathTools
 {
+    // =========================================================
+    // Initialization / Menu
+    // =========================================================
     [InitializeOnLoadMethod]
     static void InitializeRenderPathTools()
     {
-        CanvasTools.EditorHooks.MainWindowOnEnable += ValidateRenderSettings;
+        // Keep user's existing hook if available at compile time
+        // Wrapped in try/catch in case CanvasTools is not defined in some projects.
+        try
+        {
+            CanvasTools.EditorHooks.MainWindowOnEnable += ValidateRenderSettings;
+        }
+        catch { /* optional dependency */ }
     }
 
     [MenuItem("Tools/Babylon Toolkit/Check Render Path", false, 50)]
     public static void CheckRenderSettings()
     {
-        ValidateRenderPipeline(false);    
+        ValidateRenderPipeline(false);
     }
 
     public static void ValidateRenderSettings()
@@ -24,45 +33,45 @@ public static class RenderPathTools
         ValidateRenderPipeline(true);
     }
 
+    // =========================================================
+    // Validation
+    // =========================================================
     /// <summary>
-    /// Validates the current render pipeline and its settings.
-    /// If URP is detected, checks the rendering path and suggests changes if necessary.
+    /// Validates the active render pipeline and its URP rendering path (Forward/Deferred/ForwardPlus).
+    /// Works whether URP is assigned globally, per-quality, or both.
     /// </summary>
     private static void ValidateRenderPipeline(bool silent = true)
     {
         try
         {
-            var renderPipelineAsset = GraphicsSettings.defaultRenderPipeline;
+            var renderPipelineAsset = GetActiveRenderPipelineAsset();
 
-            // Handle Built-in Render Pipeline (no asset assigned)
+            // Handle Built-in Render Pipeline (no active RP asset)
             if (renderPipelineAsset == null)
             {
                 if (!silent)
                 {
                     EditorUtility.DisplayDialog("Render Pipeline Check",
-                        "The universal render pipeline is not enabled for this project.",
+                        "Built-in Render Pipeline is active (no URP asset assigned).",
                         "OK");
                 }
                 return;
             }
 
-            var assetTypeName = renderPipelineAsset.GetType().Name;
-
-            // Only validate URP projects
-            if (assetTypeName.Contains("Universal") || assetTypeName.Contains("URP"))
+            // Determine if this looks like a URP asset by probing renderer data via reflection
+            bool isURP = HasURPRendererData(renderPipelineAsset);
+            if (!isURP)
             {
-                ValidateURPSettings(renderPipelineAsset, silent);
-            }
-            else
-            {
-                // Non-URP project - just show message if manual check
                 if (!silent)
                 {
                     EditorUtility.DisplayDialog("Render Pipeline Check",
-                        $"This project is not using URP (Current: {assetTypeName}).",
+                        $"Active Render Pipeline is not recognized as URP. Type: {renderPipelineAsset.GetType().Name}",
                         "OK");
                 }
+                return;
             }
+
+            ValidateURPSettings(renderPipelineAsset, silent);
         }
         catch (System.Exception ex)
         {
@@ -92,8 +101,9 @@ public static class RenderPathTools
             }
             else if (currentRenderPath.Equals("Deferred+", System.StringComparison.OrdinalIgnoreCase))
             {
+                // "Deferred+" isn't an official public mode in most URP versions; treat as Deferred if encountered.
                 suggestedPath = "Deferred";
-                reason = "Deferred+ rendering may have compatibility issues with some Babylon Toolkit features. Standard Deferred rendering is recommended for better compatibility.";
+                reason = "This project reports a 'Deferred+' mode. Standard Deferred rendering is recommended for compatibility.";
             }
 
             // Show prompt if a change is suggested
@@ -126,99 +136,116 @@ public static class RenderPathTools
         }
     }
 
+    // =========================================================
+    // Active RP discovery
+    // =========================================================
     /// <summary>
-    /// Gets the current URP rendering path by accessing the renderer data via reflection.
+    /// Returns the effective (active) RP asset in priority order:
+    /// GraphicsSettings.currentRenderPipeline -> QualitySettings.renderPipeline -> GraphicsSettings.defaultRenderPipeline
     /// </summary>
-    /// <param name="urpAsset"></param>
-    /// <returns>string</returns> 
+    private static RenderPipelineAsset GetActiveRenderPipelineAsset()
+    {
+        var rp = GraphicsSettings.currentRenderPipeline;
+        if (rp != null) return rp;
+
+        rp = QualitySettings.renderPipeline;
+        if (rp != null) return rp;
+
+        return GraphicsSettings.defaultRenderPipeline;
+    }
+
+    /// <summary>
+    /// Best-effort URP detection by checking for a renderer data list presence.
+    /// </summary>
+    private static bool HasURPRendererData(RenderPipelineAsset rpAsset)
+    {
+        if (rpAsset == null) return false;
+        var t = rpAsset.GetType();
+
+        // Try private m_RendererDataList
+        var listField = t.GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (listField != null)
+        {
+            var listObj = listField.GetValue(rpAsset) as System.Collections.IList;
+            if (listObj != null && listObj.Count > 0) return true;
+        }
+
+        // Try public rendererDataList (older/newer variants)
+        var listProp = t.GetProperty("rendererDataList", BindingFlags.Public | BindingFlags.Instance);
+        if (listProp != null)
+        {
+            var listObj = listProp.GetValue(rpAsset) as System.Collections.IList;
+            if (listObj != null && listObj.Count > 0) return true;
+        }
+
+        return false;
+    }
+
+    // =========================================================
+    // Renderer Data helpers
+    // =========================================================
+    /// <summary>
+    /// Gets the default ScriptableRendererData from a URP asset using m_DefaultRendererIndex.
+    /// </summary>
+    private static UnityEngine.Object GetDefaultRendererData(RenderPipelineAsset urpAsset)
+    {
+        var t = urpAsset.GetType();
+
+        // IList of ScriptableRendererData
+        var listField = t.GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
+        var listObj = listField?.GetValue(urpAsset) as System.Collections.IList;
+        if (listObj == null || listObj.Count == 0) return null;
+
+        int defaultIndex = 0;
+        var defaultIdxField = t.GetField("m_DefaultRendererIndex", BindingFlags.NonPublic | BindingFlags.Instance);
+        if (defaultIdxField != null)
+        {
+            try
+            {
+                defaultIndex = (int)defaultIdxField.GetValue(urpAsset);
+                if (defaultIndex < 0 || defaultIndex >= listObj.Count) defaultIndex = 0;
+            }
+            catch { defaultIndex = 0; }
+        }
+
+        return listObj[defaultIndex] as UnityEngine.Object;
+    }
+
+    // =========================================================
+    // Read / Write Rendering Mode
+    // =========================================================
+    /// <summary>
+    /// Gets the current URP rendering path by accessing the default renderer data via reflection.
+    /// Returns user-friendly names: "Forward", "Deferred", "Forward+"
+    /// </summary>
     private static string GetURPRenderingPath(RenderPipelineAsset urpAsset)
     {
         try
         {
-            var assetType = urpAsset.GetType();
-            object rendererDataList = null;
+            var firstRendererData = GetDefaultRendererData(urpAsset);
+            if (firstRendererData == null)
+                return "Unknown";
 
-            // Try to get the renderer data list from the URP asset
-            // Start with the private field first (safer)
-            try
-            {
-                var rendererDataListField = assetType.GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (rendererDataListField != null)
-                {
-                    rendererDataList = rendererDataListField.GetValue(urpAsset);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogWarning($"[Babylon Toolkit] Failed to access m_RendererDataList field: {ex.Message}");
-            }
+            var rendererDataType = firstRendererData.GetType();
 
-            // If that fails, try the public property with extra caution
-            if (rendererDataList == null)
+            // Try to get the renderingMode property from the renderer data
+            object renderingMode = null;
+            var renderingModeProperty = rendererDataType.GetProperty("renderingMode", BindingFlags.Public | BindingFlags.Instance);
+            if (renderingModeProperty != null)
             {
-                try
+                renderingMode = renderingModeProperty.GetValue(firstRendererData);
+            }
+            else
+            {
+                // Fallback: private field
+                var renderingModeField = rendererDataType.GetField("m_RenderingMode", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (renderingModeField != null)
                 {
-                    var rendererDataListProperty = assetType.GetProperty("rendererDataList", BindingFlags.Public | BindingFlags.Instance);
-                    if (rendererDataListProperty != null)
-                    {
-                        rendererDataList = rendererDataListProperty.GetValue(urpAsset);
-                    }
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.LogWarning($"[Babylon Toolkit] Failed to access rendererDataList property: {ex.Message}");
+                    renderingMode = renderingModeField.GetValue(firstRendererData);
                 }
             }
 
-            if (rendererDataList != null && rendererDataList is System.Collections.IList list && list.Count > 0)
-            {
-                // Get the first (default) renderer data
-                var firstRendererData = list[0];
-                if (firstRendererData != null)
-                {
-                    var rendererDataType = firstRendererData.GetType();
-
-                    // Try to get the renderingMode property from the renderer data
-                    try
-                    {
-                        var renderingModeProperty = rendererDataType.GetProperty("renderingMode", BindingFlags.Public | BindingFlags.Instance);
-                        if (renderingModeProperty != null)
-                        {
-                            var renderingMode = renderingModeProperty.GetValue(firstRendererData);
-                            if (renderingMode != null)
-                            {
-                                return FormatRenderingMode(renderingMode);
-                            }
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning($"[Babylon Toolkit] Failed to access renderingMode property: {ex.Message}");
-                    }
-
-                    // Fallback: try to access the private field directly
-                    try
-                    {
-                        var renderingModeField = rendererDataType.GetField("m_RenderingMode", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (renderingModeField != null)
-                        {
-                            var renderingMode = renderingModeField.GetValue(firstRendererData);
-                            if (renderingMode != null)
-                            {
-                                return FormatRenderingMode(renderingMode);
-                            }
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning($"[Babylon Toolkit] Failed to access m_RenderingMode field: {ex.Message}");
-                    }
-                }
-            }
-
-            // Fallback: Try other methods if renderer data access fails
-            Debug.LogWarning("[Babylon Toolkit] Could not access renderer data, trying alternative detection methods");
-            return TryAlternativeDetection(assetType, urpAsset);
+            return FormatRenderingMode(renderingMode);
         }
         catch (System.Exception ex)
         {
@@ -226,126 +253,115 @@ public static class RenderPathTools
             return "Unknown (Error during detection)";
         }
     }
-    
+
     /// <summary>
     /// Sets the URP rendering path to the specified mode.
-    /// Valid modes are: "Forward", "Forward+", "Deferred", "Deferred+"
+    /// Valid modes are: "Forward", "Deferred", "Forward+"
     /// </summary>
-    /// <param name="targetRenderPath"></param>
-    /// <returns>bool</returns> 
     private static bool SetURPRenderPath(string targetRenderPath)
     {
         try
         {
-            var renderPipelineAsset = GraphicsSettings.defaultRenderPipeline;
+            var renderPipelineAsset = GetActiveRenderPipelineAsset();
 
             if (renderPipelineAsset == null)
             {
                 EditorUtility.DisplayDialog("Set Render Path",
-                    "No Render Pipeline Asset is assigned. This project is using the Built-in Render Pipeline.",
+                    "No active Render Pipeline Asset found (Built-in or not assigned).",
                     "OK");
                 return false;
             }
 
-            var assetTypeName = renderPipelineAsset.GetType().Name;
-
-            if (!assetTypeName.Contains("Universal") && !assetTypeName.Contains("URP"))
+            if (!HasURPRendererData(renderPipelineAsset))
             {
                 EditorUtility.DisplayDialog("Set Render Path",
-                    $"The current Render Pipeline Asset is not URP. Type: {assetTypeName}",
+                    $"The active Render Pipeline Asset does not appear to be URP. Type: {renderPipelineAsset.GetType().Name}",
                     "OK");
                 return false;
             }
 
-            var assetType = renderPipelineAsset.GetType();
-            object rendererDataList = null;
+            var firstRendererData = GetDefaultRendererData(renderPipelineAsset);
+            if (firstRendererData == null)
+            {
+                EditorUtility.DisplayDialog("Set Render Path",
+                    "Could not locate the default URP Renderer Data on the active asset.",
+                    "OK");
+                return false;
+            }
 
-            // Get the renderer data list
+            var rendererDataType = firstRendererData.GetType();
+
+            // Normalize target to enum name
+            string desiredEnumName = NormalizeTargetModeName(targetRenderPath);
+            if (desiredEnumName == null)
+            {
+                EditorUtility.DisplayDialog("Set Render Path",
+                    $"Invalid render path: {targetRenderPath}. Valid options are: Forward, Deferred, Forward+",
+                    "OK");
+                return false;
+            }
+
+            // Discover enum type from property or field
+            var renderingModeProperty = rendererDataType.GetProperty("renderingMode", BindingFlags.Public | BindingFlags.Instance);
+            System.Type enumType = renderingModeProperty?.PropertyType 
+                                   ?? rendererDataType.GetField("m_RenderingMode", BindingFlags.NonPublic | BindingFlags.Instance)?.FieldType;
+
+            if (enumType == null || !enumType.IsEnum)
+            {
+                EditorUtility.DisplayDialog("Set Render Path",
+                    "Could not determine URP rendering mode enum type.",
+                    "OK");
+                return false;
+            }
+
+            // Parse by enum name (case-insensitive). This avoids hard-coded int ordinals.
+            object enumValue;
             try
             {
-                var rendererDataListField = assetType.GetField("m_RendererDataList", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (rendererDataListField != null)
+                enumValue = System.Enum.Parse(enumType, desiredEnumName, ignoreCase: true);
+            }
+            catch
+            {
+                EditorUtility.DisplayDialog("Set Render Path",
+                    $"Render mode \"{desiredEnumName}\" not supported by this URP version.",
+                    "OK");
+                return false;
+            }
+
+            bool written = false;
+            try
+            {
+                if (renderingModeProperty != null && renderingModeProperty.CanWrite)
                 {
-                    rendererDataList = rendererDataListField.GetValue(renderPipelineAsset);
+                    renderingModeProperty.SetValue(firstRendererData, enumValue);
+                    written = true;
+                }
+                else
+                {
+                    var renderingModeField = rendererDataType.GetField("m_RenderingMode", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (renderingModeField != null)
+                    {
+                        renderingModeField.SetValue(firstRendererData, enumValue);
+                        written = true;
+                    }
                 }
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[Babylon Toolkit] Failed to access renderer data list: {ex.Message}");
+                Debug.LogWarning($"[Babylon Toolkit] Failed to set URP rendering mode: {ex.Message}");
             }
 
-            if (rendererDataList != null && rendererDataList is System.Collections.IList list && list.Count > 0)
+            if (written)
             {
-                // Get the first (default) renderer data
-                var firstRendererData = list[0];
-                if (firstRendererData != null)
-                {
-                    var rendererDataType = firstRendererData.GetType();
+                EditorUtility.SetDirty(firstRendererData as UnityEngine.Object);
+                EditorUtility.SetDirty(renderPipelineAsset);
+                AssetDatabase.SaveAssets();
+                UnityEditorInternal.InternalEditorUtility.RepaintAllViews();
 
-                    // Convert target render path to enum value
-                    int renderModeValue = ConvertRenderPathToEnum(targetRenderPath);
-                    if (renderModeValue == -1)
-                    {
-                        EditorUtility.DisplayDialog("Set Render Path",
-                            $"Invalid render path: {targetRenderPath}. Valid options are: Forward, Forward+, Deferred, Deferred+",
-                            "OK");
-                        return false;
-                    }
-
-                    // Try to set via public property first
-                    try
-                    {
-                        var renderingModeProperty = rendererDataType.GetProperty("renderingMode", BindingFlags.Public | BindingFlags.Instance);
-                        if (renderingModeProperty != null && renderingModeProperty.CanWrite)
-                        {
-                            // Create enum value - we need to get the actual enum type
-                            var enumType = renderingModeProperty.PropertyType;
-                            var enumValue = System.Enum.ToObject(enumType, renderModeValue);
-
-                            renderingModeProperty.SetValue(firstRendererData, enumValue);
-
-                            // Mark the asset as dirty so changes are saved
-                            EditorUtility.SetDirty(firstRendererData as UnityEngine.Object);
-                            EditorUtility.SetDirty(renderPipelineAsset);
-
-                            EditorUtility.DisplayDialog("Set Render Path",
-                                $"Successfully changed URP Rendering Path to: {targetRenderPath}",
-                                "OK");
-                            return true;
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning($"[Babylon Toolkit] Failed to set renderingMode property: {ex.Message}");
-                    }
-
-                    // Fallback: try to set via private field
-                    try
-                    {
-                        var renderingModeField = rendererDataType.GetField("m_RenderingMode", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (renderingModeField != null)
-                        {
-                            // Create enum value
-                            var enumType = renderingModeField.FieldType;
-                            var enumValue = System.Enum.ToObject(enumType, renderModeValue);
-
-                            renderingModeField.SetValue(firstRendererData, enumValue);
-
-                            // Mark the asset as dirty so changes are saved
-                            EditorUtility.SetDirty(firstRendererData as UnityEngine.Object);
-                            EditorUtility.SetDirty(renderPipelineAsset);
-
-                            EditorUtility.DisplayDialog("Set Render Path",
-                                $"Successfully changed URP Rendering Path to: {targetRenderPath}",
-                                "OK");
-                            return true;
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogWarning($"[Babylon Toolkit] Failed to set m_RenderingMode field: {ex.Message}");
-                    }
-                }
+                EditorUtility.DisplayDialog("Set Render Path",
+                    $"Successfully changed URP Rendering Path to: {targetRenderPath}",
+                    "OK");
+                return true;
             }
 
             EditorUtility.DisplayDialog("Set Render Path",
@@ -363,36 +379,33 @@ public static class RenderPathTools
         }
     }
 
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-    /// PRIVATE RENDER PATH HELPER FUNCTIONS
-    ////////////////////////////////////////////////////////////////////////////////////////////////
-
-    private static int ConvertRenderPathToEnum(string renderPath)
+    // =========================================================
+    // Helper mappers / formatters
+    // =========================================================
+    private static string NormalizeTargetModeName(string target)
     {
-        switch (renderPath.ToLower())
+        if (string.IsNullOrEmpty(target)) return null;
+        switch (target.Trim().ToLowerInvariant())
         {
             case "forward":
-                return 0;
+                return "Forward";
             case "deferred":
-                return 1;
+                return "Deferred";
             case "forward+":
             case "forwardplus":
-                return 2;
-            case "deferred+":
-            case "deferredplus":
-                return 3;
+                return "ForwardPlus";
+            // "Deferred+" is not a standard public mode; deliberately unsupported.
             default:
-                return -1;
+                return null;
         }
     }
-    
+
     private static string FormatRenderingMode(object renderingMode)
     {
         if (renderingMode == null) return "Unknown";
-
         var modeStr = renderingMode.ToString();
 
-        // Handle the RenderingMode enum values
+        // Normalize well-known enum names to user-friendly labels
         switch (modeStr)
         {
             case "Forward":
@@ -401,86 +414,24 @@ public static class RenderPathTools
                 return "Deferred";
             case "ForwardPlus":
                 return "Forward+";
-            case "DeferredPlus":
-                return "Deferred+";
+            // Unknown / vendor modified names
             default:
-                // Handle enum values that might be numbers
-                if (int.TryParse(modeStr, out int enumValue))
-                {
-                    switch (enumValue)
-                    {
-                        case 0: return "Forward";
-                        case 1: return "Deferred";
-                        case 2: return "Forward+";
-                        case 3: return "Deferred+";
-                        default: return $"Unknown Mode ({enumValue})";
-                    }
-                }
                 return modeStr;
         }
     }
-    
-    private static string TryAlternativeDetection(System.Type assetType, RenderPipelineAsset urpAsset)
-    {
-        // Log all available properties for debugging
-        var allProperties = assetType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        var allFields = assetType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-        
-        // Debug.Log($"[Babylon Toolkit] URP Asset Type: {assetType.FullName}");
-        // Debug.Log($"[Babylon Toolkit] Available Properties: {string.Join(", ", System.Array.ConvertAll(allProperties, p => p.Name))}");
-        // Debug.Log($"[Babylon Toolkit] Available Fields: {string.Join(", ", System.Array.ConvertAll(allFields, f => f.Name))}");
-        
-        // Try some other possible property names
-        string[] possibleProperties = { 
-            "renderingPath", "RenderingPath", "m_RenderingPath", 
-            "defaultRenderer", "m_DefaultRenderer",
-            "rendererType", "m_RendererType"
-        };
-        
-        foreach (var propName in possibleProperties)
-        {
-            var prop = assetType.GetProperty(propName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (prop != null)
-            {
-                var value = prop.GetValue(urpAsset);
-                if (value != null)
-                {
-                    // Debug.Log($"[Babylon Toolkit] Found property '{propName}': {value} (Type: {value.GetType()})");
-                }
-            }
-            
-            var field = assetType.GetField(propName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            if (field != null)
-            {
-                var value = field.GetValue(urpAsset);
-                if (value != null)
-                {
-                    // Debug.Log($"[Babylon Toolkit] Found field '{propName}': {value} (Type: {value.GetType()})");
-                }
-            }
-        }
-        
-        return "Forward (Could not determine - check console for details)";
-    }
-    
+
+    // (Optional) Descriptions for UI or logs; kept for completeness.
     private static string GetRenderingPathDescription(string renderingPath)
     {
         switch (renderingPath.ToLower())
         {
             case "forward":
                 return "Forward Rendering: Lights are processed per-pixel in a single pass. Good for most scenarios with moderate light counts.";
-            
             case "forward+":
             case "forwardplus":
                 return "Forward+ Rendering: Uses tiled/clustered lighting for better performance with many lights. Requires compute shader support.";
-            
             case "deferred":
                 return "Deferred Rendering: Geometry and lighting are rendered in separate passes. Efficient for many lights but requires G-buffer support.";
-            
-            case "deferred+":
-            case "deferredplus":
-                return "Deferred+ Rendering: Enhanced deferred rendering with additional optimizations and features.";
-            
             default:
                 return "Rendering path details not available for this configuration.";
         }

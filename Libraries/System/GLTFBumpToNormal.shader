@@ -42,7 +42,7 @@
 			float4 frag(vertOutput output) : COLOR {
 				float4 bump = tex2D(_BumpMap, output.texcoord);
  				fixed3 normal = (0.5f + 0.5f * UnpackNormal(bump));
-				return float4(pow(normal.rgb, 2.2), 1.0);
+				return float4(normal.rgb, 1.0);
 			}
 			ENDCG
 		}

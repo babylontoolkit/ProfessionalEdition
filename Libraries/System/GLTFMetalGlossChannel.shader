@@ -50,15 +50,14 @@
             float4 frag(vertOutput output) : COLOR {
                 float4 unityMetalGloss = tex2D(_MetallicGlossMap, output.texcoord);
                 float4 gltfMetalRough = float4(0.0, 0.0, 0.0, 1.0);
-
                 if (_GLTF == 1) {
                     // Texture is already in glTF metallic-roughness format
-                    gltfMetalRough.g = unityMetalGloss.g; // roughness (G)
                     gltfMetalRough.b = unityMetalGloss.b; // metallic  (B)
+                    gltfMetalRough.g = unityMetalGloss.g; // roughness (G)
                 } else {
                     // Convert from Unity's metallic-smoothness map
                     gltfMetalRough.b = unityMetalGloss.r; // Unity R → glTF B
-
+                    // Unity smoothness → glTF roughness
                     float smoothness;
                     if (_AlbedoHasAlpha == 1) {
                         float4 albedo = tex2D(_AlbedoTexture, output.texcoord);
@@ -66,14 +65,10 @@
                     } else {
                         smoothness = unityMetalGloss.a;
                     }
-
-                    // Unity smoothness → glTF roughness
                     gltfMetalRough.g = 1.0 - (smoothness * _GlossinessScale);
                 }
-
                 gltfMetalRough.r = 0.0;   // Unused
                 gltfMetalRough.a = 1.0;   // Fully opaque
-
                 return gltfMetalRough;
             }
 

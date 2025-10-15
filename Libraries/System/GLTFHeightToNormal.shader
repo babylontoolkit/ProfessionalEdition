@@ -50,7 +50,7 @@
  				fixed3 normal = (0.5f + 0.5f * UnpackNormal(bumpmap));
 				float height = (heightmap.r + heightmap.g + heightmap.b / 3.0); // Greyscale Height
 				float scale = min(1.0, _HeightScale);
-				return float4(pow(normal.rgb, 2.2), (height * scale));
+				return float4(normal.rgb, (height * scale));
 			}
 			ENDCG
 		}
