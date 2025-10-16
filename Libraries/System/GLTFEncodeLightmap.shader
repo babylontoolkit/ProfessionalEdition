@@ -1,7 +1,8 @@
 Shader "Hidden/Export/EncodeLightmap" {
 	Properties {
 		_MainTex ("Base (HDR RT)", 2D) = "black" {}
-		_FlipY("Flip texture Y", Int) = 0
+		_Correct("Color Correction", Int) = 1
+		_FlipY("Flip Texture Y", Int) = 0
 		_Rgbd("Encode RGBD", Int) = 0
 	}
 	Subshader  {
@@ -29,6 +30,7 @@ Shader "Hidden/Export/EncodeLightmap" {
 			};
 
 			sampler2D _MainTex;
+			int _Correct;
 			int _FlipY;
 			int _Rgbd;
 
@@ -64,15 +66,11 @@ Shader "Hidden/Export/EncodeLightmap" {
 				return o;
 			}
 
-			float4 frag(vertOutput output) : COLOR {
+			float4 frag(vertOutput output) : COLOR
+			{
 				float4 result = tex2D(_MainTex, output.texcoord);
-				// ..
-				// #if defined(UNITY_LIGHTMAP_DLDR_ENCODING)
-				// #elif defined(UNITY_LIGHTMAP_RGBM_ENCODING)
-				// #elif defined(UNITY_LIGHTMAP_FULL_HDR)
-				// #endif
-				// ..
 				result.rgb = DecodeLightmap(result);
+				if (_Correct == 1) result.rgb = pow(result.rgb, 1.0/2.2);
 				if (_Rgbd == 1) result = EncodeRGBD(result.rgb);
 				return result;
 			}
