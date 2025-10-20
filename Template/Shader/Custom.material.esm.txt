@@ -18,10 +18,6 @@ namespace #ROOTNAMESPACE# {
         public update(): void {
             /* Update values before binding */
         }
-
-        public getClassName(): string {
-            return "#SHADERNAME#";
-        }
     }
     /**
      * Custom Shader Material Plugin (BABYLON.MaterialPluginBase)

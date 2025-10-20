@@ -14,10 +14,6 @@ namespace #ROOTNAMESPACE# {
         public update(): void {
             /* Update values before binding */
         }
-
-        public getClassName(): string {
-            return "#SHADERNAME#";
-        }
     }
     /**
      * Custom Shader Material Plugin (BABYLON.MaterialPluginBase)
@@ -34,10 +30,6 @@ namespace #ROOTNAMESPACE# {
 
         public isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean {
             return (shaderLanguage === BABYLON.ShaderLanguage.WGSL || shaderLanguage === BABYLON.ShaderLanguage.GLSL);
-        }
-
-        public getClassName(): string {
-            return "#SHADERNAME#Plugin";
         }
 
         /** This is used to create custom shader code
