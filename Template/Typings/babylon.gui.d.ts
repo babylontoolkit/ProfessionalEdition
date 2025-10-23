@@ -6966,6 +6966,9 @@ declare module BABYLON.GUI {
         _renderHighlightSpecific(context: BABYLON.ICanvasRenderingContext): void;
         protected _getColor(context: BABYLON.ICanvasRenderingContext): string | BABYLON.ICanvasGradient;
         /**
+         * Applies the control's state to the provided context.  Important: unless this is a temporary context,
+         * be sure to call context.save() before calling _applyStates() and later call context.restore() when
+         * you are done using these state updates.
          * @internal
          */
         protected _applyStates(context: BABYLON.ICanvasRenderingContext): void;

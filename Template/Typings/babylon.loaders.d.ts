@@ -923,6 +923,10 @@ declare module BABYLON.GLTF2 {
          */
         get coatRoughnessTexture(): Nullable<BaseTexture>;
         /**
+         * Sets the coat index of refraction (IOR).
+         */
+        set coatIor(value: number);
+        /**
          * Sets the coat darkening value.
          * Note: PBR doesn't have a direct coat darkening property, so this is a no-op.
          * @param value The coat darkening value (ignored for PBR)
@@ -1113,37 +1117,32 @@ declare module BABYLON.GLTF2 {
          * Automatically enables iridescence.
          * @param value The iridescence intensity value
          */
-        set iridescenceWeight(value: number);
+        set thinFilmWeight(value: number);
         /**
          * Sets the iridescence IOR (mapped to PBR iridescence.indexOfRefraction).
-         * Automatically enables iridescence.
          * @param value The iridescence IOR value
          */
-        set iridescenceIor(value: number);
+        set thinFilmIor(value: number);
         /**
          * Sets the iridescence thickness minimum (mapped to PBR iridescence.minimumThickness).
-         * Automatically enables iridescence.
          * @param value The minimum thickness value in nanometers
          */
-        set iridescenceThicknessMinimum(value: number);
+        set thinFilmThicknessMinimum(value: number);
         /**
          * Sets the iridescence thickness maximum (mapped to PBR iridescence.maximumThickness).
-         * Automatically enables iridescence.
          * @param value The maximum thickness value in nanometers
          */
-        set iridescenceThicknessMaximum(value: number);
+        set thinFilmThicknessMaximum(value: number);
         /**
-         * Sets the iridescence texture (mapped to PBR iridescence.texture).
-         * Automatically enables iridescence.
-         * @param value The iridescence intensity texture or null
+         * Sets the thin film weight texture (mapped to PBR iridescence.texture).
+         * @param value The thin film weight texture or null
          */
-        set iridescenceTexture(value: Nullable<BaseTexture>);
+        set thinFilmWeightTexture(value: Nullable<BaseTexture>);
         /**
          * Sets the iridescence thickness texture (mapped to PBR iridescence.thicknessTexture).
-         * Automatically enables iridescence.
          * @param value The iridescence thickness texture or null
          */
-        set iridescenceThicknessTexture(value: Nullable<BaseTexture>);
+        set thinFilmThicknessTexture(value: Nullable<BaseTexture>);
         /**
          * Sets the transmission dispersion value.
          * Note: PBR doesn't have direct dispersion support, so this stores it as metadata.
@@ -1533,6 +1532,10 @@ declare module BABYLON.GLTF2 {
          */
         get coatRoughnessTexture(): Nullable<BaseTexture>;
         /**
+         * Sets the coat index of refraction (IOR) of the OpenPBR material.
+         */
+        set coatIor(value: number);
+        /**
          * Sets the coat darkening value of the OpenPBR material.
          * @param value The coat darkening value
          */
@@ -1653,31 +1656,26 @@ declare module BABYLON.GLTF2 {
         configureFuzz(): void;
         /**
          * Sets the fuzz weight.
-         * TODO: Implementation pending OpenPBR fuzz feature availability.
          * @param value The fuzz weight value
          */
         set fuzzWeight(value: number);
         /**
          * Sets the fuzz color.
-         * TODO: Implementation pending OpenPBR fuzz feature availability.
          * @param value The fuzz color as a Color3
          */
         set fuzzColor(value: Color3);
         /**
          * Sets the fuzz color texture.
-         * TODO: Implementation pending OpenPBR fuzz feature availability.
          * @param value The fuzz color texture or null
          */
         set fuzzColorTexture(value: Nullable<BaseTexture>);
         /**
          * Sets the fuzz roughness.
-         * TODO: Implementation pending OpenPBR fuzz feature availability.
          * @param value The fuzz roughness value (0-1)
          */
         set fuzzRoughness(value: number);
         /**
          * Sets the fuzz roughness texture.
-         * TODO: Implementation pending OpenPBR fuzz feature availability.
          * @param value The fuzz roughness texture or null
          */
         set fuzzRoughnessTexture(value: Nullable<BaseTexture>);
@@ -1713,41 +1711,35 @@ declare module BABYLON.GLTF2 {
          */
         configureGltfStyleAnisotropy(useGltfStyle?: boolean): void;
         /**
-         * Sets the iridescence weight.
-         * TODO: Implementation pending OpenPBR iridescence feature availability.
-         * @param value The iridescence intensity value
+         * Sets the thin film weight.
+         * @param value The thin film weight value
          */
-        set iridescenceWeight(value: number);
+        set thinFilmWeight(value: number);
         /**
-         * Sets the iridescence IOR.
-         * TODO: Implementation pending OpenPBR iridescence feature availability.
-         * @param value The iridescence IOR value
+         * Sets the thin film IOR.
+         * @param value The thin film IOR value
          */
-        set iridescenceIor(value: number);
+        set thinFilmIor(value: number);
         /**
-         * Sets the iridescence thickness minimum.
-         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * Sets the thin film thickness minimum.
          * @param value The minimum thickness value in nanometers
          */
-        set iridescenceThicknessMinimum(value: number);
+        set thinFilmThicknessMinimum(value: number);
         /**
-         * Sets the iridescence thickness maximum.
-         * TODO: Implementation pending OpenPBR iridescence feature availability.
+         * Sets the thin film thickness maximum.
          * @param value The maximum thickness value in nanometers
          */
-        set iridescenceThicknessMaximum(value: number);
+        set thinFilmThicknessMaximum(value: number);
         /**
-         * Sets the iridescence texture.
-         * TODO: Implementation pending OpenPBR iridescence feature availability.
-         * @param value The iridescence intensity texture or null
+         * Sets the thin film weight texture.
+         * @param value The thin film weight texture or null
          */
-        set iridescenceTexture(value: Nullable<BaseTexture>);
+        set thinFilmWeightTexture(value: Nullable<BaseTexture>);
         /**
-         * Sets the iridescence thickness texture.
-         * TODO: Implementation pending OpenPBR iridescence feature availability.
-         * @param value The iridescence thickness texture or null
+         * Sets the thin film thickness texture.
+         * @param value The thin film thickness texture or null
          */
-        set iridescenceThicknessTexture(value: Nullable<BaseTexture>);
+        set thinFilmThicknessTexture(value: Nullable<BaseTexture>);
         /**
          * Sets whether the OpenPBR material is unlit.
          * @param value True to make the material unlit
@@ -1952,6 +1944,10 @@ declare module BABYLON.GLTF2 {
          */
         coatRoughnessTexture: Nullable<BaseTexture>;
         /**
+         * Sets the coat index of refraction (IOR)
+         */
+        coatIor: number;
+        /**
          * Sets the coat darkening (OpenPBR: coatDarkening, no PBR equivalent)
          */
         coatDarkening: number;
@@ -2065,29 +2061,29 @@ declare module BABYLON.GLTF2 {
          */
         configureGltfStyleAnisotropy(useGltfStyle?: boolean): void;
         /**
-         * Sets the iridescence weight (OpenPBR: iridescenceWeight, PBR: iridescence.intensity)
+         * Sets the thin film weight
          */
-        iridescenceWeight: number;
+        thinFilmWeight: number;
         /**
-         * Sets the iridescence IOR (OpenPBR: iridescenceIor, PBR: iridescence.indexOfRefraction)
+         * Sets the thin film IOR
          */
-        iridescenceIor: number;
+        thinFilmIor: number;
         /**
-         * Sets the iridescence thickness minimum (OpenPBR: iridescenceThicknessMinimum, PBR: iridescence.minimumThickness)
+         * Sets the thin film thickness minimum
          */
-        iridescenceThicknessMinimum: number;
+        thinFilmThicknessMinimum: number;
         /**
-         * Sets the iridescence thickness maximum (OpenPBR: iridescenceThicknessMaximum, PBR: iridescence.maximumThickness)
+         * Sets the thin film thickness maximum
          */
-        iridescenceThicknessMaximum: number;
+        thinFilmThicknessMaximum: number;
         /**
-         * Sets the iridescence texture (OpenPBR: iridescenceTexture, PBR: iridescence.intensityTexture)
+         * Sets the thin film iridescence texture
          */
-        iridescenceTexture: Nullable<BaseTexture>;
+        thinFilmWeightTexture: Nullable<BaseTexture>;
         /**
-         * Sets the iridescence thickness texture (OpenPBR: iridescenceThicknessTexture, PBR: iridescence.thicknessTexture)
+         * Sets the thin film thickness texture
          */
-        iridescenceThicknessTexture: Nullable<BaseTexture>;
+        thinFilmThicknessTexture: Nullable<BaseTexture>;
         /**
          * Sets the unlit flag (OpenPBR: unlit, PBR: unlit)
          */
@@ -2669,6 +2665,10 @@ declare module BABYLON.GLTF2 {
     }
     /** @internal */
     export function LoadBoundingInfoFromPositionAccessor(accessor: BABYLON.GLTF2.Loader.IAccessor): Nullable<BoundingInfo>;
+    type PBRMaterialImplementation = {
+        materialClass: typeof Material;
+        adapterClass: new (material: Material) => BABYLON.GLTF2.IMaterialLoadingAdapter;
+    };
     /**
      * The glTF 2.0 loader
      */
@@ -2699,9 +2699,7 @@ declare module BABYLON.GLTF2 {
         private readonly _postSceneLoadActions;
         private readonly _materialAdapterCache;
         /** @internal */
-        _pbrMaterialClass: typeof PBRMaterial | typeof OpenPBRMaterial | null;
-        /** @internal */
-        _pbrMaterialAdapterClass: typeof BABYLON.GLTF2.OpenPBRMaterialLoadingAdapter | typeof BABYLON.GLTF2.PBRMaterialLoadingAdapter | null;
+        _pbrMaterialImpl: Nullable<Readonly<PBRMaterialImplementation>> | false;
         /**
          * The default glTF sampler.
          */
@@ -3088,6 +3086,9 @@ declare module BABYLON.GLTF2.Loader.Extensions {
                 EXT_lights_ies?: {
                     multiplier: IObjectAccessor<BABYLON.GLTF2.Loader.INode, Light, number>;
                     color: IObjectAccessor<BABYLON.GLTF2.Loader.INode, Light, Color3>;
+                };
+                KHR_node_visibility?: {
+                    visible: IObjectAccessor<BABYLON.GLTF2.Loader.INode, Mesh, boolean>;
                 };
             };
         };
@@ -3749,12 +3750,12 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          * Defines whether this extension is enabled.
          */
         enabled: boolean;
-        private _loader;
+        private _loader?;
         /**
          * @internal
          */
         constructor(loader: BABYLON.GLTF2.GLTFLoader);
-        onReady(): Promise<void>;
+        onReady(): void;
         dispose(): void;
     }
 
@@ -4509,136 +4510,6 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
-     * [Proposed Specification](https://github.com/KhronosGroup/glTF/pull/2518)
-     * !!! Experimental Extension Subject to Changes !!!
-     */
-    export class KHR_materials_clearcoat_darkening implements BABYLON.GLTF2.IGLTFLoaderExtension {
-        /**
-         * The name of this extension.
-         */
-        readonly name = "KHR_materials_clearcoat_darkening";
-        /**
-         * Defines whether this extension is enabled.
-         */
-        enabled: boolean;
-        /**
-         * Defines a number that determines the order the extensions are applied.
-         */
-        order: number;
-        private _loader;
-        /**
-         * @internal
-         */
-        constructor(loader: BABYLON.GLTF2.GLTFLoader);
-        /** @internal */
-        dispose(): void;
-        /**
-         * @internal
-         */
-        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
-        private _loadDarkeningPropertiesAsync;
-    }
-
-
-
-}
-declare module BABYLON {
-    interface GLTFLoaderExtensionOptions {
-        /**
-         * Defines options for the KHR_materials_clearcoat_darkening extension.
-         */
-        ["KHR_materials_clearcoat_darkening"]: {};
-    }
-
-}
-declare module BABYLON.GLTF2.Loader.Extensions {
-        /**
-     * !!! Experimental Extension Subject to Changes !!!
-     */
-    export class KHR_materials_clearcoat_color implements BABYLON.GLTF2.IGLTFLoaderExtension {
-        /**
-         * The name of this extension.
-         */
-        readonly name = "KHR_materials_clearcoat_color";
-        /**
-         * Defines whether this extension is enabled.
-         */
-        enabled: boolean;
-        /**
-         * Defines a number that determines the order the extensions are applied.
-         */
-        order: number;
-        private _loader;
-        /**
-         * @internal
-         */
-        constructor(loader: BABYLON.GLTF2.GLTFLoader);
-        /** @internal */
-        dispose(): void;
-        /**
-         * @internal
-         */
-        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
-        private _loadColorPropertiesAsync;
-    }
-
-
-
-}
-declare module BABYLON {
-    interface GLTFLoaderExtensionOptions {
-        /**
-         * Defines options for the KHR_materials_clearcoat_color extension.
-         */
-        ["KHR_materials_clearcoat_color"]: {};
-    }
-
-}
-declare module BABYLON.GLTF2.Loader.Extensions {
-        /**
-     * [Specification](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_clearcoat_anisotropy)
-     */
-    export class KHR_materials_clearcoat_anisotropy implements BABYLON.GLTF2.IGLTFLoaderExtension {
-        /**
-         * The name of this extension.
-         */
-        readonly name = "KHR_materials_clearcoat_anisotropy";
-        /**
-         * Defines whether this extension is enabled.
-         */
-        enabled: boolean;
-        /**
-         * Defines a number that determines the order the extensions are applied.
-         */
-        order: number;
-        private _loader;
-        /**
-         * @internal
-         */
-        constructor(loader: BABYLON.GLTF2.GLTFLoader);
-        /** @internal */
-        dispose(): void;
-        /**
-         * @internal
-         */
-        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
-        private _loadAnisotropyPropertiesAsync;
-    }
-
-
-
-}
-declare module BABYLON {
-    interface GLTFLoaderExtensionOptions {
-        /**
-         * Defines options for the KHR_materials_clearcoat_anisotropy extension.
-         */
-        ["KHR_materials_clearcoat_anisotropy"]: {};
-    }
-
-}
-declare module BABYLON.GLTF2.Loader.Extensions {
-        /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md)
      * [Playground Sample](https://www.babylonjs-playground.com/frame.html#7F7PN6#8)
      */
@@ -4667,6 +4538,9 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          */
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadClearCoatPropertiesAsync;
+        private _loadClearCoatDarkeningPropertiesAsync;
+        private _loadClearCoatColorPropertiesAsync;
+        private _loadClearCoatAnisotropyPropertiesAsync;
     }
 
 
@@ -6466,6 +6340,16 @@ declare module BABYLON {
 
 
     /**
+     * Parses SPZ data and returns a promise resolving to an IParsedPLY object.
+     * @param data The ArrayBuffer containing SPZ data.
+     * @param scene The Babylon.js scene.
+     * @param loadingOptions Options for loading Gaussian Splatting files.
+     * @returns A promise resolving to the parsed SPZ data.
+     */
+    export function ParseSpz(data: ArrayBuffer, scene: Scene, loadingOptions: SPLATLoadingOptions): Promise<IParsedPLY>;
+
+
+    /**
      * Options for loading Gaussian Splatting and PLY files
      */
     export type SPLATLoadingOptions = {
@@ -6477,6 +6361,17 @@ declare module BABYLON {
          * Spatial Y Flip for splat position and orientation
          */
         flipY?: boolean;
+        /**
+         * URL to load fflate from. If null or undefined, will load from unpkg.com
+         * (https://unpkg.com/fflate/umd/index.js)
+         */
+        deflateURL?: string;
+        /**
+         * Instance of [fflate](https://github.com/101arrowz/fflate) to avoid
+         * dynamically loading of the lib to global if needed, useful for bundler users.
+         * @example import * as fflate from 'fflate';
+         */
+        fflate?: unknown;
     };
 
 
@@ -6490,6 +6385,12 @@ declare module BABYLON {
                 readonly isBinary: true;
             };
             readonly ".spz": {
+                readonly isBinary: true;
+            };
+            readonly ".json": {
+                readonly isBinary: false;
+            };
+            readonly ".sog": {
                 readonly isBinary: true;
             };
         };
@@ -6528,6 +6429,12 @@ declare module BABYLON {
             readonly ".spz": {
                 readonly isBinary: true;
             };
+            readonly ".json": {
+                readonly isBinary: false;
+            };
+            readonly ".sog": {
+                readonly isBinary: true;
+            };
         };
         /**
          * Creates loader for gaussian splatting files
@@ -6550,7 +6457,7 @@ declare module BABYLON {
         importMeshAsync(meshesNames: any, scene: Scene, data: any, rootUrl: string, _onProgress?: (event: ISceneLoaderProgressEvent) => void, _fileName?: string): Promise<ISceneLoaderAsyncResult>;
         private static _BuildPointCloud;
         private static _BuildMesh;
-        private _parseSPZAsync;
+        private _unzipWithFFlateAsync;
         private _parseAsync;
         /**
          * Load into an asset container.
@@ -6577,6 +6484,114 @@ declare module BABYLON {
          */
         private static _ConvertPLYToSplat;
     }
+
+
+    /**
+     * Indicator of the parsed ply buffer. A standard ready to use splat or an array of positions for a point cloud
+     */
+    export enum Mode {
+        Splat = 0,
+        PointCloud = 1,
+        Mesh = 2,
+        Reject = 3
+    }
+    /**
+     * A parsed buffer and how to use it
+     */
+    export interface IParsedPLY {
+        data: ArrayBuffer;
+        mode: Mode;
+        faces?: number[];
+        hasVertexColors?: boolean;
+        sh?: Uint8Array[];
+        trainedWithAntialiasing?: boolean;
+        compressed?: boolean;
+        rawSplat?: boolean;
+    }
+
+
+    /**
+     * Definition of a SOG data file
+     */
+    export interface SOGDataFile {
+        /**
+         * index 0 is number of splats index 1 is number of components per splat (3 for vec3, 4 for vec4, etc.)
+         */
+        shape: number[];
+        /**
+         * type of components
+         */
+        dtype: string;
+        /**
+         * min range of data
+         */
+        mins?: number | number[];
+        /**
+         * max range of data
+         */
+        maxs?: number | number[];
+        /**
+         * palette for indexed data (quantized)
+         */
+        codebook?: number[];
+        /**
+         * type of encoding
+         */
+        encoding?: string;
+        /**
+         * number of bits for quantization (if any)
+         */
+        quantization?: number;
+        /**
+         * webp file names
+         */
+        files: string[];
+        /**
+         * SH band count (if applicable)
+         */
+        bands?: number;
+    }
+    /**
+     * Definition of the root SOG data file
+     */
+    export interface SOGRootData {
+        /**
+         * version of the SOG format
+         */
+        version?: number;
+        /**
+         * mean positions of the splats
+         */
+        means: SOGDataFile;
+        /**
+         * scales of the splats
+         */
+        scales: SOGDataFile;
+        /**
+         * quaternions of the splats
+         */
+        quats: SOGDataFile;
+        /**
+         * SH0 coefficients of the splats (base color)
+         */
+        sh0: SOGDataFile;
+        /**
+         *  Optional higher order SH coefficients of the splats (lighting information)
+         */
+        shN?: SOGDataFile;
+        /**
+         * number of splats (optional, can be inferred from means.shape[0])
+         */
+        count?: number;
+    }
+    /**
+     * Parse SOG data from either a SOGRootData object (with webp files loaded from rootUrl) or from a Map of filenames to Uint8Array file data (including meta.json)
+     * @param dataOrFiles Either the SOGRootData or a Map of filenames to Uint8Array file data (including meta.json)
+     * @param rootUrl Base URL to load webp files from (if dataOrFiles is SOGRootData)
+     * @param scene The Babylon.js scene
+     * @returns Parsed data
+     */
+    export function ParseSogMeta(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedPLY>;
 
 
 
