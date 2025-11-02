@@ -3287,6 +3287,20 @@ declare module BABYLON.GLTF2.Loader.Extensions {
                 };
             };
         };
+        EXT_lights_area: {
+            lights: {
+                length: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light[], Light[], number>;
+                __array__: {
+                    __target__: boolean;
+                    color: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, Color3>;
+                    intensity: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, number>;
+                    size: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, number>;
+                    rect: {
+                        aspect: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, number>;
+                    };
+                };
+            };
+        };
         EXT_lights_ies: {
             lights: {
                 length: IObjectAccessor<BABYLON.GLTF2.Loader.IKHRLightsPunctual_Light[], Light[], number>;
