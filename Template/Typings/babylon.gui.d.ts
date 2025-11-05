@@ -6387,11 +6387,11 @@ declare module BABYLON.GUI {
         useBitmapCache: boolean;
         private _cacheData;
         private _shadowOffsetX;
-        /** Gets or sets a value indicating the offset to apply on X axis to render the shadow */
+        /** Gets or sets a value indicating the offset in pixels to apply on X axis to render the shadow */
         get shadowOffsetX(): number;
         set shadowOffsetX(value: number);
         private _shadowOffsetY;
-        /** Gets or sets a value indicating the offset to apply on Y axis to render the shadow */
+        /** Gets or sets a value indicating the offset in pixels to apply on Y axis to render the shadow */
         get shadowOffsetY(): number;
         set shadowOffsetY(value: number);
         private _shadowBlur;

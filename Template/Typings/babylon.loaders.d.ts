@@ -1055,6 +1055,11 @@ declare module BABYLON.GLTF2 {
          */
         set fuzzWeight(value: number);
         /**
+         * Sets the fuzz weight texture.
+         * @param value The fuzz weight texture or null
+         */
+        set fuzzWeightTexture(value: Nullable<BaseTexture>);
+        /**
          * Sets the sheen color (mapped to PBR sheen.color).
          * Automatically enables sheen.
          * @param value The sheen color as a Color3
@@ -1660,6 +1665,11 @@ declare module BABYLON.GLTF2 {
          */
         set fuzzWeight(value: number);
         /**
+         * Sets the fuzz weight texture.
+         * @param value The fuzz weight texture or null
+         */
+        set fuzzWeightTexture(value: Nullable<BaseTexture>);
+        /**
          * Sets the fuzz color.
          * @param value The fuzz color as a Color3
          */
@@ -1831,27 +1841,27 @@ declare module BABYLON.GLTF2 {
          */
         transparencyAsAlphaCoverage: boolean;
         /**
-         * Sets/gets the base color (OpenPBR: baseColor, PBR: albedoColor)
+         * Sets/gets the base color
          */
         baseColor: Color3;
         /**
-         * Sets/gets the base color texture (OpenPBR: baseColorTexture, PBR: albedoTexture)
+         * Sets/gets the base color texture
          */
         baseColorTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the base diffuse roughness (OpenPBR: baseDiffuseRoughness, PBR: baseDiffuseRoughness)
+         * Sets/gets the base diffuse roughness
          */
         baseDiffuseRoughness: number;
         /**
-         * Sets/gets the base diffuse roughness texture (OpenPBR: baseDiffuseRoughnessTexture, PBR: baseDiffuseRoughnessTexture)
+         * Sets/gets the base diffuse roughness texture
          */
         baseDiffuseRoughnessTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the base metalness (OpenPBR: baseMetalness, PBR: metallic)
+         * Sets/gets the base metalness
          */
         baseMetalness: number;
         /**
-         * Sets/gets the base metalness texture (OpenPBR: baseMetalnessTexture, PBR: metallicTexture)
+         * Sets/gets the base metalness texture
          */
         baseMetalnessTexture: Nullable<BaseTexture>;
         /**
@@ -1868,23 +1878,23 @@ declare module BABYLON.GLTF2 {
          */
         enableSpecularEdgeColor(enableEdgeColor?: boolean): void;
         /**
-         * Sets/gets the specular weight (OpenPBR: specularWeight, PBR: metallicF0Factor)
+         * Sets/gets the specular weight
          */
         specularWeight: number;
         /**
-         * Sets/gets the specular weight texture (OpenPBR: specularWeightTexture, PBR: metallicReflectanceTexture)
+         * Sets/gets the specular weight texture
          */
         specularWeightTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the specular color (OpenPBR: specularColor, PBR: reflectance)
+         * Sets/gets the specular color
          */
         specularColor: Color3;
         /**
-         * Sets/gets the specular color texture (OpenPBR: specularColorTexture, PBR: reflectanceTexture)
+         * Sets/gets the specular color texture
          */
         specularColorTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the specular roughness (OpenPBR: specularRoughness, PBR: roughness)
+         * Sets/gets the specular roughness
          */
         specularRoughness: number;
         /**
@@ -1892,15 +1902,15 @@ declare module BABYLON.GLTF2 {
          */
         specularRoughnessTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the specular IOR (OpenPBR: specularIor, PBR: indexOfRefraction)
+         * Sets/gets the specular IOR
          */
         specularIor: number;
         /**
-         * Sets/gets the emissive color (OpenPBR: emissionColor, PBR: emissiveColor)
+         * Sets/gets the emissive color
          */
         emissionColor: Color3;
         /**
-         * Sets/gets the emissive luminance (OpenPBR: emissionLuminance, PBR: emissiveIntensity)
+         * Sets/gets the emissive luminance
          */
         emissionLuminance: number;
         /**
@@ -1908,7 +1918,7 @@ declare module BABYLON.GLTF2 {
          */
         emissionColorTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the ambient occlusion texture (OpenPBR: ambientOcclusionTexture, PBR: ambientTexture)
+         * Sets/gets the ambient occlusion texture
          */
         ambientOcclusionTexture: Nullable<BaseTexture>;
         /**
@@ -1920,27 +1930,27 @@ declare module BABYLON.GLTF2 {
          */
         configureCoat(): void;
         /**
-         * Sets/gets the coat weight (OpenPBR: coatWeight, PBR: clearCoat.intensity)
+         * Sets/gets the coat weight
          */
         coatWeight: number;
         /**
-         * Sets/gets the coat weight texture (OpenPBR: coatWeightTexture, PBR: clearCoat.texture)
+         * Sets/gets the coat weight texture
          */
         coatWeightTexture: Nullable<BaseTexture>;
         /**
-         * Sets the coat color (OpenPBR: coatColor, no PBR equivalent)
+         * Sets the coat color
          */
         coatColor: Color3;
         /**
-         * Sets the coat color texture (OpenPBR: coatColorTexture, no PBR equivalent)
+         * Sets the coat color texture
          */
         coatColorTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the coat roughness (OpenPBR: coatRoughness, PBR: clearCoat.roughness)
+         * Sets/gets the coat roughness
          */
         coatRoughness: number;
         /**
-         * Sets/gets the coat roughness texture (OpenPBR: coatRoughnessTexture, PBR: clearCoat.textureRoughness)
+         * Sets/gets the coat roughness texture
          */
         coatRoughnessTexture: Nullable<BaseTexture>;
         /**
@@ -1948,39 +1958,39 @@ declare module BABYLON.GLTF2 {
          */
         coatIor: number;
         /**
-         * Sets the coat darkening (OpenPBR: coatDarkening, no PBR equivalent)
+         * Sets the coat darkening
          */
         coatDarkening: number;
         /**
-         * Sets the coat darkening texture (OpenPBR: coatDarkeningTexture, no PBR equivalent)
+         * Sets the coat darkening texture
          */
         coatDarkeningTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the coat roughness anisotropy (OpenPBR: coatRoughnessAnisotropy, PBR: clearCoat.anisotropy.intensity)
+         * Sets/gets the coat roughness anisotropy
          */
         coatRoughnessAnisotropy: number;
         /**
-         * Sets the coat tangent angle for anisotropy (OpenPBR: geometryCoatTangentAngle, PBR: clearCoat.anisotropy.angle)
+         * Sets the coat tangent angle for anisotropy
          */
         geometryCoatTangentAngle: number;
         /**
-         * Sets the coat tangent texture for anisotropy (OpenPBR: geometryCoatTangentTexture, PBR: clearCoat.anisotropy.texture)
+         * Sets the coat tangent texture for anisotropy
          */
         geometryCoatTangentTexture: Nullable<BaseTexture>;
         /**
-         * Sets the transmission weight (OpenPBR: transmissionWeight, PBR: subSurface.refractionIntensity)
+         * Sets the transmission weight
          */
         transmissionWeight: number;
         /**
-         * Sets the transmission weight texture (OpenPBR: transmissionWeightTexture, PBR: subSurface.refractionIntensityTexture)
+         * Sets the transmission weight texture
          */
         transmissionWeightTexture: Nullable<BaseTexture>;
         /**
-         * Sets the attenuation distance (OpenPBR: attenuationDistance, PBR: subSurface.volumeIndexOfRefraction)
+         * Sets the attenuation distance
          */
         transmissionDepth: number;
         /**
-         * Sets the attenuation color (OpenPBR: attenuationColor, PBR: subSurface.tintColor)
+         * Sets the attenuation color
          */
         transmissionColor: Color3;
         /**
@@ -1992,11 +2002,11 @@ declare module BABYLON.GLTF2 {
          */
         configureTransmission(): void;
         /**
-         * Sets the thickness texture (OpenPBR: thicknessTexture, PBR: subSurface.thicknessTexture)
+         * Sets the thickness texture
          */
         volumeThicknessTexture: Nullable<BaseTexture>;
         /**
-         * Sets the thickness factor (OpenPBR: thickness, PBR: subSurface.maximumThickness)
+         * Sets the thickness factor
          */
         volumeThickness: number;
         /**
@@ -2012,11 +2022,11 @@ declare module BABYLON.GLTF2 {
          */
         subsurfaceWeightTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the subsurface color (OpenPBR: subsurfaceColor, PBR: subSurface.tintColor)
+         * Sets/gets the subsurface color
          */
         subsurfaceColor: Color3;
         /**
-         * Sets/gets the subsurface color texture (OpenPBR: subsurfaceColorTexture, PBR: subSurface.tintColorTexture)
+         * Sets/gets the subsurface color texture
          */
         subsurfaceColorTexture: Nullable<BaseTexture>;
         /**
@@ -2024,35 +2034,39 @@ declare module BABYLON.GLTF2 {
          */
         configureFuzz(): void;
         /**
-         * Sets the fuzz weight (OpenPBR: fuzzWeight, PBR: fuzz.intensity)
+         * Sets the fuzz weight
          */
         fuzzWeight: number;
         /**
-         * Sets the fuzz color (OpenPBR: fuzzColor, PBR: fuzz.color)
+         * Sets the fuzz weight texture
+         */
+        fuzzWeightTexture: Nullable<BaseTexture>;
+        /**
+         * Sets the fuzz color
          */
         fuzzColor: Color3;
         /**
-         * Sets the fuzz color texture (OpenPBR: fuzzColorTexture, PBR: fuzz.texture)
+         * Sets the fuzz color texture
          */
         fuzzColorTexture: Nullable<BaseTexture>;
         /**
-         * Sets the fuzz roughness (OpenPBR: fuzzRoughness, PBR: fuzz.roughness)
+         * Sets the fuzz roughness
          */
         fuzzRoughness: number;
         /**
-         * Sets the fuzz roughness texture (OpenPBR: fuzzRoughnessTexture, PBR: fuzz.textureRoughness)
+         * Sets the fuzz roughness texture
          */
         fuzzRoughnessTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the specular roughness anisotropy (OpenPBR: specularRoughnessAnisotropy, PBR: anisotropy.intensity)
+         * Sets/gets the specular roughness anisotropy
          */
         specularRoughnessAnisotropy: number;
         /**
-         * Sets the anisotropy rotation (OpenPBR: anisotropyRotation, PBR: anisotropy.angle)
+         * Sets the anisotropy rotation
          */
         geometryTangentAngle: number;
         /**
-         * Sets/gets the anisotropy texture (OpenPBR: geometryTangentTexture, PBR: anisotropy.texture)
+         * Sets/gets the anisotropy texture
          */
         geometryTangentTexture: Nullable<BaseTexture>;
         /**
@@ -2085,15 +2099,15 @@ declare module BABYLON.GLTF2 {
          */
         thinFilmThicknessTexture: Nullable<BaseTexture>;
         /**
-         * Sets the unlit flag (OpenPBR: unlit, PBR: unlit)
+         * Sets the unlit flag
          */
         unlit: boolean;
         /**
-         * Sets/gets the geometry opacity (OpenPBR: geometryOpacity, PBR: alpha)
+         * Sets/gets the geometry opacity
          */
         geometryOpacity: number;
         /**
-         * Sets/gets the geometry normal texture (OpenPBR: geometryNormalTexture, PBR: bumpTexture)
+         * Sets/gets the geometry normal texture
          */
         geometryNormalTexture: Nullable<BaseTexture>;
         /**
@@ -2103,7 +2117,7 @@ declare module BABYLON.GLTF2 {
          */
         setNormalMapInversions(invertX: boolean, invertY: boolean): void;
         /**
-         * Sets/gets the coat normal texture (OpenPBR: geometryCoatNormalTexture, PBR: clearCoat.bumpTexture)
+         * Sets/gets the coat normal texture
          */
         geometryCoatNormalTexture: Nullable<BaseTexture>;
         /**
@@ -4349,6 +4363,49 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
+     * [Specification]
+     */
+    export class KHR_materials_fuzz implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_fuzz";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadFuzzPropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_fuzz extension.
+         */
+        ["KHR_materials_fuzz"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_emissive_strength/README.md)
      */
     export class KHR_materials_emissive_strength implements BABYLON.GLTF2.IGLTFLoaderExtension {
@@ -4524,6 +4581,56 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_coat/README.md)
+     * [Playground Sample](https://www.babylonjs-playground.com/frame.html#7F7PN6#8)
+     */
+    export class KHR_materials_coat implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_coat";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * Defines whether the KHR_materials_openpbr extension is used, indicating that
+         * the material should be interpreted as OpenPBR (for coat, this might be necessary
+         * to interpret anisotropy correctly).
+         */
+        private useOpenPBR;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadCoatPropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_coat extension.
+         */
+        ["KHR_materials_coat"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md)
      * [Playground Sample](https://www.babylonjs-playground.com/frame.html#7F7PN6#8)
      */
@@ -4552,9 +4659,6 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          */
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadClearCoatPropertiesAsync;
-        private _loadClearCoatDarkeningPropertiesAsync;
-        private _loadClearCoatColorPropertiesAsync;
-        private _loadClearCoatAnisotropyPropertiesAsync;
     }
 
 
