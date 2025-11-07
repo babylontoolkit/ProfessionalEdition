@@ -89,6 +89,8 @@ declare module BABYLON {
         private _refractionRTT;
         private _reflectionRTT;
         private _reflectionTransform;
+        private _offsetMirror;
+        private _tempPlane;
         private _lastTime;
         private _lastDeltaTime;
         private _waitingRenderList;
