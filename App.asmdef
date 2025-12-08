@@ -2,6 +2,16 @@
     "name": "App",
     "rootNamespace": "",
     "references": [
+        "DotRecast.Core",
+        "DotRecast.Recast",
+        "DotRecast.Detour",
+        "DotRecast.Detour.Crowd",
+        "DotRecast.Detour.Dynamic",
+        "DotRecast.Detour.Extras",
+        "DotRecast.Detour.TileCace",
+        "DotRecast.Recast.Toolset",
+        "UniRecast.Core",
+        "UniRecast.Toolset",
         "Unity.Newtonsoft.Json"
     ],
     "includePlatforms": ["Editor"],

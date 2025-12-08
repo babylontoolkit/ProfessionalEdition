@@ -1,0 +1,13 @@
+////////////////////////////////////////////////////////////////////////////////////////////////
+// Mackey Kinard - Babylon Toolkit Modifications
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace UniRecast.Core
+{
+    public static class UniRcConst
+    {
+        public const string Version = "2023.07.29";
+        public const string Tag = "Navigation";
+        public const int EverythingMask = ~0;
+    }
+}

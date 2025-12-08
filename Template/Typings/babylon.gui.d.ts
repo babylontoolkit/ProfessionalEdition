@@ -8297,6 +8297,7 @@ declare module BABYLON.GUI {
          */
         constructor(name: string, frameGraph: BABYLON.FrameGraph, adt?: AdvancedDynamicTexture);
         isReady(): boolean;
+        getClassName(): string;
         record(): void;
         dispose(): void;
     }

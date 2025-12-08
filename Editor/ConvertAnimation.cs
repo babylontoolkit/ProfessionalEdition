@@ -16,5 +16,4 @@ public class ConvertAnimation : Editor
         EditorUtility.DisplayDialog("Babylon Toolkit", dialog_warning, "OK");
     }
 }
-
 #endif

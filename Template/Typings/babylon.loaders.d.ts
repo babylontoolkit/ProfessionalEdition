@@ -6464,7 +6464,7 @@ declare module BABYLON {
      * @param loadingOptions Options for loading Gaussian Splatting files.
      * @returns A promise resolving to the parsed SPZ data.
      */
-    export function ParseSpz(data: ArrayBuffer, scene: Scene, loadingOptions: SPLATLoadingOptions): Promise<IParsedPLY>;
+    export function ParseSpz(data: ArrayBuffer, scene: Scene, loadingOptions: SPLATLoadingOptions): Promise<IParsedSplat>;
 
 
     /**
@@ -6490,6 +6490,10 @@ declare module BABYLON {
          * @example import * as fflate from 'fflate';
          */
         fflate?: unknown;
+        /**
+         * Disable automatic camera limits from being applied if they exist in the splat file
+         */
+        disableAutoCameraLimits?: boolean;
     };
 
 
@@ -6578,6 +6582,12 @@ declare module BABYLON {
         private _unzipWithFFlateAsync;
         private _parseAsync;
         /**
+         * Applies camera limits based on parsed meta data
+         * @param meta parsed splat meta data
+         * @param scene
+         */
+        private applyAutoCameraLimits;
+        /**
          * Load into an asset container.
          * @param scene The scene to load into
          * @param data The data to import
@@ -6616,7 +6626,7 @@ declare module BABYLON {
     /**
      * A parsed buffer and how to use it
      */
-    export interface IParsedPLY {
+    export interface IParsedSplat {
         data: ArrayBuffer;
         mode: Mode;
         faces?: number[];
@@ -6625,6 +6635,10 @@ declare module BABYLON {
         trainedWithAntialiasing?: boolean;
         compressed?: boolean;
         rawSplat?: boolean;
+        safeOrbitCameraRadiusMin?: number;
+        safeOrbitCameraElevationMinMax?: [number, number];
+        upAxis?: "X" | "Y" | "Z";
+        chirality?: "LeftHanded" | "RightHanded";
     }
 
 
@@ -6709,7 +6723,7 @@ declare module BABYLON {
      * @param scene The Babylon.js scene
      * @returns Parsed data
      */
-    export function ParseSogMeta(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedPLY>;
+    export function ParseSogMeta(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedSplat>;
 
 
 

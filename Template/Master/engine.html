@@ -218,6 +218,7 @@
     <script type="text/javascript" src="###SCRIPT###/babylon.materials.min.js"></script>
     <script type="text/javascript" src="###SCRIPT###/babylon.gui.min.js"></script>
     <script type="text/javascript" src="###SCRIPT###/babylon.gltf.min.js"></script>
+    <script type="text/javascript" src="###SCRIPT###/babylon.addons.min.js"></script>
 
     ###ADDONS###
 
@@ -659,29 +660,15 @@
             window.showErrorMessage(ex2.message || "Unknown Scene Exception");
         }
     };
-    window.recastDetourLoader = () => {
-        try {
-            if (typeof Recast !== "undefined") {
-                Recast().then((recast) => {
-                    globalThis.RECAST = recast;
-                    defaultSceneLoader();
-                });
-            } else {
-                window.defaultSceneLoader();
-            }
-        } catch (ex3) {
-            window.showErrorMessage(ex3.message || "Unknown Recast Exception");
-        }
-    };
     window.havokPhysicsLoader = () => {
         try {
             if (typeof HavokPhysics !== "undefined") {
                 HavokPhysics().then((havok) => {
                     globalThis.HK = havok;
-                    recastDetourLoader();
+                    defaultSceneLoader();
                 });
             } else {
-                window.recastDetourLoader();
+                window.defaultSceneLoader();
             }
         } catch (ex4) {
             window.showErrorMessage(ex4.message || "Unknown Havok Exception");
