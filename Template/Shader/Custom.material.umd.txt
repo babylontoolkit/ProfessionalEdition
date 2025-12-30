@@ -7,12 +7,16 @@ namespace #ROOTNAMESPACE# {
 
         public constructor(name: string, scene: BABYLON.Scene) {
             super(name, scene);
-            this.shader = this.getClassName();
+            this.shader = this.getShaderName();
             this.plugin = new #ROOTNAMESPACE#.#SHADERNAME#Plugin(this, this.shader);
         }
 
         public update(): void {
             /* Update values before binding */
+        }
+
+        public getShaderName(): string {
+            return "#SHADERNAME#";
         }
     }
     /**
@@ -90,10 +94,10 @@ namespace #ROOTNAMESPACE# {
 
         /** This gets the uniforms used in the shader code */
         public getUniforms(shaderLanguage: BABYLON.ShaderLanguage): any {
-            const wsgl: boolean = (shaderLanguage === BABYLON.ShaderLanguage.WGSL);
-            this.vertexDefinitions = this.getCustomShaderMaterial().getCustomVertexCode(wsgl);
-            this.fragmentDefinitions = this.getCustomShaderMaterial().getCustomFragmentCode(wsgl);
-            return this.getCustomShaderMaterial().getCustomUniforms(wsgl);
+            const wgsl: boolean = (shaderLanguage === BABYLON.ShaderLanguage.WGSL);
+            this.vertexDefinitions = this.getCustomShaderMaterial().getCustomVertexCode(wgsl);
+            this.fragmentDefinitions = (wgsl === true) ? this.getCustomShaderMaterial().getCustomFragmentCode(wgsl) : null;
+            return this.getCustomShaderMaterial().getCustomUniforms(wgsl);
         }
 
         /** This gets the samplers used in the shader code */
@@ -110,13 +114,13 @@ namespace #ROOTNAMESPACE# {
         
         /** This prepares the shader defines */
         public prepareDefines(defines: BABYLON.MaterialDefines, scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void {
-            if (!this.isEnabled) return;
+            if (!this.getIsEnabled()) return;
             this.getCustomShaderMaterial().prepareCustomDefines(defines);      
         }
 
         /** This is used to update the uniforms bound to a mesh */
         public bindForSubMesh(uniformBuffer: BABYLON.UniformBuffer, scene: BABYLON.Scene, engine: BABYLON.AbstractEngine, subMesh: BABYLON.SubMesh): void {
-            if (!this.isEnabled) return;
+            if (!this.getIsEnabled()) return;
             this.getCustomShaderMaterial().updateCustomBindings(uniformBuffer);
         }
     }

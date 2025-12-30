@@ -1,7 +1,6 @@
 Shader "Hidden/Export/EncodeTexture" {
     Properties {
         _MainTex ("Base (HDR RT)", 2D) = "black" {}
-		_GammaOut ("Gamma Out", float) = 1.0
         _EncodeHDR ("Encode HDR", int) = 0
         _FlipY("Flip texture Y", Int) = 0
     }
@@ -19,7 +18,6 @@ Shader "Hidden/Export/EncodeTexture" {
             struct vertOutput { float4 pos : SV_POSITION; float2 texcoord : TEXCOORD0; };
 
             sampler2D _MainTex;
-			float _GammaOut;
             int _EncodeHDR;
             int _FlipY;
 

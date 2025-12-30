@@ -5372,6 +5372,7 @@ declare module BABYLON.GUI {
         protected _getTypeName(): string;
         _draw(context: BABYLON.ICanvasRenderingContext): void;
         _measure(): void;
+        _layout(parentMeasure: Measure, context: BABYLON.ICanvasRenderingContext): boolean;
         protected _computeAlignment(parentMeasure: Measure): void;
         /**
          * Move one end of the line given 3D cartesian coordinates.
@@ -5550,7 +5551,7 @@ declare module BABYLON.GUI {
         protected _currentKey: string;
         protected _isTextHighlightOn: boolean;
         protected _textHighlightColor: string;
-        protected _highligherOpacity: number;
+        protected _highlighterOpacity: number;
         protected _highlightedText: string;
         private _startHighlightIndex;
         private _endHighlightIndex;
@@ -5594,9 +5595,17 @@ declare module BABYLON.GUI {
         /** Gets the maximum width allowed by the control in pixels */
         get maxWidthInPixels(): number;
         set maxWidth(value: string | number);
-        /** Gets or sets the text highlighter transparency; default: 0.4 */
+        /**
+         * Gets or sets the text highlighter transparency; default: 0.4
+         * @deprecated Please use highlighterOpacity instead
+         */
         get highligherOpacity(): number;
         set highligherOpacity(value: number);
+        /**
+         * Gets or sets the text highlighter transparency; default: 0.4
+         */
+        get highlighterOpacity(): number;
+        set highlighterOpacity(value: number);
         /** Gets or sets a boolean indicating whether to select complete text by default on input focus */
         get onFocusSelectAll(): boolean;
         set onFocusSelectAll(value: boolean);

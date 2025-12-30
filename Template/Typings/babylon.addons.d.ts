@@ -1744,6 +1744,10 @@ declare module ADDONS {
          */
         get attachedMesh(): BABYLON.AbstractMesh | null;
         set attachedMesh(value: BABYLON.AbstractMesh | null);
+        /**
+         * Attached node of this behavior
+         */
+        get attachedNode(): BABYLON.AbstractMesh | null;
         constructor(_captureCallback: () => void, _releaseCallback: () => void, { captureOnPointerEnter }?: {
             captureOnPointerEnter?: boolean | undefined;
         });
@@ -2480,6 +2484,8 @@ declare module ADDONS {
         USE_AERIAL_PERSPECTIVE_LUT: boolean;
         APPLY_AERIAL_PERSPECTIVE_INTENSITY: boolean;
         APPLY_AERIAL_PERSPECTIVE_RADIANCE_BIAS: boolean;
+        SAMPLE_TRANSMITTANCE_LUT: boolean;
+        EXCLUDE_RAY_MARCHING_FUNCTIONS: boolean;
         /**
          * Constructs the {@link AtmospherePBRMaterialDefines}.
          * @param useAerialPerspectiveLut - Whether to use the aerial perspective LUT.
@@ -3043,8 +3049,6 @@ declare module ADDONS {
          */
         private _drawSkyViewLut;
     }
-
-
 
 
     /** @internal */

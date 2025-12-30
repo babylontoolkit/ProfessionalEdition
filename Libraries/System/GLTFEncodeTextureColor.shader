@@ -1,7 +1,6 @@
 Shader "Hidden/Export/EncodeTextureColor" {
 	Properties {
 		_MainTex ("Base (HDR RT)", 2D) = "black" {}
-		_GammaOut ("Gamma Out", float) = 1.0
 		_EncodeHDR ("Encode HDR", int) = 0
         _TexColor("Texture Color", Color) = (1.0, 1.0, 1.0, 1.0)
 		_FlipY("Flip texture Y", Int) = 0
@@ -28,32 +27,28 @@ Shader "Hidden/Export/EncodeTextureColor" {
 			};
 
 			sampler2D _MainTex;
-			float _GammaOut;
 			int _EncodeHDR;
 		    float4 _TexColor;
 			int _FlipY;
 
-			float4 EncodeRGBD(float3 rgb)
-			{
-				float MaxRange = 256;
-				float maxRGB = max(rgb.r, max(rgb.g, rgb.b));
-				float D      = max(MaxRange / maxRGB, 1);
-				D            = saturate(floor(D) / 255.0);
-				// NOTE: BABYLONJS RGBA Encoding
-				// vec3 rgb = color.rgb * D;
-				// rgb = toGammaSpace(rgb); // Helps with png quantization.
-				// return vec4(rgb, D); 
-				return float4(rgb.rgb * (D * (255.0 / MaxRange)), D);
-			}
+            static const float rgbdMaxRange = 255.0;
+            static const float GammaEncodePowerApprox  = 1.0 / 2.2;
 
-			float3 DecodeRGBD(float4 rgbd)
-			{
-				float MaxRange = 256;
-				// NOTE: BABYLONJS RGBA Decoding
-				// rgbd.rgb = toLinearSpace(rgbd.rgb); // Helps with png quantization.
-				// return rgbd.rgb / rgbd.a;
-				return rgbd.rgb * ((MaxRange / 255.0) / rgbd.a);
-			}
+            float3 toGammaSpace(float3 c) { return pow(c, GammaEncodePowerApprox.xxx); }
+
+            float4 EncodeRGBD(float3 colorLinear)
+            {
+                colorLinear = max(colorLinear, 0.0);
+
+                float maxRGB = max(colorLinear.r, max(colorLinear.g, colorLinear.b));
+                if (maxRGB <= 0.0) return float4(0,0,0,1);
+
+                float D = max(rgbdMaxRange / maxRGB, 1.0);
+                D = clamp(floor(D) / 255.0, 0.0, 1.0);
+
+                float3 rgb = toGammaSpace(colorLinear * D);
+                return float4(rgb, D);
+            }
 
 			vertOutput vert(vertInput input)
 			{
@@ -68,13 +63,8 @@ Shader "Hidden/Export/EncodeTextureColor" {
 			float4 frag(vertOutput output) : COLOR
 			{
 				float4 result = tex2D(_MainTex, output.texcoord);
-				if(_GammaOut != 1.0){
-					result.rgb = pow(result.rgb, _GammaOut);
-				}
 				result.rgb *= _TexColor.rgb;
-				if (_EncodeHDR == 1) {
-					result = EncodeRGBD(result.rgb);
-				}
+				if (_EncodeHDR == 1) result = EncodeRGBD(result.rgb);
 				return result;
 			}
 	    	ENDCG

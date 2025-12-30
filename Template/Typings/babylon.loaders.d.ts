@@ -4933,6 +4933,10 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          * @internal
          */
         createMaterial(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonDrawMode: number): Nullable<Material>;
+        /**
+         * @internal
+         */
+        loadAnimationAsync(context: string, animation: BABYLON.GLTF2.Loader.IAnimation): Nullable<Promise<AnimationGroup>>;
     }
 
 
@@ -6494,6 +6498,10 @@ declare module BABYLON {
          * Disable automatic camera limits from being applied if they exist in the splat file
          */
         disableAutoCameraLimits?: boolean;
+        /**
+         * Mesh that will be used to load data instead of creating a new one
+         */
+        gaussianSplattingMesh?: GaussianSplattingMesh;
     };
 
 
@@ -7221,24 +7229,6 @@ declare module BABYLON {
          */
         loadAssetContainerAsync(scene: Scene, data: unknown): Promise<AssetContainer>;
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
