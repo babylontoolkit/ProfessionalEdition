@@ -5351,7 +5351,7 @@ declare module BABYLON {
 
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
-        interface IGLTFToFlowGraphMappingObject<I = any, O = any> {
+        interface IGLTFToFlowGraphMappingObject {
         /**
          * The name of the property in the FlowGraph block.
          */
@@ -5369,16 +5369,15 @@ declare module BABYLON.GLTF2.Loader.Extensions {
         /**
          * A function that transforms the data from the glTF to the FlowGraph block.
          */
-        dataTransformer?: (data: I[], parser: BABYLON.GLTF2.Loader.Extensions.InteractivityGraphToFlowGraphParser) => O[];
+        dataTransformer?: (data: any, parser: BABYLON.GLTF2.Loader.Extensions.InteractivityGraphToFlowGraphParser) => any;
+        /**
+         * If the property can contain multiple values.
+         */
+        isArray?: boolean;
         /**
          * If the property is in the options passed to the constructor of the block.
          */
         inOptions?: boolean;
-        /**
-         * If the property is a pointer to a value.
-         * This will add an extra JsonPointerParser block to the graph.
-         */
-        isPointer?: boolean;
         /**
          * If the property is an index to a value.
          * if defined this will be the name of the array to find the object in.
@@ -5393,7 +5392,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
         /**
          * Used in configuration values. If defined, this will be the default value, if no value is provided.
          */
-        defaultValue?: O;
+        defaultValue?: any;
     }
     export interface IGLTFToFlowGraphMapping {
         /**
