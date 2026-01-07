@@ -27,7 +27,7 @@ public class CopyTransform : MonoBehaviour
         }
     }
 
-    [SerializeField]
+    [System.Serializable]
     public class TransformData
     {
         public Vector3 LocalPosition = Vector3.zero;
