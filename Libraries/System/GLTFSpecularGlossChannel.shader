@@ -2,8 +2,9 @@
 	Properties{
 		_SpecularGlossMap("Texture", 2D) = "white" {}
 		_AlbedoTexture("Texture", 2D) = "white" {}
-		_AlbedoHasAlpha("Albedo Has Alpha", Int) = 0
+		_SmoothnessFromAlbedoAlpha("Smoothness From Albedo Alpha", Int) = 0
 		_GlossinessScale("Glossiness Scale", float) = 1.0
+		_SpecularColor("Specular Color", Color) = (1,1,1,1)
 		_FlipY("Flip texture Y", Int) = 0
         _GLTF("Is GLTF", Int) = 0
 	}
@@ -31,8 +32,9 @@
 
 			sampler2D _SpecularGlossMap;
 			sampler2D _AlbedoTexture;
-			int _AlbedoHasAlpha;
+			int _SmoothnessFromAlbedoAlpha;
 			float _GlossinessScale;
+			float4 _SpecularColor;
 			int _FlipY;
 			int _GLTF;
 
@@ -45,35 +47,28 @@
 			}
 
 			float4 frag(vertOutput output) : COLOR {
-				float4 unitySpecGloss = tex2D(_SpecularGlossMap, output.texcoord);
-				float4 gltfSpecGloss = float4(0.0, 0.0, 0.0, 1.0);
+				float4 src = tex2D(_SpecularGlossMap, output.texcoord);
+				float4 outTex = float4(0.0, 0.0, 0.0, 1.0);
 
+				// Bake specular factor into RGB so glTF specularFactor can be [1,1,1].
+				outTex.rgb = src.rgb * _SpecularColor.rgb;
+
+				float glossiness;
 				if (_GLTF == 1) {
-					// glTF texture already packed as SpecularGlossiness
-					// R = Spec.R, G = Spec.G, B = Spec.B, A = Glossiness
-					gltfSpecGloss = unitySpecGloss;
+					glossiness = src.a;
 				} else {
-					// Unity-style Specular workflow:
-					// RGB = specular color
-					// A = glossiness (to be passed through)
-					gltfSpecGloss.rgb = unitySpecGloss.rgb;
-
-					float glossiness;
-					if (_AlbedoHasAlpha == 1) {
+					// IMPORTANT: use albedo alpha only when Unity is configured to store smoothness there.
+					if (_SmoothnessFromAlbedoAlpha == 1) {
 						float4 albedo = tex2D(_AlbedoTexture, output.texcoord);
 						glossiness = albedo.a;
 					} else {
-						glossiness = unitySpecGloss.a;
+						glossiness = src.a;
 					}
-
-					// Optional: apply glossiness scale if needed
-					// gltfSpecGloss.a = glossiness * _GlossinessScale;
-
-					// Final result: unscaled for clean glTF export
-					gltfSpecGloss.a = glossiness;
 				}
 
-				return gltfSpecGloss;
+				// Bake glossiness scale into A so glTF glossinessFactor can be 1.0.
+				outTex.a = saturate(glossiness * _GlossinessScale);
+				return outTex;
 			}
 
 			ENDCG
