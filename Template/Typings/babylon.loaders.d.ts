@@ -262,6 +262,10 @@ declare module BABYLON {
          * @experimental
          */
         useOpenPBR: boolean;
+        /**
+         * If true, the loader will not use the transmission helper when loading materials with transmission.
+         */
+        dontUseTransmissionHelper: boolean;
     }
     /**
      * The default GLTF loader options.
