@@ -3,7 +3,8 @@
 	Properties
 	{
 		_BumpMap ("Normal Texture", 2D) = "white" {}
-		_FlipY("Flip texture Y", Int) = 0
+		_FlipY("Flip texture Y", Int) = 0			
+		_FlipNormalY("Flip Normal Y (invert green)", Int) = 0
 	}
 	SubShader
 	{
@@ -29,6 +30,7 @@
 			
 			sampler2D _BumpMap;
 			int _FlipY;
+			int _FlipNormalY;
 
 			 vertOutput vert(vertInput input) {
 				 vertOutput o;
@@ -41,7 +43,10 @@
 
 			float4 frag(vertOutput output) : COLOR {
 				float4 bump = tex2D(_BumpMap, output.texcoord);
- 				fixed3 normal = (0.5f + 0.5f * UnpackNormal(bump));
+				float3 unpack = UnpackNormal(bump);
+				// if (_FlipNormalY == 1) unpack.y = -unpack.y; // invert green channel (Y)
+				// unpack.y = -unpack.y; // invert green channel (Y)
+ 				fixed3 normal = (0.5f + 0.5f * unpack);
 				return float4(normal.rgb, 1.0);
 			}
 			ENDCG
