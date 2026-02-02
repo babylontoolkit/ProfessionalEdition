@@ -242,8 +242,8 @@ Shader "Babylon/Custom/#NAME#" {
                 half4 color = UniversalFragmentPBR(inputData, surfaceData);
 
                 // EXAMPLE BLACK AND WHITE FILTER
-                // half luma = color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
-                // color.rgb = half3(luma, luma, luma);
+                half luma = color.r * 0.299 + color.g * 0.587 + color.b * 0.114;
+                color.rgb = half3(luma, luma, luma);
 
                 color.rgb = MixFog(color.rgb, inputData.fogCoord);
                 color.a = OutputAlpha(color.a, IsSurfaceTypeTransparent(_Surface));

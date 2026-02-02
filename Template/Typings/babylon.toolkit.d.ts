@@ -2349,6 +2349,123 @@ declare namespace TOOLKIT {
         static buildPermutationTable(random: RandomFn): Uint8Array;
     }
 }
+declare namespace TOOLKIT {
+    /**
+      * GLTF Custom Shader Material (BABYLON.StandardMaterial)
+      * @class StandardShaderMaterial - All rights reserved (c) 2024 Mackey Kinard
+      */
+    class StandardShaderMaterial extends BABYLON.StandardMaterial {
+        universalMaterial: boolean;
+        private _defines;
+        private _uniforms;
+        private _samplers;
+        private _attributes;
+        private _textures;
+        private _vectors4;
+        private _vectors3;
+        private _vectors2;
+        private _floats;
+        private _bools;
+        private _ubos;
+        /** Track WGSL samplers emitted for this material to avoid duplicate declarations (WGSL has no preprocessor) */
+        private _wgslSamplers;
+        protected shader: string;
+        protected plugin: BABYLON.MaterialPluginBase;
+        getClassName(): string;
+        constructor(name: string, scene: BABYLON.Scene);
+        /** Adds a custom attribute property */
+        addAttribute(attributeName: string): void;
+        /** Checks uniform values. Internal Use Only */
+        checkUniform(uniformName: string, type: string, value?: any): void;
+        /** Checks sampler values. Internal Use Only */
+        checkSampler(samplerName: string, texture?: any): void;
+        /** Adds a texture uniform property */
+        addTextureUniform(name: string, texture: BABYLON.Texture): TOOLKIT.StandardShaderMaterial;
+        /** Sets the texture uniform value */
+        setTextureValue(name: string, texture: BABYLON.Texture): TOOLKIT.StandardShaderMaterial;
+        /** Gets the texture uniform value */
+        getTextureValue(name: string): BABYLON.Texture;
+        /** Adds a vector4 uniform property */
+        addVector4Uniform(name: string, value: BABYLON.Vector4): TOOLKIT.StandardShaderMaterial;
+        /** Sets the vector4 uniform value */
+        setVector4Value(name: string, value: BABYLON.Vector4): TOOLKIT.StandardShaderMaterial;
+        /** Gets the vector4 uniform value */
+        getVector4Value(name: string): BABYLON.Vector4;
+        /** Adds a vector3 uniform property */
+        addVector3Uniform(name: string, value: BABYLON.Vector3): TOOLKIT.StandardShaderMaterial;
+        /** Sets the vector3 uniform value */
+        setVector3Value(name: string, value: BABYLON.Vector3): TOOLKIT.StandardShaderMaterial;
+        /** Gets the vector3 uniform value */
+        getVector3Value(name: string): BABYLON.Vector3;
+        /** Adds a vector2 uniform property */
+        addVector2Uniform(name: string, value: BABYLON.Vector2): TOOLKIT.StandardShaderMaterial;
+        /** Sets the vector2 uniform value */
+        setVector2Value(name: string, value: BABYLON.Vector2): TOOLKIT.StandardShaderMaterial;
+        /** Gets the vector2 uniform value */
+        getVector2Value(name: string): BABYLON.Vector2;
+        /** Adds a float uniform property */
+        addFloatUniform(name: string, value: number): TOOLKIT.StandardShaderMaterial;
+        /** Sets the float uniform value */
+        setFloatValue(name: string, value: number): TOOLKIT.StandardShaderMaterial;
+        /** Gets the float uniform value */
+        getFloatValue(name: string): number;
+        /** Adds a boolean uniform property */
+        addBoolUniform(name: string, value: boolean): TOOLKIT.StandardShaderMaterial;
+        /** Sets the boolean uniform value */
+        setBoolValue(name: string, value: boolean): TOOLKIT.StandardShaderMaterial;
+        /** Gets the boolean uniform value */
+        getBoolValue(name: string): boolean;
+        /** Gets the animatables */
+        getAnimatables(): BABYLON.IAnimatable[];
+        /** Gets the active textures */
+        getActiveTextures(): BABYLON.BaseTexture[];
+        /** Has the specified texture */
+        hasTexture(texture: BABYLON.BaseTexture): boolean;
+        /** Gets this custom material uniforms */
+        getCustomUniforms(wgsl: boolean): any;
+        /** Gets this custom material uniforms */
+        getCustomSamplers(): string[];
+        /** Gets this custom material attributes */
+        getCustomAttributes(): string[];
+        /** Gets this custom material vertex source */
+        getCustomVertexCode(wgsl: boolean): string;
+        /** Gets this custom material fragment source */
+        getCustomFragmentCode(wgsl: boolean): string;
+        /** Prepares the custom material defines */
+        prepareCustomDefines(defines: BABYLON.MaterialDefines): void;
+        /** Update custom material bindings */
+        updateCustomBindings(effectOrUniformBuffer: BABYLON.UniformBuffer | BABYLON.Effect): void;
+        /** Update custom material bindings */
+        legacyUpdateCustomBindings(effect: BABYLON.UniformBuffer): void;
+        /** Builds a custom uniform property */
+        protected buildUniformProperty(uniformName: string, uniformType: string, uniformValue: any): void;
+    }
+    /**
+      * GLTF Custom Shader Material Plugin (BABYLON.MaterialPluginBase)
+      * @class StandardShaderMaterialPlugin - All rights reserved (c) 2024 Mackey Kinard
+      */
+    class StandardShaderMaterialPlugin extends BABYLON.MaterialPluginBase {
+        private _isEnabled;
+        getClassName(): string;
+        /**
+         * Creates a new material plugin
+         * @param material parent material of the plugin
+         * @param name name of the plugin
+         * @param priority priority of the plugin
+         * @param defines list of defines used by the plugin. The value of the property is the default value for this property
+         * @param addToPluginList true to add the plugin to the list of plugins managed by the material plugin manager of the material (default: true)
+         * @param enable true to enable the plugin (it is handy if the plugin does not handle properties to switch its current activation)
+         * @param resolveIncludes Indicates that any #include directive in the plugin code must be replaced by the corresponding code (default: false)
+         */
+        constructor(material: BABYLON.Material, name: string, priority: number, defines?: {}, addToPluginList?: boolean, enable?: boolean, resolveIncludes?: boolean);
+        getIsEnabled(): boolean;
+        setIsEnabled(enabled: boolean): void;
+        vertexDefinitions: string;
+        fragmentDefinitions: string;
+        /** Gets a reference to the custom shader material */
+        getCustomShaderMaterial(): TOOLKIT.StandardShaderMaterial;
+    }
+}
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
     /**
@@ -2882,23 +2999,125 @@ declare namespace TOOLKIT {
         private GLSL_FormatTerrainFragmentDefintions;
         private GLSL_FormatTerrainFragmentUpdateColor;
     }
+}
+declare namespace TOOLKIT {
     /**
-     * Grass Billboard Shader Material (BABYLON.PBRMaterial)
+     * Grass Standard Shader Material (BABYLON.StandardMaterial)
+     * Implements Unity-exact TerrainWaveGrass algorithm for rolling wave effect
+     * No billboard grass faces camera and waves with rolling bands effect
+     * @class GrassStandardMaterial
+     */
+    class GrassStandardMaterial extends TOOLKIT.StandardShaderMaterial {
+        private _windTimeAccum;
+        private _lastUpdateFrame;
+        constructor(name: string, scene: BABYLON.Scene);
+        update(): void;
+        getShaderName(): string;
+        getMaxDistance(): number;
+        setMaxDistance(distance: number): void;
+        getFadeStart(): number;
+        setFadeStart(distance: number): void;
+        getWaveSpeed(): number;
+        setWaveSpeed(speed: number): void;
+        getWaveSize(): number;
+        setWaveSize(size: number): void;
+        getWindAmount(): number;
+        setWindAmount(amount: number): void;
+        getWindTint(): BABYLON.Vector4;
+        setWindTint(tint: BABYLON.Vector4): void;
+        getShadowIntensity(): number;
+        setShadowIntensity(intensity: number): void;
+    }
+    /**
+     * Grass Standard Shader Material Plugin (BABYLON.MaterialPluginBase)
+     * Implements Unity TerrainEngine.cginc TerrainWaveGrass algorithm exactly
+     * @class GrassStandardMaterialPlugin
+     */
+    class GrassStandardMaterialPlugin extends TOOLKIT.StandardShaderMaterialPlugin {
+        constructor(customMaterial: TOOLKIT.StandardShaderMaterial, shaderName: string);
+        isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean;
+        getCustomCode(shaderType: string, shaderLanguage: BABYLON.ShaderLanguage): any;
+        private getWGSLVertexMainEnd;
+        private getWGSLVertexWorldPos;
+        private getGLSLVertexDefinitions;
+        private getGLSLVertexMainEnd;
+        private getGLSLVertexWorldPos;
+        private getWGSLFragmentCode;
+        private getGLSLFragmentCode;
+        getUniforms(shaderLanguage: BABYLON.ShaderLanguage): any;
+        getSamplers(samplers: string[]): void;
+        getAttributes(attributes: string[], scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        prepareDefines(defines: BABYLON.MaterialDefines, scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        bindForSubMesh(uniformBuffer: BABYLON.UniformBuffer, scene: BABYLON.Scene, engine: BABYLON.AbstractEngine, subMesh: BABYLON.SubMesh): void;
+    }
+}
+declare namespace TOOLKIT {
+    /**
+     * Grass Billboard Shader Material (BABYLON.StandardMaterial)
+     * Implements Unity-exact TerrainWaveGrass algorithm for rolling wave effect
+     * No billboard grass faces camera and waves with rolling bands effect
      * @class GrassBillboardMaterial
      */
-    class GrassBillboardMaterial extends TOOLKIT.CustomShaderMaterial {
+    class GrassBillboardMaterial extends TOOLKIT.StandardShaderMaterial {
+        private _windTimeAccum;
+        private _lastUpdateFrame;
+        constructor(name: string, scene: BABYLON.Scene);
+        update(): void;
+        getShaderName(): string;
+        getMaxDistance(): number;
+        setMaxDistance(distance: number): void;
+        getFadeStart(): number;
+        setFadeStart(distance: number): void;
+        getWaveSpeed(): number;
+        setWaveSpeed(speed: number): void;
+        getWaveSize(): number;
+        setWaveSize(size: number): void;
+        getWindAmount(): number;
+        setWindAmount(amount: number): void;
+        getWindTint(): BABYLON.Vector4;
+        setWindTint(tint: BABYLON.Vector4): void;
+        getShadowIntensity(): number;
+        setShadowIntensity(intensity: number): void;
+        getSphericalBillboardEnabled(): boolean;
+        setSphericalBillboardEnabled(enabled: boolean): void;
+    }
+    /**
+     * Grass Billboard Shader Material Plugin (BABYLON.MaterialPluginBase)
+     * Implements Unity TerrainEngine.cginc TerrainWaveGrass algorithm exactly
+     * @class GrassBillboardMaterialPlugin
+     */
+    class GrassBillboardMaterialPlugin extends TOOLKIT.StandardShaderMaterialPlugin {
+        constructor(customMaterial: TOOLKIT.StandardShaderMaterial, shaderName: string);
+        isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean;
+        getCustomCode(shaderType: string, shaderLanguage: BABYLON.ShaderLanguage): any;
+        private getWGSLVertexMainEnd;
+        private getWGSLVertexWorldPos;
+        private getGLSLVertexDefinitions;
+        private getGLSLVertexMainEnd;
+        private getGLSLVertexWorldPos;
+        private getWGSLFragmentCode;
+        private getGLSLFragmentCode;
+        getUniforms(shaderLanguage: BABYLON.ShaderLanguage): any;
+        getSamplers(samplers: string[]): void;
+        getAttributes(attributes: string[], scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        prepareDefines(defines: BABYLON.MaterialDefines, scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        bindForSubMesh(uniformBuffer: BABYLON.UniformBuffer, scene: BABYLON.Scene, engine: BABYLON.AbstractEngine, subMesh: BABYLON.SubMesh): void;
+    }
+}
+declare namespace TOOLKIT {
+    /**
+     * Tree Branch Shader Material (BABYLON.PBRMaterial)
+     * @class TreeBranchMaterial
+     */
+    class TreeBranchMaterial extends TOOLKIT.CustomShaderMaterial {
         private _windTimeAccum;
         constructor(name: string, scene: BABYLON.Scene);
         update(): void;
         getShaderName(): string;
-        setRotationEnabled(enabled: boolean): void;
-        getRotationEnabled(): boolean;
+        setWindDirection(x: number, y: number, z: number): void;
+        getWindDirection(): BABYLON.Vector4;
     }
-    /**
-     * Grass Billboard Shader Material Plugin (BABYLON.MaterialPluginBase)
-     * @class GrassBillboardMaterialPlugin
-     */
-    class GrassBillboardMaterialPlugin extends TOOLKIT.CustomShaderMaterialPlugin {
+    class TreeBranchMaterialPlugin extends TOOLKIT.CustomShaderMaterialPlugin {
         constructor(customMaterial: TOOLKIT.CustomShaderMaterial, shaderName: string);
         isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean;
         getCustomCode(shaderType: string, shaderLanguage: BABYLON.ShaderLanguage): any;
@@ -2907,6 +3126,14 @@ declare namespace TOOLKIT {
         getAttributes(attributes: string[], scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
         prepareDefines(defines: BABYLON.MaterialDefines, scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
         bindForSubMesh(uniformBuffer: BABYLON.UniformBuffer, scene: BABYLON.Scene, engine: BABYLON.AbstractEngine, subMesh: BABYLON.SubMesh): void;
+        /**
+         * Attempt to locate a serialized Unity WindZone payload for this terrain.
+         * The exporter may store WindZones outside of terrain.properties (e.g. terrain.windzones[]),
+         * so we probe a few likely metadata locations (properties, node.metadata, node.metadata.toolkit, etc).
+         *
+         * For now we return the "best" zone (prefer Directional and higher windMain).
+         */
+        static ExtractWindZoneOverride(properties: any, terrainTransform: BABYLON.TransformNode, builderInstance?: any): any | null;
     }
 }
 /** Babylon Toolkit Namespace */
@@ -4062,6 +4289,19 @@ declare namespace TOOLKIT {
         static CreateStreamingSound(name: string, source: HTMLMediaElement | string | string[], options?: Partial<BABYLON.IStreamingSoundOptions>): Promise<BABYLON.StreamingSound>;
     }
 }
+declare namespace TOOLKIT {
+    class ChannelMixerPlugin {
+        /**
+         * Creates a post-process that applies channel mixing.
+         * Unity channel mixer: each output channel (R,G,B) is a weighted sum of input channels (R,G,B).
+         */
+        static CreatePostProcess(scene: BABYLON.Scene, camera: BABYLON.Camera, options?: {
+            red?: number[];
+            green?: number[];
+            blue?: number[];
+        }): BABYLON.PostProcess;
+    }
+}
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
     /**
@@ -4259,6 +4499,36 @@ declare namespace TOOLKIT {
      * Babylon toolkit universal character controller pro class (Universal Character Controller System)
      */
     type UniversalCharacterController = TOOLKIT.CharacterController | TOOLKIT.SimpleCharacterController | TOOLKIT.RecastCharacterController;
+}
+declare namespace TOOLKIT {
+    class ColorFilterPlugin {
+        /**
+         * Creates a post-process that applies a color filter (multiplies the final color).
+         */
+        static CreatePostProcess(scene: BABYLON.Scene, camera: BABYLON.Camera, options?: {
+            color?: number[] | BABYLON.Color3 | BABYLON.Color4;
+        }): BABYLON.PostProcess;
+    }
+}
+declare namespace TOOLKIT {
+    class ColoredBloomPlugin {
+        /**
+         * Creates a colored bloom chain:
+         * - Prefilter PostProcess: extracts bright parts above threshold and tints with bloomColor
+         * - Blur Passes: two BlurPostProcess passes (horz + vert)
+         * - Composite PostProcess: additive blend back onto the final image
+         */
+        static CreateColoredBloom(scene: BABYLON.Scene, camera: BABYLON.Camera, options?: {
+            threshold?: number;
+            color?: number[] | BABYLON.Color3 | BABYLON.Color4;
+            weight?: number;
+            kernel?: number;
+            ratio?: number;
+            passes?: number;
+            saturation?: number;
+            downsampleRatio?: number;
+        }): any;
+    }
 }
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
@@ -4635,6 +4905,138 @@ declare namespace TOOLKIT {
         static Utilsdefaults: (options: any, defaults: any) => any;
     }
 }
+declare namespace TOOLKIT {
+    class LUTBlendPlugin {
+        /**
+         * Creates a post-process that applies cross-faded LUTs to the rendered image.
+         * Assumes LUTs are exported as 2D textures arranged as NxN tiles.
+         */
+        static CreatePostProcess(scene: BABYLON.Scene, camera: BABYLON.Camera, options?: {
+            lutA?: string | BABYLON.Texture;
+            lutB?: string | BABYLON.Texture;
+            mix?: number;
+        }): BABYLON.PostProcess;
+        /**
+         * Returns WGSL shader code for LUT blend (for WebGPU). Uses texture_2d sampling with vec2 coords.
+         */
+        getWGSLShaderCode(): string;
+    }
+}
+declare namespace TOOLKIT {
+    /**
+     * Unity-Style Lens Distortion Plugin
+     * Implements barrel/pincushion distortion for post-processing
+     */
+    class LensDistortionPlugin {
+        private _distortionIntensity;
+        private _distortionIntensityX;
+        private _distortionIntensityY;
+        private _distortionCenterX;
+        private _distortionCenterY;
+        private _distortionScale;
+        private _isEnabled;
+        /**
+         * Gets the distortion intensity
+         */
+        get distortionIntensity(): number;
+        /**
+         * Sets the distortion intensity
+         */
+        set distortionIntensity(value: number);
+        /**
+         * Gets the horizontal distortion intensity
+         */
+        get distortionIntensityX(): number;
+        /**
+         * Sets the horizontal distortion intensity
+         */
+        set distortionIntensityX(value: number);
+        /**
+         * Gets the vertical distortion intensity
+         */
+        get distortionIntensityY(): number;
+        /**
+         * Sets the vertical distortion intensity
+         */
+        set distortionIntensityY(value: number);
+        /**
+         * Gets the horizontal center of distortion (0-1)
+         */
+        get distortionCenterX(): number;
+        /**
+         * Sets the horizontal center of distortion (0-1)
+         */
+        set distortionCenterX(value: number);
+        /**
+         * Gets the vertical center of distortion (0-1)
+         */
+        get distortionCenterY(): number;
+        /**
+         * Sets the vertical center of distortion (0-1)
+         */
+        set distortionCenterY(value: number);
+        /**
+         * Gets the distortion scale factor
+         */
+        get distortionScale(): number;
+        /**
+         * Sets the distortion scale factor
+         */
+        set distortionScale(value: number);
+        /**
+         * Gets whether the effect is enabled
+         */
+        get isEnabled(): boolean;
+        /**
+         * Updates the enabled state based on distortion values
+         */
+        private _updateEnabledState;
+        /**
+         * Creates a new LensDistortionPlugin
+         * @param options Plugin options (optional)
+         */
+        constructor(options?: {
+            distortionIntensity?: number;
+            distortionIntensityX?: number;
+            distortionIntensityY?: number;
+            distortionCenterX?: number;
+            distortionCenterY?: number;
+            distortionScale?: number;
+        });
+        /**
+         * Gets the uniforms for the shader
+         */
+        getUniforms(): {
+            [key: string]: {
+                type: string;
+                value: any;
+            };
+        };
+        /**
+         * Gets the GLSL fragment shader code for the distortion effect
+         */
+        getFragmentShaderCode(): string;
+        /**
+         * Gets the WGSL shader code for the distortion effect
+         */
+        getWGSLShaderCode(): string;
+        /**
+         * Creates a post-process version of the lens distortion effect
+         * @param scene The scene to create the post-process in
+         * @param camera The camera to attach the post-process to
+         * @param options Post-process options
+         * @returns The created post-process
+         */
+        static CreatePostProcess(scene: any, camera: any, options?: {
+            distortionIntensity?: number;
+            distortionIntensityX?: number;
+            distortionIntensityY?: number;
+            distortionCenterX?: number;
+            distortionCenterY?: number;
+            distortionScale?: number;
+        }): any;
+    }
+}
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
     /**
@@ -4762,6 +5164,76 @@ declare namespace TOOLKIT {
         DT_CROWDAGENT_STATE_INVALID = 0,///< The agent is not in a valid state.
         DT_CROWDAGENT_STATE_WALKING = 1,///< The agent is traversing a normal navigation mesh polygon.
         DT_CROWDAGENT_STATE_OFFMESH = 2
+    }
+}
+declare namespace TOOLKIT {
+    /**
+     * Babylon Script Component
+     * @class PostProcessor
+     */
+    class PostProcessor extends TOOLKIT.ScriptComponent {
+        private static GlobalInstance;
+        static get Instance(): PostProcessor;
+        private highDynamicRange;
+        private neutralToneMapping;
+        private toneMappingMode;
+        private defaultContrast;
+        private defaultExposure;
+        private defaultLookupTable;
+        private colorGradingSettings;
+        private bloomSettings;
+        private vignetteSettings;
+        private sharpenSettings;
+        private grainSettings;
+        private chromaticAberrationSettings;
+        private depthOfFieldSettings;
+        private motionBlurSettings;
+        private lensDistortionSettings;
+        private autoExposureSettings;
+        private colorFilterPP;
+        private coloredBloomPP;
+        private motionBlurPP;
+        private roundedVignettePP;
+        private lensDistortionPP;
+        private defaultRenderPipeline;
+        private screenSpaceAOPipeline;
+        private screenSpaceRPipeline;
+        GetDefaultRenderPipeline(): BABYLON.DefaultRenderingPipeline;
+        GetSSAORRenderPipeline(): BABYLON.SSAORenderingPipeline;
+        GetSSRRenderPipeline(): BABYLON.SSRRenderingPipeline;
+        constructor(transform: BABYLON.TransformNode, scene: BABYLON.Scene, properties?: any, alias?: string);
+        protected ready(): void;
+        protected parseColorGradingSettings(settings: any): any;
+        protected applyColorGradingSettings(): void;
+        protected mapToneMapper(tonemapperParam: any): {
+            enabled: boolean;
+            type: number | null;
+        };
+        protected parseBloomSettings(settings: any): any;
+        protected applyBloomSettings(): void;
+        protected parseSharpenSettings(settings: any): any;
+        protected applySharpenSettings(): void;
+        protected parseGrainSettings(settings: any): any;
+        protected applyGrainSettings(): void;
+        protected parseVignetteSettings(settings: any): any;
+        protected applyVignetteSettings(): void;
+        protected parseDepthOfFieldSettings(settings: any): any;
+        protected applyDepthOfFieldSettings(): void;
+        protected parseMotionBlurSettings(settings: any): any;
+        protected applyMotionBlurSettings(): void;
+        protected parseAutoExposure(settings: any): any;
+        protected applyAutoExposureSettings(): void;
+        protected parseLensDistortionSettings(settings: any): any;
+        protected applyLensDistortionSettings(): void;
+        protected parseChromaticAberrationSettings(settings: any): any;
+        protected applyChromaticAberrationSettings(): void;
+        protected parseAmbientOcclusionSettings(settings: any): any;
+        protected parseScreenSpaceReflectionsSettings(settings: any): any;
+        static unwrapParam(param: any): any;
+        static extractParam(param: any): {
+            value: any;
+            overrideState: boolean | null;
+        };
     }
 }
 /** Babylon Toolkit Namespace */
@@ -5152,6 +5624,18 @@ declare namespace TOOLKIT {
          * Ignores the body passed if it is in the query
          */
         ignoreBody?: BABYLON.PhysicsBody;
+    }
+}
+declare namespace TOOLKIT {
+    class RoundedVignettePlugin {
+        static CreatePostProcess(scene: BABYLON.Scene, camera: BABYLON.Camera, options?: {
+            color?: number[] | BABYLON.Color3 | BABYLON.Color4;
+            center?: number[];
+            intensity?: number;
+            smoothness?: number;
+            rounded?: boolean;
+            blendMode?: string | number;
+        }): BABYLON.PostProcess;
     }
 }
 /** Babylon Toolkit Namespace */
@@ -5846,12 +6330,14 @@ declare namespace TOOLKIT {
         detailpatchcount?: number;
         detailresolution?: number;
         detailresolutionperpatch?: number;
-        detailgrasscolorintensity?: number;
+        detailbillboardingmode?: number;
+        detailgrassshadowlevel?: number;
+        detailgrassreceiveshadows?: boolean;
         detailobjectdensity?: number;
         detailobjectdistance?: number;
         wavinggrassamount?: number;
         wavinggrassspeed?: number;
-        wavinggrassstrength?: number;
+        wavinggrasssize?: number;
         wavinggrasstint?: number[];
         detaillayers?: TOOLKIT.IDetailLayerData[];
         detailscattermode?: string;
@@ -5871,9 +6357,10 @@ declare namespace TOOLKIT {
     class TerrainBuilder extends TOOLKIT.ScriptComponent {
         private detailLayerContainers;
         private detailMeshSources;
+        static grassHeightScale: number;
         static grassRandomFlip: boolean;
         static grassCastShadows: boolean;
-        static grassHeightScale: number;
+        static grassReceiveFog: boolean;
         static grassColorCorrectionMode: TOOLKIT.ColorCorrectionMode;
         static detailChunkMode: number;
         static detailChunkTargetInstances: number;
@@ -5900,9 +6387,9 @@ declare namespace TOOLKIT {
          */
         private static BuildMeshDetailLayer;
         /**
-         * Build billboard-based detail layer (2D grass billboards)
+         * Build grass-based detail layer
          */
-        private static BuildBillboardDetailLayer;
+        private static BuildGrassDetailLayer;
         /**
          * Generate mesh detail instances from Unity's authoritative ComputeDetailInstanceTransforms export.
          * This is used ONLY for mesh detail prototypes (rocks/props/etc) and is intended to match Unity 100%.
@@ -5935,9 +6422,9 @@ declare namespace TOOLKIT {
          */
         private static CreateDetailThinInstancesFromDensityMap;
         /**
-         * Create billboard mesh for grass
+         * Create prototype mesh for grass
          */
-        private static CreateBillboardMesh;
+        private static CreateGrassPrototype;
         /**
          * Create a single quad billboard (Unity GrassBillboard mode)
          */
@@ -5945,9 +6432,6 @@ declare namespace TOOLKIT {
         /**
          * Create crossed quads (Unity "Grass" mode, non-billboard).
          * Two vertical quads intersecting at the center (one in X/Y, one in Z/Y).
-         *
-         * NOTE: This mesh relies on the GrassBillboardMaterial vertex shader using BOTH
-         * positionUpdated.x and positionUpdated.z when billboard rotation is disabled.
          */
         private static CreateCrossQuadGrass;
         /**

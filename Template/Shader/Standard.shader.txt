@@ -127,8 +127,8 @@ Shader "Babylon/Custom/#NAME#" {
             fixed4 c = tex2D (_MainTex, IN.uv_MainTex) * _Color;
 
             // EXAMPLE BLACK AND WHITE FILTER
-            // fixed luma = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
-            // c.rgb = fixed3(luma, luma, luma);
+            fixed luma = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+            c.rgb = fixed3(luma, luma, luma);
             
             o.Albedo = c.rgb;
             

@@ -76,20 +76,20 @@ namespace #ROOTNAMESPACE# {
                 if (shaderLanguage === BABYLON.ShaderLanguage.WGSL) {
                     return {
                         // EXAMPLE BLACK AND WHITE FILTER
-                        // CUSTOM_FRAGMENT_DEFINITIONS: this.fragmentDefinitions,
-                        // CUSTOM_FRAGMENT_MAIN_END: `
-                        //     var luma = fragmentOutputs.color.r*0.299 + fragmentOutputs.color.g*0.587 + fragmentOutputs.color.b*0.114;
-                        //     fragmentOutputs.color = vec4f(luma, luma, luma, 1.0);
-                        // `,
+                        CUSTOM_FRAGMENT_DEFINITIONS: this.fragmentDefinitions,
+                        CUSTOM_FRAGMENT_MAIN_END: `
+                            var luma = fragmentOutputs.color.r*0.299 + fragmentOutputs.color.g*0.587 + fragmentOutputs.color.b*0.114;
+                            fragmentOutputs.color = vec4f(luma, luma, luma, 1.0);
+                        `,
                     };
                 } else if (shaderLanguage === BABYLON.ShaderLanguage.GLSL) {
                     return {
                         // EXAMPLE BLACK AND WHITE FILTER
-                        // CUSTOM_FRAGMENT_DEFINITIONS: this.fragmentDefinitions,
-                        // CUSTOM_FRAGMENT_MAIN_END: `
-                        //     float luma = gl_FragColor.r*0.299 + gl_FragColor.g*0.587 + gl_FragColor.b*0.114;
-                        //     gl_FragColor = vec4(luma, luma, luma, 1.0);
-                        // `,
+                        CUSTOM_FRAGMENT_DEFINITIONS: this.fragmentDefinitions,
+                        CUSTOM_FRAGMENT_MAIN_END: `
+                            float luma = gl_FragColor.r*0.299 + gl_FragColor.g*0.587 + gl_FragColor.b*0.114;
+                            gl_FragColor = vec4(luma, luma, luma, 1.0);
+                        `,
                     };
                 }
             }
