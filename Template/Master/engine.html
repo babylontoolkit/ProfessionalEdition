@@ -590,6 +590,10 @@
             //window.scene.blockMaterialDirtyMechanism = true;
             window.scene.executeWhenReady(() => {
                 loaded = true;
+                if (window.scene.cameras == null || window.scene.cameras.length <= 0) {
+                    window.dxcam = new BABYLON.FreeCamera("Default Camera", new BABYLON.Vector3(0, 5, -10), window.scene);
+                    window.dxcam.setTarget(BABYLON.Vector3.Zero());
+                }
                 // DEPRECTAED
                 //if (window.scene.cameras == null || window.scene.cameras.length <= 0) {
                 //    var camera = new TOOLKIT.UniversalCamera("DefaultCamera", new BABYLON.Vector3(0, 5, -10), window.scene);
