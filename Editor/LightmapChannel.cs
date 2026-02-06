@@ -19,16 +19,27 @@ public class LightmapChannel : EditorWindow
 
     private bool assignNewAssetToRenderers = true; // if we create a copy, assign it back
 
-    [MenuItem("Window/Lightmaps/Lightmap UV Regenerator")]
+    [MenuItem("Tools/Babylon Toolkit/UVSet Generators/Lightmap Texture Channel", false, 51)]
     public static void ShowWindow()
     {
-        var w = GetWindow<LightmapChannel>("Lightmap UVs");
-        w.minSize = new Vector2(420, 320);
+        LightmapChannel window = ScriptableObject.CreateInstance<LightmapChannel>();
+        window.OnInitialize();
+        window.ShowUtility();
+    }
+
+    public void OnInitialize()
+    {
+        maxSize = new Vector2(420, 354);
+        minSize = this.maxSize;
+    }
+
+    private void OnEnable()
+    {
+        titleContent = new GUIContent("Lightmap Texture Channel");
     }
 
     private void OnGUI()
     {
-        EditorGUILayout.LabelField("Target", EditorStyles.boldLabel);
         EditorGUI.BeginChangeCheck();
         _target = EditorGUILayout.ObjectField("Mesh / GameObject", _target, typeof(Object), true);
         if (EditorGUI.EndChangeCheck())
@@ -50,43 +61,41 @@ public class LightmapChannel : EditorWindow
 
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Save Options", EditorStyles.boldLabel);
-            saveMode = (SaveMode)EditorGUILayout.EnumPopup(new GUIContent("Save Mode",
-                "Auto: overwrite Mesh assets, create copy for FBX/model meshes.\nOverwriteAsset: write UV2 directly to Mesh asset (fails for FBX).\nNewAssetCopy: duplicate Mesh to a new .asset file."), saveMode);
+            saveMode = (SaveMode)EditorGUILayout.EnumPopup(new GUIContent("Save Mesh Mode", "Auto: overwrite Mesh assets, create copy for FBX/model meshes.\nOverwriteAsset: write UV2 directly to Mesh asset (fails for FBX).\nNewAssetCopy: duplicate Mesh to a new .asset file."), saveMode);
 
             if (saveMode == SaveMode.NewAssetCopy || saveMode == SaveMode.Auto)
             {
-                assignNewAssetToRenderers = EditorGUILayout.Toggle(new GUIContent("Assign New Asset To Selection",
-                    "If a new Mesh asset is created, reassign it to the MeshFilter/SkinnedMeshRenderer on the selected object."), assignNewAssetToRenderers);
+                assignNewAssetToRenderers = EditorGUILayout.Toggle(new GUIContent("Assign To Selection", "If a new Mesh asset is created, reassign it to the MeshFilter/SkinnedMeshRenderer on the selected object."), assignNewAssetToRenderers);
             }
 
             EditorGUILayout.Space(10);
-            if (GUILayout.Button("Generate & Save UV2", GUILayout.Height(40)))
+            if (GUILayout.Button("Generate & Save UV2"/*, GUILayout.Height(40)*/))
             {
                 GenerateAndSave();
             }
         }
-
-        if (_resolvedMesh == null)
-        {
-            EditorGUILayout.HelpBox("Drag a Mesh, or a GameObject with a MeshFilter/SkinnedMeshRenderer.", MessageType.Info);
-        }
     }
-
+    
     private void DrawResolvedMeshInfo()
     {
-        if (_resolvedMesh == null) return;
-
-        var path = AssetDatabase.GetAssetPath(_resolvedMesh);
-        var isAsset = AssetDatabase.Contains(_resolvedMesh);
-        var isModelSubAsset = IsModelSubAsset(_resolvedMesh);
-
-        using (new EditorGUILayout.VerticalScope("box"))
+        using (new EditorGUILayout.VerticalScope("box", GUILayout.Height(110)))
         {
-            EditorGUILayout.LabelField("Resolved Mesh", EditorStyles.boldLabel);
-            EditorGUILayout.LabelField("Name:", _resolvedMesh.name);
-            EditorGUILayout.LabelField("Triangles:", _resolvedMesh.triangles != null ? (_resolvedMesh.triangles.Length / 3).ToString() : "N/A");
-            EditorGUILayout.LabelField("Asset Path:", string.IsNullOrEmpty(path) ? "(not an asset)" : path);
-            EditorGUILayout.LabelField("Asset Type:", isModelSubAsset ? "Model (FBX) Sub-Asset" : (isAsset ? "Mesh Asset" : "Scene-only Mesh"));
+            if (_resolvedMesh == null)
+            {
+                EditorGUILayout.Space(25);
+                EditorGUILayout.HelpBox("Drag a Mesh, or a GameObject with a MeshFilter/SkinnedMeshRenderer.", MessageType.Info);
+            }
+            else
+            {
+                var path = AssetDatabase.GetAssetPath(_resolvedMesh);
+                var isAsset = AssetDatabase.Contains(_resolvedMesh);
+                var isModelSubAsset = IsModelSubAsset(_resolvedMesh);
+                EditorGUILayout.LabelField("Mesh Information", EditorStyles.boldLabel);
+                EditorGUILayout.LabelField("Name:", _resolvedMesh.name);
+                EditorGUILayout.LabelField("Triangles:", _resolvedMesh.triangles != null ? (_resolvedMesh.triangles.Length / 3).ToString() : "N/A");
+                EditorGUILayout.LabelField("Asset Path:", string.IsNullOrEmpty(path) ? "(not an asset)" : path);
+                EditorGUILayout.LabelField("Asset Type:", isModelSubAsset ? "Model (FBX) Sub-Asset" : (isAsset ? "Mesh Asset" : "Scene-only Mesh"));
+            }
         }
     }
 

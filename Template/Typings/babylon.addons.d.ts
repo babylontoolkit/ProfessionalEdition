@@ -2051,6 +2051,10 @@ declare module ADDONS {
          */
         get renderTarget(): BABYLON.RenderTargetTexture;
         /**
+         * True if the LUT data has been read back from the GPU.
+         */
+        get hasLutData(): boolean;
+        /**
          * Constructs the {@link TransmittanceLut}.
          * @param atmosphere - The atmosphere that owns this LUT.
          */
@@ -2508,6 +2512,10 @@ declare module ADDONS {
         /**
          * @override
          */
+        isCompatible(): boolean;
+        /**
+         * @override
+         */
         getUniformBuffersNames(_ubos: string[]): void;
         /**
          * @override
@@ -2544,7 +2552,7 @@ declare module ADDONS {
         /**
          * @override
          */
-        getCustomCode(shaderType: string): BABYLON.Nullable<Record<string, string>>;
+        getCustomCode(shaderType: string, shaderLanguage: BABYLON.ShaderLanguage): BABYLON.Nullable<Record<string, string>>;
     }
 
 
@@ -2693,6 +2701,7 @@ declare module ADDONS {
         private readonly _directionToLight;
         private readonly _tempSceneAmbient;
         private readonly _engine;
+        private readonly _isDiffuseSkyIrradianceLutEnabled;
         private _physicalProperties;
         private _transmittanceLut;
         private _diffuseSkyIrradianceLut;
@@ -2730,6 +2739,7 @@ declare module ADDONS {
         private _isEnabled;
         private _aerialPerspectiveLutHasBeenRendered;
         private _hasRenderedMultiScatteringLut;
+        private _hasEverRenderedMultiScatteringLut;
         private _multiScatteringEffectWrapper;
         private _multiScatteringLutRenderTarget;
         private _aerialPerspectiveLutEffectWrapper;
@@ -2742,6 +2752,7 @@ declare module ADDONS {
         private _skyCompositorEffectWrapper;
         private _globeAtmosphereCompositorEffectWrapper;
         private _onBeforeCameraRenderObserver;
+        private _onBeforeRenderObserver;
         private _onBeforeDrawPhaseObserver;
         private _onAfterRenderingGroupObserver;
         /**
@@ -2992,11 +3003,6 @@ declare module ADDONS {
          */
         getDiffuseSkyIrradianceToRef: <T extends BABYLON.IColor3Like>(directionToLight: BABYLON.IVector3Like, pointRadius: number, pointGeocentricNormal: BABYLON.IVector3Like, lightIrradiance: number, result: T) => T;
         /**
-         * Creates a new {@link EffectWrapper} for the multiple scattering LUT
-         * @returns The newly created {@link EffectWrapper}.
-         */
-        private _createMultiScatteringEffectWrapper;
-        /**
          * Draws the multiple scattering LUT using {@link EffectWrapper} and {@link EffectRenderer}.
          */
         private _drawMultiScatteringLut;
@@ -3015,6 +3021,7 @@ declare module ADDONS {
         private _disposeSkyCompositor;
         private _disposeAerialPerspectiveCompositor;
         private _disposeGlobeAtmosphereCompositor;
+        private get _isGlobalLutsReady();
         /**
          * Updates the camera variables that are specific to the atmosphere.
          * @param camera - The camera to update the variables for.
@@ -3036,7 +3043,7 @@ declare module ADDONS {
          */
         bindUniformBufferToEffect(effect: BABYLON.Effect): void;
         /**
-         * Updates the atmosphere's uniform buffer.
+         * Updates the values in the atmosphere's uniform buffer.
          */
         updateUniformBuffer(): void;
         /**
@@ -3049,6 +3056,41 @@ declare module ADDONS {
          */
         private _drawSkyViewLut;
     }
+
+
+    /** @internal */
+    export var transmittancePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiScatteringPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fullscreenTriangleVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var atmosphereUboDeclarationWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var atmosphereFunctionsWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     /** @internal */

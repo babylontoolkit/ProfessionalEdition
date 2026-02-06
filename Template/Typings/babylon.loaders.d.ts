@@ -30,6 +30,11 @@ declare module BABYLON {
         static Configuration: IGLTFValidationConfiguration;
         private static _LoadScriptPromise;
         /**
+         * The most recent validation results.
+         * @internal - Used for back-compat in Sandbox with Inspector V2.
+         */
+        static _LastResults: Nullable<GLTF2.IGLTFValidationResults>;
+        /**
          * Validate a glTF asset using the glTF-Validator.
          * @param data The JSON of a glTF or the array buffer of a binary glTF
          * @param rootUrl The root url for the glTF
@@ -602,6 +607,7 @@ declare module BABYLON.GLTF2 {
      */
     export class PBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
+        private _extinctionCoefficient;
         /**
          * Creates a new instance of the PBRMaterialLoadingAdapter.
          * @param material - The PBR material to adapt.
@@ -989,20 +995,60 @@ declare module BABYLON.GLTF2 {
          */
         set transmissionWeightTexture(value: Nullable<BaseTexture>);
         /**
-         * Sets the attenuation distance for volume scattering.
+         * Sets the attenuation distance for volume.
          * @param value The attenuation distance value
          */
         set transmissionDepth(value: number);
+        /**
+         * Gets the attenuation distance for volume.
+         * @returns The attenuation distance value
+         */
+        get transmissionDepth(): number;
         /**
          * Sets the attenuation color (mapped to PBR subSurface.tintColor).
          * @param value The attenuation color as a Color3
          */
         set transmissionColor(value: Color3);
         /**
-         * Gets the transmission dispersion Abbe number.
+         * Sets the attenuation color (mapped to PBR subSurface.tintColor).
+         * @returns The attenuation color as a Color3
+         */
+        get transmissionColor(): Color3;
+        /**
+         * Sets the transmission scatter coefficient.
+         * @param value The scatter coefficient as a Color3
+         */
+        set transmissionScatter(value: Color3);
+        /**
+         * Sets the transmission scatter coefficient.
+         * @returns The scatter coefficient as a Color3
+         */
+        get transmissionScatter(): Color3;
+        /**
+         * Sets the transmission scattering anisotropy.
+         * @param value The anisotropy intensity value (-1 to 1)
+         */
+        set transmissionScatterAnisotropy(value: number);
+        /**
+         * Sets the transmission dispersion Abbe number.
          * @param value The Abbe number value
          */
         set transmissionDispersionAbbeNumber(value: number);
+        /**
+         * Sets the transmission dispersion scale.
+         * @param value The dispersion scale value
+         */
+        set transmissionDispersionScale(value: number);
+        /**
+         * Gets the refraction background texture
+         * @returns The refraction background texture or null
+         */
+        get refractionBackgroundTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the refraction background texture
+         * @param value The refraction background texture or null
+         */
+        set refractionBackgroundTexture(value: Nullable<BaseTexture>);
         /**
          * Configures transmission for thin-surface transmission (KHR_materials_transmission).
          * Sets up the material for proper thin-surface transmission behavior.
@@ -1024,6 +1070,15 @@ declare module BABYLON.GLTF2 {
          * Configures subsurface properties for PBR material
          */
         configureSubsurface(): void;
+        /**
+         * Sets the extinction coefficient of the volume.
+         * @param value The extinction coefficient as a Vector3
+         */
+        set extinctionCoefficient(value: Vector3);
+        /**
+         * Gets the extinction coefficient of the volume.
+         */
+        get extinctionCoefficient(): Vector3;
         /**
          * Sets the subsurface weight
          */
@@ -1047,6 +1102,50 @@ declare module BABYLON.GLTF2 {
          * @param value The subsurface tint texture or null
          */
         set subsurfaceColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the surface tint of the material (when using subsurface scattering)
+         */
+        set subsurfaceConstantTint(value: Color3);
+        /**
+         * Gets the subsurface constant tint (when using subsurface scattering)
+         * @returns The subsurface constant tint as a Color3
+         */
+        get subsurfaceConstantTint(): Color3;
+        /**
+         * Sets the subsurface constant tint texture (when using subsurface scattering)
+         * @param value The subsurface constant tint texture or null
+         */
+        set subsurfaceConstantTintTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the subsurface radius (used for subsurface scattering)
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         * @returns The subsurface radius as a Color3
+         */
+        get subsurfaceRadius(): number;
+        /**
+         * Sets the subsurface radius (used for subsurface scattering)
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         * @param value The subsurface radius as a number
+         */
+        set subsurfaceRadius(value: number);
+        /**
+         * Gets the subsurface radius scale (used for subsurface scattering)
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         * @returns The subsurface radius scale as a Color3
+         */
+        get subsurfaceRadiusScale(): Color3;
+        /**
+         * Sets the subsurface radius scale (used for subsurface scattering)
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         * @param value The subsurface radius scale as a Color3
+         */
+        set subsurfaceRadiusScale(value: Color3);
+        /**
+         * Sets the subsurface scattering anisotropy.
+         * Note: PBRMaterial does not have a direct equivalent, so this is a no-op.
+         * @param value The anisotropy intensity value (ignored for PBR)
+         */
+        set subsurfaceScatterAnisotropy(value: number);
         /**
          * Configures sheen for PBR material.
          * Enables sheen and sets up proper configuration.
@@ -1153,12 +1252,6 @@ declare module BABYLON.GLTF2 {
          */
         set thinFilmThicknessTexture(value: Nullable<BaseTexture>);
         /**
-         * Sets the transmission dispersion value.
-         * Note: PBR doesn't have direct dispersion support, so this stores it as metadata.
-         * @param value The dispersion value (stored as metadata)
-         */
-        set transmissionDispersion(value: number);
-        /**
          * Sets whether the material is unlit.
          * @param value True to make the material unlit
          */
@@ -1221,6 +1314,7 @@ declare module BABYLON.GLTF2 {
      */
     export class OpenPBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
+        private _extinctionCoefficient;
         /**
          * Creates a new instance of the OpenPBRMaterialLoadingAdapter.
          * @param material - The OpenPBR material to adapt.
@@ -1584,54 +1678,86 @@ declare module BABYLON.GLTF2 {
          */
         get geometryCoatTangentTexture(): Nullable<BaseTexture>;
         /**
+         * Configures transmission for OpenPBR material.
+         */
+        configureTransmission(): void;
+        /**
          * Sets the transmission weight.
-         * TODO: Implementation pending OpenPBR transmission feature availability.
          * @param value The transmission weight value (0-1)
          */
         set transmissionWeight(value: number);
         /**
          * Sets the transmission weight texture.
-         * TODO: Implementation pending OpenPBR transmission feature availability.
          * @param value The transmission weight texture or null
          */
         set transmissionWeightTexture(value: Nullable<BaseTexture>);
         /**
          * Gets the transmission weight.
-         * TODO: Implementation pending OpenPBR transmission feature availability.
          * @returns Currently returns 0 as transmission is not yet available
          */
         get transmissionWeight(): number;
         /**
-         * Gets the transmission dispersion Abbe number.
+         * Sets the transmission scatter coefficient.
+         * @param value The scatter coefficient as a Vector3
+         */
+        set transmissionScatter(value: Color3);
+        /**
+         * Gets the transmission scatter coefficient.
+         * @returns The scatter coefficient as a Vector3
+         */
+        get transmissionScatter(): Color3;
+        set transmissionScatterTexture(value: Nullable<BaseTexture>);
+        get transmissionScatterTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the transmission scattering anisotropy.
+         * @param value The anisotropy intensity value (-1 to 1)
+         */
+        set transmissionScatterAnisotropy(value: number);
+        /**
+         * Sets the transmission dispersion Abbe number.
          * @param value The Abbe number value
          */
         set transmissionDispersionAbbeNumber(value: number);
         /**
-         * Configures transmission for OpenPBR material.
-         * TODO: Implementation pending OpenPBR transmission feature availability.
+         * Sets the transmission dispersion scale.
+         * @param value The dispersion scale value
          */
-        configureTransmission(): void;
+        set transmissionDispersionScale(value: number);
         /**
-         * Sets the attenuation distance for volume scattering.
-         * TODO: Implementation pending OpenPBR volume feature availability.
+         * Sets the attenuation distance.
          * @param value The attenuation distance value
          */
         set transmissionDepth(value: number);
         /**
-         * Sets the attenuation color for volume scattering.
-         * TODO: Implementation pending OpenPBR volume feature availability.
+         * Gets the attenuation distance.
+         */
+        get transmissionDepth(): number;
+        /**
+         * Sets the attenuation color.
          * @param value The attenuation color as a Color3
          */
         set transmissionColor(value: Color3);
         /**
-         * Sets the thickness texture for volume scattering.
-         * TODO: Implementation pending OpenPBR volume feature availability.
+         * Gets the attenuation color.
+         */
+        get transmissionColor(): Color3;
+        /**
+         * Gets the refraction background texture
+         * @returns The refraction background texture or null
+         */
+        get refractionBackgroundTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the refraction background texture
+         * @param value The refraction background texture or null
+         */
+        set refractionBackgroundTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the thickness texture.
          * @param value The thickness texture or null
          */
         set volumeThicknessTexture(value: Nullable<BaseTexture>);
         /**
-         * Sets the thickness factor for volume scattering.
-         * TODO: Implementation pending OpenPBR volume feature availability.
+         * Sets the thickness factor.
          * @param value The thickness value
          */
         set volumeThickness(value: number);
@@ -1639,6 +1765,15 @@ declare module BABYLON.GLTF2 {
          * Configures subsurface properties for PBR material
          */
         configureSubsurface(): void;
+        /**
+         * Sets the extinction coefficient of the volume.
+         * @param value The extinction coefficient as a Vector3
+         */
+        set extinctionCoefficient(value: Vector3);
+        /**
+         * Gets the extinction coefficient of the volume.
+         */
+        get extinctionCoefficient(): Vector3;
         /**
          * Sets the subsurface weight
          */
@@ -1658,6 +1793,45 @@ declare module BABYLON.GLTF2 {
          * @param value The subsurface tint texture or null
          */
         set subsurfaceColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Sets the surface tint of the material (when using subsurface scattering)
+         */
+        set subsurfaceConstantTint(value: Color3);
+        /**
+         * Gets the surface tint of the material (when using subsurface scattering)
+         */
+        get subsurfaceConstantTint(): Color3;
+        /**
+         * Sets the surface tint texture of the material (when using subsurface scattering)
+         */
+        set subsurfaceConstantTintTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the subsurface radius for subsurface scattering.
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         */
+        get subsurfaceRadius(): number;
+        /**
+         * Sets the subsurface radius for subsurface scattering.
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         * @param value The subsurface radius value
+         */
+        set subsurfaceRadius(value: number);
+        /**
+         * Gets the subsurface radius scale for subsurface scattering.
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         */
+        get subsurfaceRadiusScale(): Color3;
+        /**
+         * Sets the subsurface radius scale for subsurface scattering.
+         * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
+         * @param value The subsurface radius scale as a Color3
+         */
+        set subsurfaceRadiusScale(value: Color3);
+        /**
+         * Sets the subsurface scattering anisotropy.
+         * @param value The anisotropy intensity value
+         */
+        set subsurfaceScatterAnisotropy(value: number);
         /**
          * Configures fuzz for OpenPBR.
          * Enables fuzz and sets up proper configuration.
@@ -1998,9 +2172,25 @@ declare module BABYLON.GLTF2 {
          */
         transmissionColor: Color3;
         /**
+         * Sets the scattering coefficient
+         */
+        transmissionScatter: Color3;
+        /**
+         * Sets the scattering anisotropy (-1 to 1)
+         */
+        transmissionScatterAnisotropy: number;
+        /**
          * Sets the dispersion Abbe number
          */
         transmissionDispersionAbbeNumber: number;
+        /**
+         * Sets the dispersion scale
+         */
+        transmissionDispersionScale: number;
+        /**
+         * The refraction background texture
+         */
+        refractionBackgroundTexture: Nullable<BaseTexture>;
         /**
          * Configures transmission for thin-surface transmission (KHR_materials_transmission)
          */
@@ -2014,9 +2204,14 @@ declare module BABYLON.GLTF2 {
          */
         volumeThickness: number;
         /**
-         * Configures subsurface properties for PBR material
+         * Configures subsurface properties
          */
         configureSubsurface(): void;
+        /**
+         * @internal
+         * Sets/gets the extinction coefficient
+         */
+        extinctionCoefficient: Vector3;
         /**
          * Sets/gets the subsurface weight
          */
@@ -2033,6 +2228,26 @@ declare module BABYLON.GLTF2 {
          * Sets/gets the subsurface color texture
          */
         subsurfaceColorTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the surface tint of the material (when using subsurface scattering)
+         */
+        subsurfaceConstantTint: Color3;
+        /**
+         * Sets/gets the surface tint texture of the material (when using subsurface scattering)
+         */
+        subsurfaceConstantTintTexture: Nullable<BaseTexture>;
+        /**
+         * Sets/gets the subsurface radius (used for subsurface scattering)
+         */
+        subsurfaceRadius: number;
+        /**
+         * Sets/gets the subsurface radius scale (used for subsurface scattering)
+         */
+        subsurfaceRadiusScale: Color3;
+        /**
+         * Sets/gets the subsurface scattering anisotropy
+         */
+        subsurfaceScatterAnisotropy: number;
         /**
          * Configures initial settings for fuzz for material.
          */
@@ -2718,6 +2933,12 @@ declare module BABYLON.GLTF2 {
         private readonly _materialAdapterCache;
         /** @internal */
         _pbrMaterialImpl: Nullable<Readonly<PBRMaterialImplementation>> | false;
+        /**
+         * Test if the given material is of the same type as the one used by the loader
+         * @param material The material to test
+         * @returns true if the material is of the same type, false otherwise
+         */
+        isMatchingMaterialType(material: Nullable<Material>): boolean;
         /**
          * The default glTF sampler.
          */
@@ -3907,6 +4128,52 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
+     * TODO: In-progress specification
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/7ea427ed55d44427e83c0a6d1c87068b1a4151c5/extensions/2.0/Khronos/KHR_materials_volume_scatter/README.md)
+     * @experimental
+     * @since 9.0.0
+     */
+    export class KHR_materials_volume_scatter implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_volume_scatter";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadVolumePropertiesAsync;
+    }
+
+
+
+}
+declare module BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_volume_scatter extension.
+         */
+        ["KHR_materials_volume_scatter"]: {};
+    }
+
+}
+declare module BABYLON.GLTF2.Loader.Extensions {
+        /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_volume/README.md)
      * @since 5.0.0
      */
@@ -4367,7 +4634,8 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
-     * [Specification]
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/9734e44accd0dfb986ec5f376117aa00192745fe/extensions/2.0/Khronos/KHR_materials_fuzz/README.md)
+     * @experimental
      */
     export class KHR_materials_fuzz implements BABYLON.GLTF2.IGLTFLoaderExtension {
         /**
@@ -4541,7 +4809,7 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
-     * [Specification](https://github.com/KhronosGroup/glTF/blob/fdee35425ae560ea378092e38977216d63a094ec/extensions/2.0/Khronos/KHR_materials_diffuse_roughness/README.md)
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/b102d2d2b40d44a8776800bb2bf85e218853c17d/extensions/2.0/Khronos/KHR_materials_diffuse_roughness/README.md)
      * @experimental
      */
     export class KHR_materials_diffuse_roughness implements BABYLON.GLTF2.IGLTFLoaderExtension {
@@ -4585,8 +4853,8 @@ declare module BABYLON {
 }
 declare module BABYLON.GLTF2.Loader.Extensions {
         /**
-     * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_coat/README.md)
-     * [Playground Sample](https://www.babylonjs-playground.com/frame.html#7F7PN6#8)
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/6cb2cb84b504c245c49cf2e9a8ae16d26f72ac97/extensions/2.0/Khronos/KHR_materials_coat/README.md)
+     * @experimental
      */
     export class KHR_materials_coat implements BABYLON.GLTF2.IGLTFLoaderExtension {
         /**
