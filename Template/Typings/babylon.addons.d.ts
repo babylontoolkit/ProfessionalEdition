@@ -3066,6 +3066,13 @@ declare module ADDONS {
 
 
     /** @internal */
+    export var skyViewPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var multiScatteringPixelShaderWGSL: {
         name: string;
         shader: string;
@@ -3074,6 +3081,20 @@ declare module ADDONS {
 
     /** @internal */
     export var fullscreenTriangleVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var compositeSkyPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var aerialPerspectivePixelShaderWGSL: {
         name: string;
         shader: string;
     };
