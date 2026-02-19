@@ -307,7 +307,8 @@
     // ************************************************************************ //
     // QUERY STRING - Parse Root Urls And Scene Name Parameters                 //
     // ************************************************************************ //
-    var rooturl = "" + (window.getUrlParameter("root") || "");
+    var hosturl = window.location.href.substring(0, window.location.href.lastIndexOf('/')) + "/";
+    var rooturl = "" + (window.getUrlParameter("root") || hosturl);
     if (rooturl != null && rooturl !== "" && !rooturl.endsWith("/")) rooturl += "/";
     var sceneurl = "" + (window.getUrlParameter("path") || folder);
     if (sceneurl != null && sceneurl !== "" && !sceneurl.endsWith("/")) sceneurl += "/";
