@@ -811,7 +811,7 @@
         if (BABYLON.KhronosTextureContainer2 && BABYLON.KhronosTextureContainer2.URLConfig) {
             var href = window.location.href;
             var path = href.substring(0, href.lastIndexOf('/')) + "/";
-            BABYLON.KhronosTextureContainer2.URLConfig.jsDecoderModule = path + "###SCRIPT###/babylon.ktx2Decoder.js";
+            BABYLON.KhronosTextureContainer2.URLConfig.jsDecoderModule = path + "###SCRIPT###/babylon.ktx2decoder.js";
             BABYLON.KhronosTextureContainer2.URLConfig.jsMSCTranscoder = path + "###SCRIPT###/msc_basis_transcoder.js";
             BABYLON.KhronosTextureContainer2.URLConfig.wasmMSCTranscoder = path + "###SCRIPT###/msc_basis_transcoder.wasm";
             BABYLON.KhronosTextureContainer2.URLConfig.wasmZSTDDecoder = path + "###SCRIPT###/zstddec.wasm";
