@@ -3087,6 +3087,13 @@ declare module ADDONS {
 
 
     /** @internal */
+    export var diffuseSkyIrradiancePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var compositeSkyPixelShaderWGSL: {
         name: string;
         shader: string;
@@ -3094,7 +3101,28 @@ declare module ADDONS {
 
 
     /** @internal */
+    export var compositeGlobeAtmospherePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var compositeAerialPerspectivePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var aerialPerspectivePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var depthFunctionsWGSL: {
         name: string;
         shader: string;
     };
