@@ -5755,6 +5755,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          * Note that this function can also modify the node, if needed.
          *
          * @param gltfBlock the glTF node to validate
+         * @param interactivityGraph the interactivity graph
          * @param glTFObject the glTF object
          * @returns true if validated, false if not.
          */
@@ -5768,9 +5769,12 @@ declare module BABYLON.GLTF2.Loader.Extensions {
          * Returning more than one block will usually happen when a json pointer was provided.
          *
          * @param gltfBlock the glTF node
+         * @param declaration the declaration object
          * @param mapping the mapping object
-         * @param arrays the arrays of the interactivity object
-         * @param serializedObjects the serialized object
+         * @param parser the interactivity graph parser
+         * @param serializedObjects the serialized objects
+         * @param context the serialized flow graph context
+         * @param globalGLTF the global gltf object
          * @returns an array of serialized nodes that will be added to the graph.
          */
         extraProcessor?: (gltfBlock: BABYLON.GLTF2.IKHRInteractivity_Node, declaration: BABYLON.GLTF2.IKHRInteractivity_Declaration, mapping: IGLTFToFlowGraphMapping, parser: BABYLON.GLTF2.Loader.Extensions.InteractivityGraphToFlowGraphParser, serializedObjects: ISerializedFlowGraphBlock[], context: ISerializedFlowGraphContext, globalGLTF?: BABYLON.GLTF2.Loader.IGLTF) => ISerializedFlowGraphBlock[];

@@ -184,7 +184,7 @@ declare module ADDONS {
              */
             type?: ComputePathErrorType;
             /**
-             * Statusring describing the error.
+             * Status describing the error.
              */
             status?: number;
         };
@@ -255,7 +255,7 @@ declare module ADDONS {
         /**
          * Intermediates generated during the navmesh creation
          * @remarks This is used for debugging and visualization purposes.
-         * @remarks You have access to vertices, indices and vertex colors to visusalize the navmesh creation process.
+         * @remarks You have access to vertices, indices and vertex colors to visualize the navmesh creation process.
          * @remarks This is only available if the `keepIntermediates` parameter is set
          * @remarks to true during navmesh generation.
          */
@@ -459,9 +459,10 @@ declare module ADDONS {
             maxStraightPathPoints?: number;
         }): BABYLON.Vector3[];
         /**
-         * Creates a navigation mesh - will be injected by the factory
-         * @param start the start position of the navmesh
-         * @param end the end position of the navmesh
+         * Compute a navigation path from start to end. Returns an empty array if no path can be computed.
+         * Path follows navigation mesh geometry.
+         * @param start world position
+         * @param end world position
          * @param options options to configure the path computation
          * @returns array containing world position composing the path
          */
@@ -586,9 +587,9 @@ declare module ADDONS {
         };
         /**
          * Compute the final position from a segment made of destination-position, and return the height of the polygon
-         * This is a more sophisiticated version of moveAlong that will use the height of the polygon at the end position
+         * This is a more sophisticated version of moveAlong that will use the height of the polygon at the end position
          * @param position world position to start from
-         * @param velocity wvelocity of the movement
+         * @param velocity velocity of the movement
          * @param options options for the function
          * @returns the resulting point along the navmesh, the polygon reference id and the height of the polygon
          */
@@ -678,11 +679,11 @@ declare module ADDONS {
          */
         onReachTargetObservable: BABYLON.Observable<{
             /**
-             *
+             * The index of the agent that reached its target
              */
             agentIndex: number;
             /**
-             *
+             * The destination that the agent reached
              */
             destination: BABYLON.Vector3;
         }>;
@@ -1314,15 +1315,15 @@ declare module ADDONS {
      */
     export function CreateTileCacheNavMeshConfig(parameters: INavMeshParametersV2): Partial<any>;
     /**
-     * Convert IAgentParameters to Recast any
-     * @param config Agent parameters
-     * @returns Recast crowd agent paramaters
+     * Convert INavMeshParametersV2 to any by filtering out undefined values.
+     * @param config NavMesh parameters
+     * @returns Recast solo nav mesh generator config
      */
     export function ToSoloNavMeshGeneratorConfig(config: INavMeshParametersV2): Partial<any>;
     /**
-     * Convert IAgentParameters to Recast any
+     * Convert IAgentParametersV2 to Recast any by filtering out undefined values.
      * @param agentParams Agent parameters
-     * @returns Recast crowd agent paramaters
+     * @returns Recast crowd agent parameters
      */
     export function ToCrowdAgentParams(agentParams: IAgentParametersV2): Partial<any>;
 
@@ -2041,6 +2042,7 @@ declare module ADDONS {
         private _effectRenderer;
         private _isDirty;
         private _isDisposed;
+        private _needsReadPixels;
         /**
          * True if the LUT has been rendered.
          */
@@ -2082,6 +2084,11 @@ declare module ADDONS {
          */
         render(): boolean;
         /**
+         * Reads back the LUT data from the GPU if a readback is pending.
+         * @internal
+         */
+        readPixelsAsync(): Promise<void>;
+        /**
          * Marks the LUT as needing to be rendered.
          */
         markDirty(): void;
@@ -2120,6 +2127,7 @@ declare module ADDONS {
         private _effectRenderer;
         private _isDirty;
         private _isDisposed;
+        private _needsReadPixels;
         private _lutData;
         /**
          * True if the LUT needs to be rendered.
@@ -2159,6 +2167,11 @@ declare module ADDONS {
          * @returns True if the LUT was rendered.
          */
         render(): boolean;
+        /**
+         * Reads back the LUT data from the GPU if a readback is pending.
+         * @internal
+         */
+        readPixelsAsync(): Promise<void>;
         /**
          * Marks the LUT as needing to be rendered.
          */
@@ -2977,6 +2990,12 @@ declare module ADDONS {
          * @param enabled - True to enable the atmosphere, false to disable it.
          */
         setEnabled(enabled: boolean): void;
+        /**
+         * Returns true if the atmosphere is ready for rendering.
+         * Note, this will cause a render of the global LUTs if they are not up to date.
+         * @returns true if the atmosphere is ready
+         */
+        isReady(): boolean;
         /**
          * The class name of the {@link Atmosphere}.
          * @returns - The class name of the atmosphere.
