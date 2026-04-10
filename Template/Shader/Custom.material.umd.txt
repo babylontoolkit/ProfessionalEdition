@@ -11,6 +11,10 @@ namespace #ROOTNAMESPACE# {
             this.plugin = new #ROOTNAMESPACE#.#SHADERNAME#Plugin(this, this.shader);
         }
 
+        public awake(): void {
+            /* Initialze material function */
+        }
+
         public update(): void {
             /* Update values before binding */
         }
