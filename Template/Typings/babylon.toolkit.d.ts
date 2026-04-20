@@ -2545,6 +2545,7 @@ declare namespace TOOLKIT {
          * @returns the new Vector3
          */
         static HermiteVector3ToRef(value1: BABYLON.DeepImmutable<BABYLON.Vector3>, tangent1: BABYLON.DeepImmutable<BABYLON.Vector3>, value2: BABYLON.DeepImmutable<BABYLON.Vector3>, tangent2: BABYLON.DeepImmutable<BABYLON.Vector3>, amount: number, result: BABYLON.Vector3): void;
+        static ExpSmoothing(dt: number, timeConstant: number): number;
         static LerpLog(a: number, b: number, t: number): number;
         static LerpExp(a: number, b: number, t: number): number;
         static LerpUnclamped(a: number, b: number, t: number): number;
@@ -2565,6 +2566,7 @@ declare namespace TOOLKIT {
         static QuaternionRotateTowardsToRef(from: BABYLON.Quaternion, to: BABYLON.Quaternion, maxDegreesDelta: number, result: BABYLON.Quaternion): void;
         static QuaternionSlerpUnclamped(from: BABYLON.Quaternion, to: BABYLON.Quaternion, t: number): BABYLON.Quaternion;
         static QuaternionSlerpUnclampedToRef(a: BABYLON.Quaternion, b: BABYLON.Quaternion, t: number, result: BABYLON.Quaternion): void;
+        static MoveTowards(current: number, target: number, maxDelta: number): number;
         static MoveTowardsVector2(current: BABYLON.Vector2, target: BABYLON.Vector2, maxDistanceDelta: number): BABYLON.Vector2;
         static MoveTowardsVector2ToRef(current: BABYLON.Vector2, target: BABYLON.Vector2, maxDistanceDelta: number, result: BABYLON.Vector2): void;
         static MoveTowardsVector3(current: BABYLON.Vector3, target: BABYLON.Vector3, maxDistanceDelta: number): BABYLON.Vector3;
@@ -4568,6 +4570,9 @@ declare namespace TOOLKIT {
         hitPointInWorld: BABYLON.Vector3;
         hitNormalInWorld: BABYLON.Vector3;
         distFraction: number;
+        hitBody: any;
+        filterCollideMask: number;
+        filterMembershipMask: number;
     }
     interface IbtVehicleRaycaster {
         castRay(from: BABYLON.Vector3, to: BABYLON.Vector3, result: btVehicleRaycasterResult): any;
@@ -4614,14 +4619,14 @@ declare namespace TOOLKIT {
         suspensionRelativeVelocity: number;
         suspensionForce: number;
         skidInfo: number;
-        skidFxLevel: number;
-        skidFxPeak: number;
         clientInfo: any;
         steeringAngle: number;
         rotationBoost: number;
         defaultFriction: number;
         invertWheelDirection: boolean;
         maxVisualTravelRange: number;
+        contactCollideMask: number;
+        contactMembershipMask: number;
         _prevContactNormalWS: BABYLON.Vector3;
         _prevSuspensionLength: number;
         _prevSuspensionForce: number;
@@ -4655,13 +4660,28 @@ declare namespace TOOLKIT {
         getSuspensionRestLength(): number;
     }
     class btRaycastVehicle {
-        static FILTER_GROUP_CAR_COLLIDERS: number;
-        static FILTER_GROUP_WALL_COLLIDERS: number;
-        static FILTER_GROUP_CURB_COLLIDERS: number;
-        static FILTER_GROUP_GROUND_COLLIDERS: number;
+        /** Everything - Hex: 0xFFFFFFFF  - Decimal: 4294967295 */
         static FILTER_GROUP_ALL_COLLIDERS: number;
-        static GROUND_MESH_TAG: string;
+        /** Car Colliders - Unity Layer: 20 - Hex: 0x00100000 - Decimal: 1048576 */
+        static FILTER_GROUP_VEHICLE_COLLIDERS: number;
+        /** Wall Colliders - Unity Layer: 21 - Hex: 0x00200000  - Decimal: 2097152 */
+        static FILTER_GROUP_BRIDGE_COLLIDERS: number;
+        /** Curb Colliders - Unity Layer: 22 - Hex: 0x00400000  - Decimal: 4194304 */
+        static FILTER_GROUP_ROAD_COLLIDERS: number;
+        /** Grass Colliders - Unity Layer: 23 - Hex: 0x00800000  - Decimal: 8388608 */
+        static FILTER_GROUP_GRASS_COLLIDERS: number;
+        /** Ground Colliders Unity Layer: 24 - Hex: 0x01000000  - Decimal: 16777216 */
+        static FILTER_GROUP_CURB_COLLIDERS: number;
+        /** Ground Colliders - Unity Layer: 25 - Hex: 0x02000000  - Decimal: 33554432 */
+        static FILTER_GROUP_FENCE_COLLIDERS: number;
+        /** All Vehicle Colliders (Vehicle, Bridge, Road, Grass, Curb, Fence) */
+        static FILTER_GROUP_ALL_VEHICLE_COLLIDERS: number;
+        static VEHICLE_MESH_TAG: string;
+        static BRIDGE_MESH_TAG: string;
+        static ROAD_MESH_TAG: string;
+        static GRASS_MESH_TAG: string;
         static CURB_MESH_TAG: string;
+        static FENCE_MESH_TAG: string;
         private _chassisBody;
         private _vehicleRaycaster;
         private _wheelInfo;
@@ -4673,11 +4693,11 @@ declare namespace TOOLKIT {
         minimumWheelContacts: number;
         trackConnectionAccel: number;
         smoothFlyingImpulse: number;
-        sideFrictionStiffness: number;
-        downforceCoefficient: number;
-        constantDownforce: number;
+        arcadeSteeringAssist: number;
+        smoothedGradientSpeed: number;
+        maximumYawRateLow: number;
+        maximumYawRateHigh: number;
         angularDamping: BABYLON.Vector3;
-        onUpdateVehicleChassis: (step: number, wheelsOnGround: number, stabilizationUp: BABYLON.Vector3) => void;
         wheelSkidFadeInSpeed: number;
         wheelSkidFadeOutSpeed: number;
         minContactDotSuspension: number;
@@ -4701,6 +4721,12 @@ declare namespace TOOLKIT {
         sideToSideStabilityEnabled: boolean;
         sideToSideStabilityStartKmh: number;
         sideToSideStabilityFullKmh: number;
+        stabilizationDebug: boolean;
+        stabilizationDebugInterval: number;
+        downforceCoefficient: number;
+        constantDownforce: number;
+        stabilizationNormalSmoothing: number;
+        airborneGroundNormalHoldTime: number;
         groundedAutoLevelEnabled: boolean;
         groundedAutoLevelStrength: number;
         groundedAutoLevelDeadzoneDeg: number;
@@ -4713,30 +4739,44 @@ declare namespace TOOLKIT {
         groundedAutoLevelPartialContactBoost: number;
         groundedAutoLevelSlideScale: number;
         groundedAutoLevelTrackNormalMinDot: number;
-        stabilizationNormalSmoothing: number;
-        airborneGroundNormalHoldTime: number;
         airborneTrackConnectionStartKmh: number;
         airborneTrackConnectionFullKmh: number;
         airborneTrackConnectionMaxAccel: number;
         airborneRiseDamping: number;
         airborneMaxRiseSpeed: number;
+        private _groundedAutoLevelWasActive;
         private _stabilizationGroundNormal;
         private _stabilizationHasGroundNormal;
         private _stabilizationAirborneTime;
-        private _groundedAutoLevelWasActive;
-        private _arcadeHandbrakeWasActive;
-        private _yawAssistWasActive;
-        private _yawAssistLastRateDelta;
-        private _yawAssistHbFrames;
-        private _yawDampingOverride;
-        private _driftReleaseTimer;
-        private _driftReleaseYawAtRelease;
-        private _driftReleaseYawSign;
         isArcadeBurnoutModeActive: boolean;
         isArcadeDonutModeActive: boolean;
         isArcadeFootBrakeActive: boolean;
         isArcadeHandBrakeActive: boolean;
-        arcadeSteeringAssist: number;
+        isArcadeWheelSkidActive: boolean;
+        isArcadeYawAssistActive: boolean;
+        arcadeYawAssistDebugLogEnabled: boolean;
+        arcadeYawAssistDebugLogIntervalFrames: number;
+        arcadeYawAssistDebugLogEdgeEvents: boolean;
+        arcadeHandbrakeKickStrengthDegPerSec: number;
+        arcadeHandbrakeKickFrames: number;
+        arcadeHandbrakeYawAuthority: number;
+        arcadeHandbrakeMaxYawRateDegPerSec: number;
+        arcadeHandbrakeReferenceSpeedKmh: number;
+        arcadeHandbrakeSpeedGateEnabled: boolean;
+        arcadeHandbrakeMaxSlideAngleDeg: number;
+        private _wasArcadeHandBrakeActive;
+        private _wasArcadeYawAssistApplyingForce;
+        private _handbrakeAssistMagnitude;
+        private _handbrakeKickJzRemaining;
+        private _handbrakeKickFramesRemaining;
+        private _arcadeHandbrakeLatchedDriveSign;
+        private _arcadeYawAssistDebugFrameCounter;
+        private _arcadeYawAssistLastKickRad;
+        private _arcadeYawAssistLastIaddPerWheel;
+        private _arcadeYawAssistLastClampScalar;
+        private _arcadeYawAssistLastLeverSum;
+        burnoutFrictionFloor: number;
+        frictionRestoreSpeed: number;
         arcadeBurnoutWheelSpinGain: number;
         arcadeDonutWheelSpinGain: number;
         arcadeBurnoutDirectionChangeSpeedKmh: number;
@@ -4745,27 +4785,19 @@ declare namespace TOOLKIT {
         arcadeWheelSpinRecoverySpeed: number;
         arcadeWheelSpinAirDamping: number;
         arcadeWheelSpinMaxAngularVelocity: number;
-        x: any;
-        arcadeDriftReleaseDuration: number;
-        arcadeHandbrakeYawCutoffDeg: number;
-        arcadeHandbrakeYawKickRate: number;
-        arcadeHandbrakeYawKickShape: number;
-        arcadeHandbrakeYawKickSteerAttack: number;
-        arcadeHandbrakeYawKickGainBoost: number;
-        arcadeHandbrakeYawKickMaxDeltaPerFrame: number;
-        arcadeHandbrakeYawKickSustainFloor: number;
-        arcadeYawAssistVelocityRedirectEnabled: boolean;
-        arcadeYawAssistVelocityRedirectCoupling: number;
-        arcadeDriftReleasePreventOppositeSpin: boolean;
-        arcadeSkidFxReleaseTau: number;
-        arcadeSkidFxReleaseFloorEnabled: boolean;
-        arcadeSkidFxReleaseFloorShape: number;
+        arcadeSkidFadeInSpeed: number;
+        arcadeSkidFadeOutSpeed: number;
+        arcadeYawCapMultiplier: number;
+        private _postHandbrakeLogFrames;
+        private _postHandbrakeLogCounter;
+        private _wasAnyArcadeModeActive;
         private _forwardWS;
         private _axle;
         private _forwardImpulse;
         private _sideImpulse;
         private _arcadeSkidInfo;
         private _arcadePreviousWheelSpin;
+        sideFrictionStiffness: number;
         private _chassisMass;
         private _chassisInvMass;
         private _chassisTransform;
@@ -4799,9 +4831,6 @@ declare namespace TOOLKIT {
         private _stb3;
         private _stb4;
         private _stb5;
-        private _yawAssistLocalAngVel;
-        private _yawAssistCorrected;
-        private _yawAssistInvTransform;
         constructor(tuning: btVehicleTuning, chassisBody: BABYLON.PhysicsBody, raycaster: IbtVehicleRaycaster);
         addWheel(connectionPointCS: BABYLON.Vector3, wheelDirectionCS: BABYLON.Vector3, wheelAxleCS: BABYLON.Vector3, suspensionRestLength: number, wheelRadius: number, tuning: btVehicleTuning, isFrontWheel: boolean): btWheelInfo;
         getNumWheels(): number;
@@ -4827,6 +4856,9 @@ declare namespace TOOLKIT {
         getIsArcadeFootBrakeActive(): boolean;
         setIsArcadeHandBrakeActive(active: boolean): void;
         getIsArcadeHandBrakeActive(): boolean;
+        setIsArcadeWheelSkidActive(active: boolean): void;
+        getIsArcadeWheelSkidActive(): boolean;
+        private setWheelContactFilters;
         resetSuspension(): void;
         getChassisWorldTransform(): BABYLON.Matrix;
         private updateWheelTransformsWS;
@@ -4841,18 +4873,18 @@ declare namespace TOOLKIT {
         private applyTrackConnectionAndDownforce;
         updateVehicle(step: number): void;
         private updateSuspension;
+        private applyHandbrakeYawAssist;
         private resolveWheelSpinDirection;
         private updateArcadeWheelRotationBoost;
         private getWheelAngularVelocity;
         private getArcadeBurnoutDirectionChangeFactor;
         private updateArcadeSkidInfo;
         private updateFriction;
-        private updateSkidFxEnvelopes;
-        private beginDriftRelease;
-        private applyHandbrakeYawAssist;
         private velocityAtWorldPoint;
         private resolveSingleBilateral;
         private calcRollingFriction;
+        private clampChassisYawRate;
+        getNaturalWheelSlip(wheelIndex: number): boolean;
         getSignedFrontSteeringAngleRad(): number;
         getApproxWheelbaseMeters(): number;
         dispose(): void;
@@ -5235,61 +5267,69 @@ declare namespace TOOLKIT {
         /** Gets the rigidbody raycast vehicle controller for the entity. Note: Wheel collider metadata informaion is required for raycast vehicle control. */
         static GetInstance(scene: BABYLON.Scene, rigidbody: TOOLKIT.RigidbodyPhysics): TOOLKIT.RaycastVehicle;
         tickVehicleController(step: number): void;
-        /** Gets vehicle enable multi raycast flag using physics vehicle object. (Advanved Use Only) */
+        /** Gets vehicle enable multi raycast flag using physics vehicle object. (Advanced Use Only) */
         getEnableMultiRaycast(): boolean;
-        /** Sets vehicle enable multi raycast flag using physics vehicle object. (Advanved Use Only) */
+        /** Sets vehicle enable multi raycast flag using physics vehicle object. (Advanced Use Only) */
         setEnableMultiRaycast(flag: boolean): void;
-        /** Gets vehicle raycast smoothing flag using physics vehicle object. (Advanved Use Only) */
-        getEnableRaycastSmoothing(): boolean;
-        /** Sets vehicle raycast smoothing flag using physics vehicle object. (Advanved Use Only) */
-        setEnableRaycastSmoothing(flag: boolean): void;
-        /** Gets vehicle angular damping using physics vehicle object. (Advanved Use Only) */
+        /** Gets vehicle smoothed gradient speed using physics vehicle object. (Advanced Use Only) */
+        getSmoothedGradientSpeed(): number;
+        /** Sets vehicle smoothed gradient speed using physics vehicle object. (Advanced Use Only) */
+        setSmoothedGradientSpeed(impulse: number): void;
+        /** Gets vehicle maximum yaw rate at low speed using physics vehicle object. (Advanced Use Only) */
+        getMaximumYawRateLow(): number;
+        /** Sets vehicle maximum yaw rate at low speed using physics vehicle object. (Advanced Use Only) */
+        setMaximumYawRateLow(impulse: number): void;
+        /** Gets vehicle maximum yaw rate at high speed using physics vehicle object. (Advanced Use Only) */
+        getMaximumYawRateHigh(): number;
+        /** Sets vehicle maximum yaw rate at high speed using physics vehicle object. (Advanced Use Only) */
+        setMaximumYawRateHigh(impulse: number): void;
+        /** Gets vehicle angular damping using physics vehicle object. (Advanced Use Only) */
         getAngularDampingControl(): BABYLON.Vector3;
-        /** Sets vehicle angular damping using physics vehicle object. (Advanved Use Only) */
+        /** Sets vehicle angular damping using physics vehicle object. (Advanced Use Only) */
         setAngularDampingControl(damping: BABYLON.Vector3): void;
-        /** Gets vehicle smooth flying impulse force using physics vehicle object. (Advanved Use Only) */
+        /** Gets vehicle smooth flying impulse force using physics vehicle object. (Advanced Use Only) */
         getSmoothFlyingImpulse(): number;
-        /** Sets vehicle smooth flying impulse using physics vehicle object. (Advanved Use Only) */
+        /** Sets vehicle smooth flying impulse using physics vehicle object. (Advanced Use Only) */
         setSmoothFlyingImpulse(impulse: number): void;
-        /** Enables or disables grounded auto leveling after wall/curb hits. (Advanved Use Only) */
+        /** Enables or disables grounded auto leveling after wall/curb hits. (Advanced Use Only) */
         setGroundedAutoLevelEnabled(flag: boolean): void;
-        /** Sets grounded auto-leveling correction strength. (Advanved Use Only) */
+        /** Sets grounded auto-leveling correction strength. (Advanced Use Only) */
         setGroundedAutoLevelStrength(strength: number): void;
-        /** Sets grounded auto-leveling deadzone angle in degrees. (Advanved Use Only) */
+        /** Sets grounded auto-leveling deadzone angle in degrees. (Advanced Use Only) */
         setGroundedAutoLevelDeadzone(degrees: number): void;
-        /** Sets the low-angle settle band for grounded auto-leveling in degrees. (Advanved Use Only) */
+        /** Sets the low-angle settle band for grounded auto-leveling in degrees. (Advanced Use Only) */
         setGroundedAutoLevelSettleDeg(degrees: number): void;
-        /** Sets the strength scale used inside the grounded auto-level settle band. (Advanved Use Only) */
+        /** Sets the strength scale used inside the grounded auto-level settle band. (Advanced Use Only) */
         setGroundedAutoLevelSettleScale(scale: number): void;
-        /** Sets the hysteresis band around the grounded auto-level settle cutoff in degrees. (Advanved Use Only) */
+        /** Sets the hysteresis band around the grounded auto-level settle cutoff in degrees. (Advanced Use Only) */
         setGroundedAutoLevelHysteresis(degrees: number): void;
-        /** Sets speed range where grounded auto-leveling ramps to full strength. (Advanved Use Only) */
+        /** Sets speed range where grounded auto-leveling ramps to full strength. (Advanced Use Only) */
         setGroundedAutoLevelSpeedRange(startKmh: number, fullKmh: number): void;
-        /** Sets max grounded auto-leveling correction rate in rad/s. (Advanved Use Only) */
+        /** Sets max grounded auto-leveling correction rate in rad/s. (Advanced Use Only) */
         setGroundedAutoLevelMaxRate(rate: number): void;
-        /** Gets vehicle track connection accel force using physics vehicle object. (Advanved Use Only) */
+        /** Gets vehicle track connection accel force using physics vehicle object. (Advanced Use Only) */
         getTrackConnectionAccel(): number;
-        /** Sets vehicle track connection accel force using physics vehicle object. (Advanved Use Only) */
+        /** Sets vehicle track connection accel force using physics vehicle object. (Advanced Use Only) */
         setTrackConnectionAccel(force: number): void;
-        /** Sets max extra downward accel used while fully airborne at high speed. (Advanved Use Only) */
+        /** Sets max extra downward accel used while fully airborne at high speed. (Advanced Use Only) */
         setAirborneTrackConnectionMaxAccel(accel: number): void;
-        /** Sets speed range where airborne pull-down ramps from base to max accel. (Advanved Use Only) */
+        /** Sets speed range where airborne pull-down ramps from base to max accel. (Advanced Use Only) */
         setAirborneTrackConnectionSpeedRange(startKmh: number, fullKmh: number): void;
-        /** Sets airborne upward velocity damping rate. (Advanved Use Only) */
+        /** Sets airborne upward velocity damping rate. (Advanced Use Only) */
         setAirborneRiseDamping(rate: number): void;
-        /** Sets hard cap on upward speed while fully airborne. 0 disables the cap. (Advanved Use Only) */
+        /** Sets hard cap on upward speed while fully airborne. 0 disables the cap. (Advanced Use Only) */
         setAirborneMaxRiseSpeed(speed: number): void;
-        /** Gets vehicle min wheel contact count using physics vehicle object. (Advanved Use Only) */
+        /** Gets vehicle min wheel contact count using physics vehicle object. (Advanced Use Only) */
         getMinimumWheelContacts(): number;
-        /** Sets vehicle min wheel contact count using physics vehicle object. (Advanved Use Only) */
+        /** Sets vehicle min wheel contact count using physics vehicle object. (Advanced Use Only) */
         setMinimumWheelContacts(contacts: number): void;
-        /** Gets vehicle aerodynamic downforce coefficient N/(m/s)^2. (Advanved Use Only) */
+        /** Gets vehicle aerodynamic downforce coefficient N/(m/s)^2. (Advanced Use Only) */
         getDownforceCoefficient(): number;
-        /** Sets vehicle aerodynamic downforce coefficient N/(m/s)^2. (Advanved Use Only) */
+        /** Sets vehicle aerodynamic downforce coefficient N/(m/s)^2. (Advanced Use Only) */
         setDownforceCoefficient(value: number): void;
-        /** Gets vehicle constant downforce as a fraction of vehicle weight. (Advanved Use Only) */
+        /** Gets vehicle constant downforce as a fraction of vehicle weight. (Advanced Use Only) */
         getConstantDownforce(): number;
-        /** Sets vehicle constant downforce as a fraction of vehicle weight. (Advanved Use Only) */
+        /** Sets vehicle constant downforce as a fraction of vehicle weight. (Advanced Use Only) */
         setConstantDownforce(value: number): void;
         /** Gets the internal wheel index by id string. */
         getWheelIndexByID(id: string): number;
@@ -5311,10 +5351,32 @@ declare namespace TOOLKIT {
         getWheelSkidFadeOutSpeed(): number;
         /** Sets the wheel skid fade-out speed. Controls how quickly skid effect ramps up during handbrake slides. (Advanced Use Only) */
         setWheelSkidFadeOutSpeed(value: number): void;
+        /** Gets the arcade yaw assist active state. (Advanced Use Only) */
+        isArcadeYawAssistActive(): boolean;
         /** Gets the arcade steering assist strength. (Advanced Use Only) */
         getArcadeSteeringAssist(): number;
         /** Sets the arcade steering yaw assist strength. Higher values kick the rear end around more aggressively during skids. (Advanced Use Only) */
         setArcadeSteeringAssist(value: number): void;
+        /** Gets the arcade handbrake max slide angle in degrees. (Advanced Use Only) */
+        getArcadeHandbrakeMaxSlideAngleDeg(): number;
+        /** Sets the arcade handbrake max slide angle in degrees. (Advanced Use Only) */
+        setArcadeHandbrakeMaxSlideAngleDeg(value: number): void;
+        /** Gets the arcade handbrake bicycle yaw authority. (Advanced Use Only) */
+        getArcadeHandbrakeBicycleYawAuthority(): number;
+        /** Sets the arcade handbrake bicycle yaw authority. (Advanced Use Only) */
+        setArcadeHandbrakeBicycleYawAuthority(value: number): void;
+        /** Gets the arcade handbrake max yaw rate in degrees per second. (Advanced Use Only) */
+        getArcadeHandbrakeMaxYawRateDegPerSec(): number;
+        /** Sets the arcade handbrake max yaw rate in degrees per second. Higher values kick the rear end around more aggressively during skids. (Advanced Use Only) */
+        setArcadeHandbrakeMaxYawRateDegPerSec(value: number): void;
+        /** Gets the arcade handbrake reference speed in km/h. (Advanced Use Only) */
+        getArcadeHandbrakeReferenceSpeedKmh(): number;
+        /** Sets the arcade handbrake reference speed in km/h. Higher values kick the rear end around more aggressively during skids. (Advanced Use Only) */
+        setArcadeHandbrakeReferenceSpeedKmh(value: number): void;
+        /** Gets the arcade handbrake kick strength in degrees per second. (Advanced Use Only) */
+        getArcadeHandbrakeKickStrengthDegPerSec(): number;
+        /** Sets the arcade handbrake kick strength in degrees per second. Higher values kick the rear end around more aggressively during skids. (Advanced Use Only) */
+        setArcadeHandbrakeKickStrengthDegPerSec(value: number): void;
         getArcadeBurnoutActive(): boolean;
         setArcadeBurnoutActive(active: boolean): void;
         getArcadeDonutActive(): boolean;
@@ -5323,28 +5385,12 @@ declare namespace TOOLKIT {
         setArcadeFootBrakeActive(active: boolean): void;
         getArcadeHandBrakeActive(): boolean;
         setArcadeHandBrakeActive(active: boolean): void;
-        getArcadeMaxHandBrakeAngle(): number;
-        setArcadeMaxHandBrakeAngle(degrees: number): void;
-        /** Gets the arcade handbrake yaw kick rate. (Advanced Use Only) */
-        getArcadeMaxHandBrakeKick(): number;
-        /** Sets the arcade handbrake yaw kick rate. Higher values kick the rear end around more aggressively during skids. (Advanced Use Only) */
-        setArcadeMaxHandBrakeKick(value: number): void;
-        /** Gets the arcade drift release tau. (Advanced Use Only) */
-        getArcadeDriftReleaseLinger(): number;
-        /** Sets the arcade drift release tau. (Advanced Use Only) */
-        setArcadeDriftReleaseLinger(value: number): void;
-        /** Gets the arcade drift release duration. (Advanced Use Only) */
-        getArcadeDriftReleaseDuration(): number;
-        /** Sets the arcade drift release duration. (Advanced Use Only) */
-        setArcadeDriftReleaseDuration(value: number): void;
         /** Sets vehicle arcade burnout direction change speed using physics vehicle object. (Advanced Use Only) */
         setArcadeBurnoutDirectionChangeSpeed(mph: number): void;
         /** Gets an approximate wheelbase length in meters for the vehicle. Used for some advanced handling calculations. */
         getApproxWheelbaseMeters(): number;
         /** Gets the signed front wheel steering angle in radians. Used for some advanced handling calculations. */
         getSignedFrontSteeringAngleRad(): number;
-        /** Sets vehicle arcade burnout min speed to trigger direction change using physics vehicle object. (Advanced Use Only) */
-        setUpdateVehicleChassisHandler(handler: (step: number, wheelsOnGround: number, stabilizationUp: BABYLON.Vector3) => void): void;
         getVisualSteeringAngle(wheel: number): number;
         setVisualSteeringAngle(angle: number, wheel: number): void;
         getPhysicsSteeringAngle(wheel: number): number;
@@ -5352,6 +5398,8 @@ declare namespace TOOLKIT {
         protected setupWheelInformation(): void;
         private applyAutoSuspensionForce;
         private getWheelForwardPosition;
+        /** Returns true when the wheel is slipping from normal tire saturation only, excluding arcade handbrake/burnout/donut states and the protected post-handbrake release window. */
+        getNaturalWheelSlip(wheelIndex: number): boolean;
         updateWheelInformation(): void;
         protected lockedWheelInformation(wheel: number): boolean;
         protected deleteWheelInformation(): void;

@@ -1,0 +1,156 @@
+// @Standard.shader - Unity built-in shader source. Copyright (c) 2016 Unity Technologies. MIT license (see license.txt)
+
+Shader "Babylon/System/Vertex Animation Shader" {
+    Properties {
+        _Color("Color", Color) = (1,1,1,1)
+        _MainTex("Albedo", 2D) = "white" {}
+
+        _Cutoff("Alpha Cutoff", Range(0.0, 1.0)) = 0.5
+
+        _Glossiness("Smoothness", Range(0.0, 1.0)) = 0.5
+        _GlossMapScale("Smoothness Scale", Range(0.0, 1.0)) = 1.0
+        [Enum(Metallic Alpha,0,Albedo Alpha,1)] _SmoothnessTextureChannel ("Smoothness texture channel", Float) = 0
+
+        [Gamma] _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
+        _MetallicGlossMap("Metallic", 2D) = "white" {}
+
+        [ToggleOff] _SpecularHighlights("Specular Highlights", Float) = 1.0
+        [ToggleOff] _GlossyReflections("Glossy Reflections", Float) = 1.0
+
+        _BumpScale("Scale", Float) = 1.0
+        [Normal] _BumpMap("Normal Map", 2D) = "bump" {}
+
+        _OcclusionStrength("Strength", Range(0.0, 1.0)) = 1.0
+        _OcclusionMap("Occlusion", 2D) = "white" {}
+
+        _EmissionColor("Color", Color) = (0,0,0)
+        _EmissionMap("Emission", 2D) = "white" {}
+
+        _Parallax ("Height Scale", Range (0.005, 0.08)) = 0.02
+        _ParallaxMap ("Height Map", 2D) = "black" {}
+
+        _DetailMask("Detail Mask", 2D) = "white" {}
+
+        _DetailAlbedoMap("Detail Albedo x2", 2D) = "grey" {}
+        _DetailNormalMapScale("Scale", Float) = 1.0
+        [Normal] _DetailNormalMap("Normal Map", 2D) = "bump" {}
+
+        [Enum(UV0,0,UV1,1)] _UVSec ("UV Set for secondary textures", Float) = 0
+
+        // Babylon Cubemap Options
+        _ReflectColor("Reflection Color", Color) = (1,1,1,0.5)
+        _Cube("Reflection Cubemap", Cube) = "_Skybox" {}
+
+        // Babylon Render Options
+        [ToggleOff] _EnableLighting("Enable Lighting", Float) = 1.0
+        _AmbientColor("Ambient Color", Color) = (1.0,1.0,1.0,1.0)               // ambientColor
+        _LightmapIntensity("Lightmap Level", Range(0.0, 10.0)) = 1.0
+        _DirectIntensity("Direct Intensity", Range(0.0, 10.0)) = 1.0
+        _EmissiveIntensity("Emissive Intensity", Range(0.0, 10.0)) = 1.0
+        _SpecularIntensity("Specular Intensity", Range(0.0, 10.0)) = 1.0
+        _EnvironmentIntensity("Environment Intensity", Range(0.0, 10.0)) = 1.0
+        _ClearCoatIntensity("Clear Coat Intensity", Range(0.0, 10.0)) = 0.0
+        _MaxLightCount("Simultaneous Lights", int) = 4
+        [ToggleOff] _BackFaceCulling("Set Back Face Culling", Float) = 1.0
+        [ToggleOff] _FreezeMaterial("Freeze Shader Material", Float) = 0.0
+        [ToggleOff] _UnlitMaterial("Render Unlit Material", Float) = 0.0
+        [ToggleOff] _UseWireframe("Use Wireframe Material", Float) = 0.0
+        [Enum(ADD,1, COMBINE,2, SUBTRACT,3, MULTIPLY,4)] _AlphaBlendMode("Alpha Blend Mode", Float) = 2
+
+        _IndexOfRefraction("Index Of Refraction", Range(0.0, 10.0)) = 1.5
+        _DetailBlendLevel("Detail Blend Level", Range(0.0, 1.0)) = 0.5
+        _DetailRoughnessLevel("Detail Roughness Level", Range(0.0, 1.0)) = 0.5
+
+        // Babylon Custom Properties
+        // testTexture("Test Texture", 2D) = "white" {}
+        // testVector("Test Vector", Vector) = (0,0,0,0)
+        // testColor("Test Color", Color) = (1,1,1)
+        // testRange("Test Range", Range(0.0, 1.0)) = 0.5
+        // testFloat("Test Float", Float) = 1.0
+        // testInt("Test Int", Int) = 1
+        // [ToggleOff] testBool("Test Bool", Int) = 1
+        // [Enum(Tester A,0,Tester B,1)] testEnum("Test Enum", Float) = 0
+
+        // Blending state
+        [HideInInspector] _Mode ("__mode", Float) = 0.0
+        [HideInInspector] _SrcBlend ("__src", Float) = 1.0
+        [HideInInspector] _DstBlend ("__dst", Float) = 0.0
+        [HideInInspector] _ZWrite ("__zw", Float) = 1.0
+    }
+
+    CGINCLUDE
+    #ifdef SHADER_CONTROLLER
+    Shader: "Standard"
+    Material: "PROJECT.VertexAnimationMaterial"
+    #endif //SHADER_CONTROLLER
+    ENDCG
+
+    SubShader {
+        Tags { "RenderType"="Opaque" }
+        LOD 200
+
+        CGPROGRAM
+        // Physically based Standard lighting model, and enable shadows on all light types
+        #pragma surface surf Standard fullforwardshadows
+
+        // Use shader model 3.0 target, to get nicer looking lighting
+        #pragma target 3.0
+
+        sampler2D _MainTex;
+        sampler2D _MetallicGlossMap;
+        sampler2D _BumpMap;
+        sampler2D _OcclusionMap;
+        sampler2D _EmissionMap;
+        sampler2D _DetailAlbedoMap;
+        sampler2D _DetailNormalMap;
+        sampler2D _DetailMask;
+
+        struct Input {
+            float2 uv_MainTex;
+            float2 uv_DetailAlbedoMap;
+        };
+
+        half _Glossiness;
+        half _Metallic;
+        fixed4 _Color;
+        half _BumpScale;
+        half _OcclusionStrength;
+        fixed4 _EmissionColor;
+        half _DetailNormalMapScale;
+
+        // Add instancing support for this shader.
+        UNITY_INSTANCING_BUFFER_START(Props)
+        UNITY_INSTANCING_BUFFER_END(Props)
+
+        void surf (Input IN, inout SurfaceOutputStandard o) {
+            // Albedo comes from a texture tinted by color
+            fixed4 c = tex2D (_MainTex, IN.uv_MainTex) * _Color;
+
+            // EXAMPLE BLACK AND WHITE FILTER
+            fixed luma = c.r * 0.299 + c.g * 0.587 + c.b * 0.114;
+            c.rgb = fixed3(luma, luma, luma);
+            
+            o.Albedo = c.rgb;
+            
+            // Metallic and smoothness come from slider variables or metallic map
+            fixed4 metallicGloss = tex2D(_MetallicGlossMap, IN.uv_MainTex);
+            o.Metallic = metallicGloss.r * _Metallic;
+            o.Smoothness = metallicGloss.a * _Glossiness;
+            
+            // Normal mapping
+            o.Normal = UnpackScaleNormal(tex2D(_BumpMap, IN.uv_MainTex), _BumpScale);
+            
+            // Occlusion
+            o.Occlusion = lerp(1, tex2D(_OcclusionMap, IN.uv_MainTex).g, _OcclusionStrength);
+            
+            // Emission
+            o.Emission = tex2D(_EmissionMap, IN.uv_MainTex) * _EmissionColor;
+            
+            o.Alpha = c.a;
+        }
+        ENDCG
+    }
+    
+    FallBack "Diffuse"
+    CustomEditor "UnityStandardShaderGUI"
+}

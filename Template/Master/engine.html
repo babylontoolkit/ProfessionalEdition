@@ -294,6 +294,7 @@
     var showdetails = ###SHOWDETAILS###, showlabel = ###SHOWLABEL###;
     var gzipcontent = "###GZIP###";
     var legacyAudio = ###LEGACYAUDIO###;
+    var useLargeWorlds = ###LARGEWORLDS###;
     var loaded = false, paused = false, reloader = false, downloaded = 0, edownloaded = 0;
     var kilobyte = 1024, megabyte = (kilobyte * kilobyte);
     var divcvs = document.getElementById("cvs");
@@ -726,7 +727,7 @@
             else if (profile === 2) cpuPerformanceProfile = "high-performance";
             if (renderengine === 1) {
                 if (navigator.gpu) {
-                    engine = new BABYLON.WebGPUEngine(divcvs, { audioEngine: legacyAudio, antialias: antialias, powerPreference: gpuPerformanceProfile, stencil: useStencilBuffer, enableAllFeatures:true, setMaximumLimits: true, doNotHandleContextLost: true });
+                    engine = new BABYLON.WebGPUEngine(divcvs, { audioEngine: legacyAudio, antialias: antialias, powerPreference: gpuPerformanceProfile, stencil: useStencilBuffer, enableAllFeatures:true, useLargeWorldRendering: useLargeWorlds, setMaximumLimits: true, doNotHandleContextLost: true });
                     engine.initAsync({ jsPath: "###SCRIPT###/glslang.js", wasmPath: "###SCRIPT###/glslang.wasm" }, { jsPath: "###SCRIPT###/twgsl.js", wasmPath: "###SCRIPT###/twgsl.wasm" }).catch((ex) => { showErrorMessage(ex.message || "Unknown WebGPU Exception"); }).then(() => {
                         window.prepareBabylonEngineProperties();
                         if (snapshot === 1) {
@@ -737,11 +738,11 @@
                     });
                 } else {
                     // BABYLON.Tools.Warn("WebGPU is not supported on platform. Falling back to WebGL");
-                    engine = new BABYLON.Engine(divcvs, antialias, { audioEngine: legacyAudio, powerPreference: cpuPerformanceProfile, preserveDrawingBuffer: preserveDrawBuffer, stencil: useStencilBuffer, premultipliedAlpha: false, doNotHandleContextLost: true }, false);
+                    engine = new BABYLON.Engine(divcvs, antialias, { audioEngine: legacyAudio, powerPreference: cpuPerformanceProfile, preserveDrawingBuffer: preserveDrawBuffer, stencil: useStencilBuffer, useLargeWorldRendering: useLargeWorlds, premultipliedAlpha: false, doNotHandleContextLost: true }, false);
                     window.prepareBabylonEngineProperties();
                 }
             } else {
-                engine = new BABYLON.Engine(divcvs, antialias, { audioEngine: legacyAudio, powerPreference: cpuPerformanceProfile, preserveDrawingBuffer: preserveDrawBuffer, stencil: useStencilBuffer, premultipliedAlpha: false, doNotHandleContextLost: true }, false);
+                engine = new BABYLON.Engine(divcvs, antialias, { audioEngine: legacyAudio, powerPreference: cpuPerformanceProfile, preserveDrawingBuffer: preserveDrawBuffer, stencil: useStencilBuffer, useLargeWorldRendering: useLargeWorlds, premultipliedAlpha: false, doNotHandleContextLost: true }, false);
                 window.prepareBabylonEngineProperties();
             }
         } catch (ex3) {
