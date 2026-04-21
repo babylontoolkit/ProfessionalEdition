@@ -3149,6 +3149,226 @@ declare namespace TOOLKIT {
         static ExtractWindZoneOverride(properties: any, terrainTransform: BABYLON.TransformNode, builderInstance?: any): any | null;
     }
 }
+declare namespace TOOLKIT {
+    /**
+     * Static renderer reference emitted on Animator metadata for each VAT target.
+     */
+    export interface IVertexAnimationRendererReference {
+        name?: string;
+        vertexrenderer?: string;
+        vertexindex?: number;
+        vertexcontroller?: string;
+        vertextransform: string;
+        vertexguid: string;
+        vertexpath?: string;
+        vertexmesh?: string;
+        vertexsubmeshes?: number;
+    }
+    /**
+     * Per-renderer VAT bake entry for a single clip.
+     * Serialized by CVTools.OnExportNode into each Animator clip's settings metadata.
+     */
+    export interface IVertexAnimationSettings extends IVertexAnimationRendererReference {
+        name: string;
+        vertex: string;
+        vertexnormal: string;
+        vertexpacking: "separate" | "none";
+        vertexmethod: "soft";
+        vertexframes: number;
+        vertexfps: number;
+        vertexwidth: number;
+        vertexheight: number;
+        vertexcount: number;
+        vertexrowsperframe: number;
+        vertexposmin: [number, number, number];
+        vertexposmax: [number, number, number];
+    }
+    /**
+     * Clip-level VAT settings emitted by the exporter.
+     */
+    export interface IVertexAnimationClipSettings {
+        name: string;
+        vertexcontroller: string;
+        vertexrenderers: TOOLKIT.IVertexAnimationSettings[];
+    }
+    /**
+     * Internal renderer entry held by a clip in VertexAnimationController.
+     */
+    interface IVertexAnimationRendererClip {
+        guid: string;
+        settings: TOOLKIT.IVertexAnimationSettings;
+        positionTexture: BABYLON.Texture;
+        normalTexture: BABYLON.Texture;
+    }
+    /**
+     * Internal clip entry held by VertexAnimationController.
+     */
+    interface IVertexAnimationClip {
+        name: string;
+        renderers: {
+            [guid: string]: IVertexAnimationRendererClip;
+        };
+        firstRendererGuid: string;
+        duration: number;
+    }
+    /**
+     * Shared playback clock for Vertex Animation Texture (VAT) materials.
+     *
+     * One controller per Animator/VAT controller identity (keyed by vertexcontroller).
+     * All materials across every baked skinned mesh renderer on that rig share this
+     * controller so body, head, armor, and any submeshes all advance in lockstep.
+     *
+     * Lifecycle:
+     *   - GetOrCreate(controllerGuid, scene) from the AnimationState machine
+     *   - loadAnimations(settings[]) to preload VAT textures
+     *   - play(clipName, blendDuration) to start
+     *   - Materials register themselves during their plugin.setupAnimations()
+     *
+     * @class VertexAnimationController
+     */
+    export class VertexAnimationController {
+        private static _registry;
+        /** Look up an existing controller by controller guid. Returns null if none. */
+        static Find(guid: string): TOOLKIT.VertexAnimationController;
+        /** Look up or create a controller for a given controller guid. */
+        static GetOrCreate(guid: string, scene: BABYLON.Scene, rootUrl?: string): TOOLKIT.VertexAnimationController;
+        /** Resolve the shared controller id from raw clip settings. */
+        static ResolveControllerId(settings: TOOLKIT.IVertexAnimationClipSettings[]): string;
+        /** Flatten clip metadata into per-renderer clip entries. */
+        static ExpandSettings(settings: TOOLKIT.IVertexAnimationClipSettings[]): TOOLKIT.IVertexAnimationSettings[];
+        /** Collect unique renderer targets referenced by the supplied clip settings. */
+        static CollectRendererTargets(settings: TOOLKIT.IVertexAnimationClipSettings[]): TOOLKIT.IVertexAnimationRendererReference[];
+        /** Dispose every controller (optionally only those tied to a given scene). */
+        static DisposeAll(scene?: BABYLON.Scene): void;
+        readonly guid: string;
+        readonly scene: BABYLON.Scene;
+        rootUrl: string;
+        private _plugins;
+        private _clips;
+        private _currentClip;
+        private _previousClip;
+        private _time;
+        private _previousTime;
+        private _speed;
+        private _loop;
+        private _playing;
+        private _blendDuration;
+        private _blendElapsed;
+        private _blendWeight;
+        private _normalMode;
+        private _tickObserver;
+        private _disposeObserver;
+        private _lastFrameId;
+        private constructor();
+        dispose(): void;
+        get currentClip(): IVertexAnimationClip;
+        get previousClip(): IVertexAnimationClip;
+        get currentTime(): number;
+        get previousTime(): number;
+        get blendWeight(): number;
+        get isPlaying(): boolean;
+        get normalMode(): "separate" | "none";
+        setSpeed(speed: number): void;
+        setLoop(loop: boolean): void;
+        addPlugin(plugin: VertexAnimationMaterialPlugin): void;
+        removePlugin(plugin: VertexAnimationMaterialPlugin): void;
+        /**
+         * Load (or refresh) VAT clips. Existing clips are kept — only new ones
+         * allocate textures. Normal mode is captured from the first renderer clip;
+         * all renderers on one controller are expected to share the same packing.
+         */
+        loadAnimations(settings: TOOLKIT.IVertexAnimationClipSettings[]): void;
+        /**
+         * Start playback of a named clip. If blendDuration > 0 and a different clip
+         * is currently playing, crossfade from the current clip to the new one.
+         */
+        play(clipName: string, blendDuration?: number): boolean;
+        pause(): void;
+        resume(): void;
+        stop(): void;
+        getCurrentRendererClip(rendererGuid: string): IVertexAnimationRendererClip;
+        getPreviousRendererClip(rendererGuid: string): IVertexAnimationRendererClip;
+        /** Runs once per scene frame. Advances time + blend weight. */
+        private _tick;
+        private _loadTexture;
+        private _resolveUrl;
+        private static _expandClipSetting;
+        private _getRendererClip;
+    }
+    /**
+     * VAT Shader Material (BABYLON.PBRMaterial-based).
+     * One instance per primitive/material slot on the combined mesh. All instances
+     * targeting the same Animator/VAT controller share a single VertexAnimationController.
+     * @class VertexAnimationMaterial
+     */
+    export class VertexAnimationMaterial extends TOOLKIT.CustomShaderMaterial {
+        controller: VertexAnimationController;
+        constructor(name: string, scene: BABYLON.Scene);
+        awake(): void;
+        update(): void;
+        getShaderName(): string;
+        getController(): TOOLKIT.VertexAnimationController;
+    }
+    /**
+     * VAT Material Plugin — injects the VAT sampling code into the vertex stage
+     * and wires the material to its shared VertexAnimationController.
+     * @class VertexAnimationMaterialPlugin
+     */
+    export class VertexAnimationMaterialPlugin extends TOOLKIT.CustomShaderMaterialPlugin {
+        /** Settings for each vertex animation texture used */
+        vertexAnimations: TOOLKIT.IVertexAnimationClipSettings[];
+        /** Shared clock for this Animator/VAT controller identity */
+        controller: TOOLKIT.VertexAnimationController;
+        /** Unique VAT renderer targets referenced by the supplied settings */
+        private _rendererTargets;
+        /** Resolved renderer guid for the mesh currently using this material instance */
+        private _targetRendererGuid;
+        /** 1×1 fallback texture — keeps WebGPU bind groups valid before a clip is assigned */
+        private _placeholderTexture;
+        constructor(customMaterial: TOOLKIT.CustomShaderMaterial, shaderName: string);
+        dispose(): void;
+        isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean;
+        getCustomCode(shaderType: string, shaderLanguage: BABYLON.ShaderLanguage): any;
+        getUniforms(shaderLanguage: BABYLON.ShaderLanguage): any;
+        getSamplers(samplers: string[]): void;
+        getAttributes(attributes: string[], scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        prepareDefines(defines: BABYLON.MaterialDefines, scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        bindForSubMesh(uniformBuffer: BABYLON.UniformBuffer, scene: BABYLON.Scene, engine: BABYLON.AbstractEngine, subMesh: BABYLON.SubMesh): void;
+        /**
+         * Wire this material to a VertexAnimationController for the given settings.
+         * Called from the AnimationState machine at scene-load time.
+         */
+        setupAnimations(settings: TOOLKIT.IVertexAnimationClipSettings[], rootUrl?: string): void;
+        /** Start playback — forwards to the shared controller. */
+        playAnimation(name: string, blendDuration?: number): boolean;
+        /** Pause playback (time freezes; resume to continue). */
+        pauseAnimation(): void;
+        /** Stop playback and rewind to frame 0. */
+        stopAnimation(): void;
+        private _captureRendererTarget;
+        private _resolveRendererTarget;
+        private _matchRendererByGuid;
+        private _matchRendererByPath;
+        private _matchRendererByName;
+        private _readMetadataString;
+        private _buildNodePath;
+        private _pathEndsWith;
+        /**
+         * Push current controller state into this material's uniforms. Called from
+         * VertexAnimationMaterial.update(), which itself is called by
+         * updateCustomBindings during bindForSubMesh. Every material on the mesh
+         * reads the same controller state in the same frame — they stay in lockstep.
+         */
+        syncFromController(material: TOOLKIT.VertexAnimationMaterial): void;
+        private getGLSLVertexDefinitions;
+        private getGLSLVertexPositionCode;
+        private getGLSLVertexNormalCode;
+        private getWGSLVertexDefinitions;
+        private getWGSLVertexPositionCode;
+        private getWGSLVertexNormalCode;
+    }
+    export {};
+}
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
     interface KeymapState {

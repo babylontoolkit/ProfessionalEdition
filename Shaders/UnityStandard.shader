@@ -1,9 +1,7 @@
 //Unity built-in shader source. Copyright (c) 2016 Unity Technologies. MIT license (see license.txt)
 
-Shader "Babylon/System/Standard Shader"
-{
-    Properties
-    {
+Shader "Babylon/System/Standard Shader" {
+    Properties {
         _Color("Color", Color) = (1,1,1,1)
         _MainTex("Albedo", 2D) = "white" {}
 
