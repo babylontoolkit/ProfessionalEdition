@@ -2076,6 +2076,7 @@ declare namespace TOOLKIT {
         protected shader: string;
         protected plugin: BABYLON.MaterialPluginBase;
         private _unityLightingPlugin;
+        getPlugin(): BABYLON.MaterialPluginBase;
         getClassName(): string;
         constructor(name: string, scene: BABYLON.Scene);
         initMaterial(): void;
@@ -3151,9 +3152,23 @@ declare namespace TOOLKIT {
 }
 declare namespace TOOLKIT {
     /**
+     * VAT Shader Material (BABYLON.PBRMaterial-based).
+     * One instance per primitive/material slot on the combined mesh. All instances
+     * targeting the same Animator/VAT controller share a single VertexAnimationController.
+     * @class VertexAnimationMaterial
+     */
+    class VertexAnimationMaterial extends TOOLKIT.CustomShaderMaterial {
+        controller: VertexAnimationController;
+        constructor(name: string, scene: BABYLON.Scene);
+        awake(): void;
+        update(): void;
+        getShaderName(): string;
+        getController(): TOOLKIT.VertexAnimationController;
+    }
+    /**
      * Static renderer reference emitted on Animator metadata for each VAT target.
      */
-    export interface IVertexAnimationRendererReference {
+    interface IVertexAnimationRendererReference {
         name?: string;
         vertexrenderer?: string;
         vertexindex?: number;
@@ -3168,12 +3183,12 @@ declare namespace TOOLKIT {
      * Per-renderer VAT bake entry for a single clip.
      * Serialized by CVTools.OnExportNode into each Animator clip's settings metadata.
      */
-    export interface IVertexAnimationSettings extends IVertexAnimationRendererReference {
+    interface IVertexAnimationSettings extends IVertexAnimationRendererReference {
         name: string;
         vertex: string;
         vertexnormal: string;
+        vertextextureformat: "png" | "exr";
         vertexpacking: "separate" | "none";
-        vertexmethod: "soft";
         vertexframes: number;
         vertexfps: number;
         vertexwidth: number;
@@ -3182,14 +3197,7 @@ declare namespace TOOLKIT {
         vertexrowsperframe: number;
         vertexposmin: [number, number, number];
         vertexposmax: [number, number, number];
-    }
-    /**
-     * Clip-level VAT settings emitted by the exporter.
-     */
-    export interface IVertexAnimationClipSettings {
-        name: string;
-        vertexcontroller: string;
-        vertexrenderers: TOOLKIT.IVertexAnimationSettings[];
+        vertexmethod: "soft";
     }
     /**
      * Internal renderer entry held by a clip in VertexAnimationController.
@@ -3197,8 +3205,8 @@ declare namespace TOOLKIT {
     interface IVertexAnimationRendererClip {
         guid: string;
         settings: TOOLKIT.IVertexAnimationSettings;
-        positionTexture: BABYLON.Texture;
-        normalTexture: BABYLON.Texture;
+        positionTexture: BABYLON.Texture | null;
+        normalTexture: BABYLON.Texture | null;
     }
     /**
      * Internal clip entry held by VertexAnimationController.
@@ -3226,18 +3234,20 @@ declare namespace TOOLKIT {
      *
      * @class VertexAnimationController
      */
-    export class VertexAnimationController {
+    class VertexAnimationController {
         private static _registry;
         /** Look up an existing controller by controller guid. Returns null if none. */
         static Find(guid: string): TOOLKIT.VertexAnimationController;
-        /** Look up or create a controller for a given controller guid. */
-        static GetOrCreate(guid: string, scene: BABYLON.Scene, rootUrl?: string): TOOLKIT.VertexAnimationController;
-        /** Resolve the shared controller id from raw clip settings. */
-        static ResolveControllerId(settings: TOOLKIT.IVertexAnimationClipSettings[]): string;
-        /** Flatten clip metadata into per-renderer clip entries. */
-        static ExpandSettings(settings: TOOLKIT.IVertexAnimationClipSettings[]): TOOLKIT.IVertexAnimationSettings[];
-        /** Collect unique renderer targets referenced by the supplied clip settings. */
-        static CollectRendererTargets(settings: TOOLKIT.IVertexAnimationClipSettings[]): TOOLKIT.IVertexAnimationRendererReference[];
+        /**
+         * Look up or create a controller for a given controller guid.
+         * @param lazyLoadTextures When true, VAT textures are NOT allocated at loadAnimations() time.
+         *   They are deferred to the first play() call for each clip. Set this from the Animator
+         *   metadata field written by the C# exporter (e.g. getProperty("lazyloadtextures", false)).
+         *   Once the controller is created as lazy it stays lazy for its lifetime.
+         */
+        static GetOrCreate(guid: string, scene: BABYLON.Scene, rootUrl?: string, lazyLoadTextures?: boolean): TOOLKIT.VertexAnimationController;
+        /** Collect unique renderer targets from the flat VAT settings array emitted by C#. */
+        static CollectRendererTargets(settings: TOOLKIT.IVertexAnimationSettings[]): TOOLKIT.IVertexAnimationRendererReference[];
         /** Dispose every controller (optionally only those tied to a given scene). */
         static DisposeAll(scene?: BABYLON.Scene): void;
         readonly guid: string;
@@ -3256,6 +3266,7 @@ declare namespace TOOLKIT {
         private _blendElapsed;
         private _blendWeight;
         private _normalMode;
+        private _lazyLoad;
         private _tickObserver;
         private _disposeObserver;
         private _lastFrameId;
@@ -3277,10 +3288,10 @@ declare namespace TOOLKIT {
          * allocate textures. Normal mode is captured from the first renderer clip;
          * all renderers on one controller are expected to share the same packing.
          */
-        loadAnimations(settings: TOOLKIT.IVertexAnimationClipSettings[]): void;
+        loadAnimations(settings: TOOLKIT.IVertexAnimationSettings[]): void;
         /**
          * Start playback of a named clip. If blendDuration > 0 and a different clip
-         * is currently playing, crossfade from the current clip to the new one.
+         * is currently playing, crossfade from the current clip to the new one. (Default 0.15)
          */
         play(clipName: string, blendDuration?: number): boolean;
         pause(): void;
@@ -3290,33 +3301,28 @@ declare namespace TOOLKIT {
         getPreviousRendererClip(rendererGuid: string): IVertexAnimationRendererClip;
         /** Runs once per scene frame. Advances time + blend weight. */
         private _tick;
+        /**
+         * For lazy-loaded controllers: allocates GPU textures for every renderer entry in the
+         * given clip that does not yet have one. No-op when not in lazy mode (all textures were
+         * allocated at loadAnimations() time) or when called with a null clip.
+         *
+         * Textures begin uploading to the GPU asynchronously; the existing `|| fallback` guards
+         * in syncFromController() show the 1×1 placeholder for the one or two frames it takes
+         * for the texture to become ready — no special handling required in the shader.
+         */
+        private _ensureClipTexturesLoaded;
         private _loadTexture;
         private _resolveUrl;
-        private static _expandClipSetting;
         private _getRendererClip;
-    }
-    /**
-     * VAT Shader Material (BABYLON.PBRMaterial-based).
-     * One instance per primitive/material slot on the combined mesh. All instances
-     * targeting the same Animator/VAT controller share a single VertexAnimationController.
-     * @class VertexAnimationMaterial
-     */
-    export class VertexAnimationMaterial extends TOOLKIT.CustomShaderMaterial {
-        controller: VertexAnimationController;
-        constructor(name: string, scene: BABYLON.Scene);
-        awake(): void;
-        update(): void;
-        getShaderName(): string;
-        getController(): TOOLKIT.VertexAnimationController;
     }
     /**
      * VAT Material Plugin — injects the VAT sampling code into the vertex stage
      * and wires the material to its shared VertexAnimationController.
      * @class VertexAnimationMaterialPlugin
      */
-    export class VertexAnimationMaterialPlugin extends TOOLKIT.CustomShaderMaterialPlugin {
-        /** Settings for each vertex animation texture used */
-        vertexAnimations: TOOLKIT.IVertexAnimationClipSettings[];
+    class VertexAnimationMaterialPlugin extends TOOLKIT.CustomShaderMaterialPlugin {
+        /** Flat VAT settings array — direct C# exporter output (animatorProps["vertexrenderers"]) */
+        vertexAnimations: TOOLKIT.IVertexAnimationSettings[];
         /** Shared clock for this Animator/VAT controller identity */
         controller: TOOLKIT.VertexAnimationController;
         /** Unique VAT renderer targets referenced by the supplied settings */
@@ -3337,14 +3343,21 @@ declare namespace TOOLKIT {
         /**
          * Wire this material to a VertexAnimationController for the given settings.
          * Called from the AnimationState machine at scene-load time.
+         * NOTE: The shared controller plays, pauses and stops the clips.
+         * @param lazyLoadTextures Pass the value read from Animator metadata
+         *   (e.g. getProperty("lazyloadtextures", false)). When true, VAT textures
+         *   are deferred to the first play() call for each clip instead of being
+         *   loaded all at startup.
          */
-        setupAnimations(settings: TOOLKIT.IVertexAnimationClipSettings[], rootUrl?: string): void;
-        /** Start playback — forwards to the shared controller. */
-        playAnimation(name: string, blendDuration?: number): boolean;
-        /** Pause playback (time freezes; resume to continue). */
-        pauseAnimation(): void;
-        /** Stop playback and rewind to frame 0. */
-        stopAnimation(): void;
+        /**
+         * Wire this material to a VertexAnimationController for the given settings.
+         * Called from the AnimationState machine at scene-load time.
+         * @param settings  Direct value of animatorProps["vertexrenderers"] — flat IVertexAnimationSettings[].
+         * @param controllerId  Direct value of animatorProps["vertexcontroller"] — the shared Animator GUID.
+         * @param rootUrl  Base URL for resolving relative texture paths.
+         * @param lazyLoadTextures  Direct value of animatorProps["lazyloadtextures"].
+         */
+        setupAnimations(settings: TOOLKIT.IVertexAnimationSettings[], controllerId: string, rootUrl?: string, lazyLoadTextures?: boolean): TOOLKIT.VertexAnimationController;
         private _captureRendererTarget;
         private _resolveRendererTarget;
         private _matchRendererByGuid;
@@ -3367,7 +3380,6 @@ declare namespace TOOLKIT {
         private getWGSLVertexPositionCode;
         private getWGSLVertexNormalCode;
     }
-    export {};
 }
 /** Babylon Toolkit Namespace */
 declare namespace TOOLKIT {
@@ -3975,6 +3987,7 @@ declare namespace TOOLKIT {
         getDeltaRootMotionRotation(): BABYLON.Quaternion;
         getFixedRootMotionPosition(): BABYLON.Vector3;
         getFixedRootMotionRotation(): BABYLON.Quaternion;
+        isVertexAnimationModeEnabled(): boolean;
         /** Register handler that is triggered when the animation state machine has been awakened */
         onAnimationAwakeObservable: BABYLON.Observable<BABYLON.TransformNode>;
         /** Register handler that is triggered when the animation state machine has been initialized */
@@ -3995,6 +4008,10 @@ declare namespace TOOLKIT {
         protected m_defaultGroup: BABYLON.AnimationGroup;
         protected m_animationTargets: BABYLON.TargetedAnimation[];
         protected m_rotationIdentity: BABYLON.Quaternion;
+        protected m_vertexAnimationMode: boolean;
+        protected m_vertexAnimationRenderers: BABYLON.Mesh[];
+        protected m_vertexAnimationController: TOOLKIT.VertexAnimationController;
+        protected m_vertexAnimationDefaultClip: string;
         constructor(transform: BABYLON.TransformNode, scene: BABYLON.Scene, properties?: any, alias?: string);
         protected awake(): void;
         protected update(): void;
