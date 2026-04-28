@@ -2073,6 +2073,8 @@ declare namespace TOOLKIT {
         private _ubos;
         /** Track WGSL samplers emitted for this material to avoid duplicate declarations (WGSL has no preprocessor) */
         private _wgslSamplers;
+        /** Textures in this set skip per-draw-call matrix/infos upload — use for raw data samplers (VAT, LUTs). */
+        private _noMatrixTextures;
         protected shader: string;
         protected plugin: BABYLON.MaterialPluginBase;
         private _unityLightingPlugin;
@@ -2092,6 +2094,14 @@ declare namespace TOOLKIT {
         addTextureUniform(name: string, texture: BABYLON.Texture): TOOLKIT.CustomShaderMaterial;
         /** Sets the texture uniform value */
         setTextureValue(name: string, texture: BABYLON.Texture): TOOLKIT.CustomShaderMaterial;
+        /**
+         * Marks a texture sampler as a raw data texture — skips the per-draw-call texture matrix and
+         * coordinate infos upload in updateCustomBindings(). Use for pure data samplers (VAT position/
+         * normal textures, LUTs etc.) that do not use BabylonJS UV transforms. The texture is still
+         * bound each draw call via setTexture(); only the 16-float matrix and 2-float infos writes
+         * are suppressed, eliminating ~18 wasted UBO float-writes per texture per draw call.
+         */
+        markTextureAsRaw(name: string): void;
         /** Gets the texture uniform value */
         getTextureValue(name: string): BABYLON.Texture;
         /** Adds a vector4 uniform property */
@@ -3159,11 +3169,66 @@ declare namespace TOOLKIT {
      */
     class VertexAnimationMaterial extends TOOLKIT.CustomShaderMaterial {
         controller: VertexAnimationController;
+        /** Optional per-material runtime skin texture arrays. When present, the fragment
+         *  shader samples runtimeAlbedoSkins[skinLayer] / runtimeNormalSkins[skinLayer]
+         *  instead of (or on top of) the standard albedo/bump samplers. Layer 0 is the
+         *  default skin — convention is that callers seed it with the original albedo/normal.
+         *  Bound by the plugin in bindForSubMesh(). */
+        runtimeAlbedoSkins: BABYLON.BaseTexture;
+        runtimeNormalSkins: BABYLON.BaseTexture;
         constructor(name: string, scene: BABYLON.Scene);
         awake(): void;
         update(): void;
         getShaderName(): string;
         getController(): TOOLKIT.VertexAnimationController;
+        /**
+         * Create a fresh VertexAnimationMaterial for a shared-geometry instance so it gets
+         * its own plugin and independent animation state. PBR surface properties (albedo,
+         * metallic, roughness, textures, etc.) are copied from the source material.
+         * The VAT uniforms and controller link start at their defaults — setupAnimations()
+         * wires them up as normal. shadowDepthWrapper is intentionally NOT copied;
+         * setupAnimations() creates a new one for the clone.
+         */
+        cloneForInstance(instanceName: string): TOOLKIT.VertexAnimationMaterial;
+        /**
+         * Install runtime skin texture arrays. Layer 0 is treated as the default skin and is
+         * what every instance sees when its `runtimeSkinIndex` is 0 (or unset). Pass either
+         * `BABYLON.RawTexture2DArray` or any BaseTexture exposing a 2D-array view.
+         *
+         * When `nullOutDefaults` is true (default), the standalone `albedoTexture` and
+         * `bumpTexture` are nulled so PBR drops their sampler bindings — the plugin writes
+         * its own perturbed normal in the fragment when bumpTexture is absent. Pass false
+         * to keep the originals around (then runtime arrays act as overrides on top).
+         */
+        setRuntimeSkinArrays(albedoArray: BABYLON.BaseTexture, normalArray: BABYLON.BaseTexture, nullOutDefaults?: boolean): void;
+        /** Remove runtime skin arrays. Does NOT restore previously-nulled albedo/bump textures. */
+        clearRuntimeSkinArrays(): void;
+        /**
+         * Convenience: load a list of {albedo, normal} URL pairs, assemble two RawTexture2DArrays,
+         * and install them via setRuntimeSkinArrays(). Layer 0 is whatever you put at index 0 of
+         * the input list (the convention is "default skin first").
+         *
+         * All input textures must share the same `width × height` — texture arrays are not ragged.
+         * Missing/malformed images reject the promise.
+         *
+         * @param layers   ordered list of skin layers; index in array == GPU layer index == skinIndex value
+         * @param width    pixel width every input texture must be (e.g. 1024)
+         * @param height   pixel height every input texture must be (e.g. 1024)
+         * @param options.nullOutDefaults  null mat.albedoTexture/bumpTexture after install (default true)
+         * @param options.rootUrl          base URL for resolving relative paths (default "")
+         * @param options.generateMipMaps  generate mips on the GPU arrays (default true)
+         * @param options.samplingMode     BABYLON.Texture.* sampling mode (default TRILINEAR_SAMPLINGMODE)
+         */
+        installSkinsFromUrlsAsync(layers: {
+            albedo: string;
+            normal: string;
+        }[], width: number, height: number, options?: {
+            nullOutDefaults?: boolean;
+            rootUrl?: string;
+            generateMipMaps?: boolean;
+            samplingMode?: number;
+        }): Promise<void>;
+        private _notifyPluginOfRuntimeSkinChange;
     }
     /**
      * Static renderer reference emitted on Animator metadata for each VAT target.
@@ -3198,6 +3263,11 @@ declare namespace TOOLKIT {
         vertexposmin: [number, number, number];
         vertexposmax: [number, number, number];
         vertexmethod: "soft";
+        vertexlooptime: boolean;
+        vertexloopblend: boolean;
+        vertexcombined?: boolean;
+        vertexfromrow?: number;
+        vertextorow?: number;
     }
     /**
      * Internal renderer entry held by a clip in VertexAnimationController.
@@ -3207,6 +3277,9 @@ declare namespace TOOLKIT {
         settings: TOOLKIT.IVertexAnimationSettings;
         positionTexture: BABYLON.Texture | null;
         normalTexture: BABYLON.Texture | null;
+        posMinV3: BABYLON.Vector3;
+        posMaxV3: BABYLON.Vector3;
+        fromRow: number;
     }
     /**
      * Internal clip entry held by VertexAnimationController.
@@ -3218,6 +3291,8 @@ declare namespace TOOLKIT {
         };
         firstRendererGuid: string;
         duration: number;
+        loop: boolean;
+        loopBlend: boolean;
     }
     /**
      * Shared playback clock for Vertex Animation Texture (VAT) materials.
@@ -3236,6 +3311,16 @@ declare namespace TOOLKIT {
      */
     class VertexAnimationController {
         private static _registry;
+        /**
+         * Global VAT texture cache.
+         *
+         * The controller registry is keyed by Animator/VAT controller guid, which means
+         * multiple character instances using the same EXR/PNG VAT assets can still create
+         * duplicate BABYLON.Texture objects. This cache is keyed by scene + resolved URL +
+         * the exact VAT sampler/upload contract, so all controllers in the same scene share
+         * the heavy VAT GPU textures and release them by reference count.
+         */
+        private static _globalTextureCache;
         /** Look up an existing controller by controller guid. Returns null if none. */
         static Find(guid: string): TOOLKIT.VertexAnimationController;
         /**
@@ -3248,6 +3333,13 @@ declare namespace TOOLKIT {
         static GetOrCreate(guid: string, scene: BABYLON.Scene, rootUrl?: string, lazyLoadTextures?: boolean): TOOLKIT.VertexAnimationController;
         /** Collect unique renderer targets from the flat VAT settings array emitted by C#. */
         static CollectRendererTargets(settings: TOOLKIT.IVertexAnimationSettings[]): TOOLKIT.IVertexAnimationRendererReference[];
+        /** Set a per-mesh runtime skin index. Stored on the mesh as `runtimeSkinIndex`.
+         *  Each Babylon InstancedMesh under one VAT controller can carry an independent value;
+         *  the value is packed into g_vatAnim1.w during _tick() and decoded by the shader.
+         *  Unset / out-of-range values are treated as 0 (the default skin = layer 0 of the runtime arrays). */
+        static SetSkinIndex(mesh: BABYLON.AbstractMesh, skinIndex: number): void;
+        /** Read a per-mesh runtime skin index. Returns 0 when the mesh has no value set. */
+        static GetSkinIndex(mesh: BABYLON.AbstractMesh): number;
         /** Dispose every controller (optionally only those tied to a given scene). */
         static DisposeAll(scene?: BABYLON.Scene): void;
         readonly guid: string;
@@ -3261,15 +3353,28 @@ declare namespace TOOLKIT {
         private _previousTime;
         private _speed;
         private _loop;
+        private _loopBlend;
+        private _manualLoopOverride;
         private _playing;
         private _blendDuration;
         private _blendElapsed;
         private _blendWeight;
+        private _mode;
         private _normalMode;
         private _lazyLoad;
         private _tickObserver;
         private _disposeObserver;
         private _lastFrameId;
+        /** Local controller view into the global VAT texture cache. Keyed by resolved/full URL. */
+        private _textureCache;
+        /** Tracks which global texture keys this controller acquired so dispose() can release once. */
+        private _textureCacheKeys;
+        /** Maps renderer GUID → the specific Mesh/InstancedMesh node for THIS animator instance. */
+        private _instanceMeshes;
+        /** Register the specific scene mesh node that this controller drives.
+         *  Called once per renderer GUID during AnimationState setup.
+         *  The mesh may be a source Mesh or an InstancedMesh — both support instancedBuffers. */
+        setInstanceMesh(rendererGuid: string, mesh: BABYLON.AbstractMesh): void;
         private constructor();
         dispose(): void;
         get currentClip(): IVertexAnimationClip;
@@ -3279,8 +3384,37 @@ declare namespace TOOLKIT {
         get blendWeight(): number;
         get isPlaying(): boolean;
         get normalMode(): "separate" | "none";
+        get loopBlend(): boolean;
+        get mode(): "auto" | "drive";
+        get speed(): number;
+        get loopOverride(): boolean | null;
+        getClip(name: string): IVertexAnimationClip | null;
         setSpeed(speed: number): void;
         setLoop(loop: boolean): void;
+        /** Install runtime skin texture arrays on every registered VAT material plugin.
+         *  Convenience fan-out — equivalent to calling material.setRuntimeSkinArrays() on each material. */
+        setRuntimeSkinArrays(albedoArray: BABYLON.BaseTexture, normalArray: BABYLON.BaseTexture, nullOutDefaults?: boolean): void;
+        /** Remove runtime skin arrays from every registered VAT material plugin. */
+        clearRuntimeSkinArrays(): void;
+        /**
+         * Convenience: load skin texture pairs from URLs into RawTexture2DArrays and install them
+         * on every registered VAT material. Builds the arrays exactly once and shares the GPU
+         * resources across all materials — no per-material duplication. Uses this controller's
+         * `rootUrl` for relative path resolution unless an explicit one is passed in options.
+         *
+         * See VertexAnimationMaterial.installSkinsFromUrlsAsync for parameter semantics.
+         */
+        installSkinsFromUrlsAsync(layers: {
+            albedo: string;
+            normal: string;
+        }[], width: number, height: number, options?: {
+            nullOutDefaults?: boolean;
+            rootUrl?: string;
+            generateMipMaps?: boolean;
+            samplingMode?: number;
+        }): Promise<void>;
+        setCurrentTime(time: number): void;
+        getCurrentTime(): number;
         addPlugin(plugin: VertexAnimationMaterialPlugin): void;
         removePlugin(plugin: VertexAnimationMaterialPlugin): void;
         /**
@@ -3291,16 +3425,38 @@ declare namespace TOOLKIT {
         loadAnimations(settings: TOOLKIT.IVertexAnimationSettings[]): void;
         /**
          * Start playback of a named clip. If blendDuration > 0 and a different clip
-         * is currently playing, crossfade from the current clip to the new one. (Default 0.15)
+         * is currently playing, crossfade from the current clip to the new one. (Default 0.1)
          */
         play(clipName: string, blendDuration?: number): boolean;
         pause(): void;
         resume(): void;
         stop(): void;
+        /**
+         * Drive-mode entry point. Replaces the (clip, time, blendWeight) triple in one call so
+         * an external owner (typically AnimationState's blend-tree evaluator) can push the top-2
+         * weighted children of a tree — or the dominant clips of a state transition's source +
+         * destination — without having to fight the controller's auto crossfade. Two clip slots
+         * are exposed because that's what the GPU pipeline already carries (g_vatAnim0 + g_vatAnim1).
+         *
+         * After this call _tick() will only push values to the GPU; it will not advance _time
+         * or decay _blendWeight. play() switches the controller back to auto.
+         *
+         * @param primaryName       Clip whose state goes into g_vatAnim0 (the "current" slot).
+         * @param primaryTimeSec    Sampling time for the primary, in seconds within the clip.
+         * @param secondaryName     Clip for g_vatAnim1 (the "previous" slot). null = no second clip.
+         * @param secondaryTimeSec  Sampling time for the secondary, in seconds within the clip.
+         * @param blendWeight       0..1, the lerp weight written into g_vatAnim0.w. The shader
+         *                          mixes secondary→primary by this value, so 1 = only primary,
+         *                          0 = only secondary.
+         */
+        driveBlend(primaryName: string, primaryTimeSec: number, secondaryName: string | null, secondaryTimeSec: number, blendWeight: number): boolean;
         getCurrentRendererClip(rendererGuid: string): IVertexAnimationRendererClip;
         getPreviousRendererClip(rendererGuid: string): IVertexAnimationRendererClip;
-        /** Runs once per scene frame. Advances time + blend weight. */
+        /** Runs once per scene frame. Advances time + blend weight, then syncs all registered material plugins. */
         private _tick;
+        private _getOrCreateVATBuffer;
+        private _isRendererPositionReady;
+        private _areBlendTargetsReady;
         /**
          * For lazy-loaded controllers: allocates GPU textures for every renderer entry in the
          * given clip that does not yet have one. No-op when not in lazy mode (all textures were
@@ -3310,8 +3466,13 @@ declare namespace TOOLKIT {
          * in syncFromController() show the 1×1 placeholder for the one or two frames it takes
          * for the texture to become ready — no special handling required in the shader.
          */
+        private _wrapTime;
         private _ensureClipTexturesLoaded;
-        private _loadTexture;
+        private _getOrAcquireTexture;
+        private static _acquireVATTexture;
+        private static _releaseVATTexture;
+        private static _makeVATTextureCacheKey;
+        private static _createVATTexture;
         private _resolveUrl;
         private _getRendererClip;
     }
@@ -3331,6 +3492,28 @@ declare namespace TOOLKIT {
         private _targetRendererGuid;
         /** 1×1 fallback texture — keeps WebGPU bind groups valid before a clip is assigned */
         private _placeholderTexture;
+        /** 1×1×1 fallback texture-array — keeps WebGPU bind groups valid before runtime skin
+         *  arrays are installed. Two variants: a grey (0.5, 0.5, 0.5, 1) for albedo and a
+         *  flat-up (0.5, 0.5, 1.0, 1) for tangent-space normal. */
+        private _placeholderAlbedoArray;
+        private _placeholderNormalArray;
+        private _cc_posTex;
+        private _cc_normTex;
+        private _cc_prevPosTex;
+        private _cc_prevNormTex;
+        private _cc_texW;
+        private _cc_texH;
+        private _cc_rowsPF;
+        private _cc_vCount;
+        private _cc_posMin;
+        private _cc_posMax;
+        private _cc_prevTexW;
+        private _cc_prevTexH;
+        private _cc_prevRowsPF;
+        private _cc_prevPosMin;
+        private _cc_prevPosMax;
+        private static readonly _zeroV3;
+        private static readonly _oneV3;
         constructor(customMaterial: TOOLKIT.CustomShaderMaterial, shaderName: string);
         dispose(): void;
         isCompatible(shaderLanguage: BABYLON.ShaderLanguage): boolean;
@@ -3339,7 +3522,12 @@ declare namespace TOOLKIT {
         getSamplers(samplers: string[]): void;
         getAttributes(attributes: string[], scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
         prepareDefines(defines: BABYLON.MaterialDefines, scene: BABYLON.Scene, mesh: BABYLON.AbstractMesh): void;
+        /** Called by VertexAnimationMaterial when runtime skin arrays change so we can mark
+         *  defines dirty and force a shader rebuild. */
+        onRuntimeSkinArraysChanged(): void;
         bindForSubMesh(uniformBuffer: BABYLON.UniformBuffer, scene: BABYLON.Scene, engine: BABYLON.AbstractEngine, subMesh: BABYLON.SubMesh): void;
+        /** Bind runtime skin texture arrays (or their 1-layer placeholder fallbacks). */
+        private _pushRuntimeSkinSamplers;
         /**
          * Wire this material to a VertexAnimationController for the given settings.
          * Called from the AnimationState machine at scene-load time.
@@ -3367,18 +3555,39 @@ declare namespace TOOLKIT {
         private _buildNodePath;
         private _pathEndsWith;
         /**
-         * Push current controller state into this material's uniforms. Called from
-         * VertexAnimationMaterial.update(), which itself is called by
-         * updateCustomBindings during bindForSubMesh. Every material on the mesh
-         * reads the same controller state in the same frame — they stay in lockstep.
+         * Populate the plugin-local VAT state cache from the controller.
+         * Called once per frame from VertexAnimationController._tick() for every registered plugin.
+         * bindForSubMesh() reads from this cache directly — no hash-map dict lookups, no full
+         * uniform iteration, no UBO flush triggered here.
          */
-        syncFromController(material: TOOLKIT.VertexAnimationMaterial): void;
+        syncFromController(material: TOOLKIT.VertexAnimationMaterial, controller?: TOOLKIT.VertexAnimationController): void;
+        /**
+         * Bind VAT uniforms directly to a shadow-depth Effect.
+         * Called by the shadow generator observer instead of mat.updateCustomBindings(effect),
+         * which would iterate all material dicts and push stale values before the VAT plugin
+         * overwrites them — wasted work in the shadow render path.
+         */
+        bindVATToEffect(effect: BABYLON.Effect): void;
+        /**
+         * Push the VAT state cache directly onto a UniformBuffer (main render) or Effect (shadow).
+         * This is the hot path replacement for updateCustomBindings() — O(1) field reads instead of
+         * O(n) hash-map iteration, zero texture matrix writes, zero UBO flush.
+         */
+        private _pushVATUniforms;
         private getGLSLVertexDefinitions;
         private getGLSLVertexPositionCode;
         private getGLSLVertexNormalCode;
         private getWGSLVertexDefinitions;
         private getWGSLVertexPositionCode;
         private getWGSLVertexNormalCode;
+        private getGLSLVertexMainEnd;
+        private getWGSLVertexMainEnd;
+        private getGLSLFragmentDefinitions;
+        private getGLSLFragmentAlbedoCode;
+        private getGLSLFragmentNormalCode;
+        private getWGSLFragmentDefinitions;
+        private getWGSLFragmentAlbedoCode;
+        private getWGSLFragmentNormalCode;
     }
 }
 /** Babylon Toolkit Namespace */
@@ -3965,6 +4174,8 @@ declare namespace TOOLKIT {
         private _booleans;
         private _triggers;
         private _parameters;
+        private _smoothTargets;
+        delayStart: number;
         speedRatio: number;
         delayUpdateUntilReady: boolean;
         enableAnimations: boolean;
@@ -3987,7 +4198,32 @@ declare namespace TOOLKIT {
         getDeltaRootMotionRotation(): BABYLON.Quaternion;
         getFixedRootMotionPosition(): BABYLON.Vector3;
         getFixedRootMotionRotation(): BABYLON.Quaternion;
+        getVertexAnimationController(): TOOLKIT.VertexAnimationController;
         isVertexAnimationModeEnabled(): boolean;
+        /**
+         * Returns the VertexAnimationMaterial for the first (or only) VAT renderer on this
+         * animator instance. Each animator gets its own isolated material clone, so changes made
+         * here (e.g. albedoTexture, albedoColor) affect only this instance.
+         * Returns null if VAT mode is not active or the mesh has no VertexAnimationMaterial.
+         * For multi-submesh rigs (MultiMaterial) pass rendererIndex to select a specific slot.
+         * ```
+         *   // Get the UA5 animator window state
+         *   const ua5 = SM.GetWindowState("UA5");
+         *
+         *   // Swap the albedo texture on that instance only
+         *   const mat = ua5.getVertexAnimationMaterial();
+         *   mat.albedoTexture = new BABYLON.Texture("textures/jockey_5.png", scene);
+         *
+         *   // For a multi-submesh rig (body + gear separate materials in a MultiMaterial):
+         *   const bodyMat  = ua5.getVertexAnimationMaterial(0, 0);  // renderer 0, submesh 0
+         *   const gearMat  = ua5.getVertexAnimationMaterial(0, 1);  // renderer 0, submesh 1
+         *
+         *   bodyMat.albedoTexture = new BABYLON.Texture("textures/jockey5_body.png", scene);
+         *   gearMat.albedoTexture = new BABYLON.Texture("textures/jockey5_gear.png", scene);
+         *
+         * ```
+         */
+        getVertexAnimationMaterial(rendererIndex?: number, subMeshIndex?: number): TOOLKIT.VertexAnimationMaterial;
         /** Register handler that is triggered when the animation state machine has been awakened */
         onAnimationAwakeObservable: BABYLON.Observable<BABYLON.TransformNode>;
         /** Register handler that is triggered when the animation state machine has been initialized */
@@ -4008,6 +4244,7 @@ declare namespace TOOLKIT {
         protected m_defaultGroup: BABYLON.AnimationGroup;
         protected m_animationTargets: BABYLON.TargetedAnimation[];
         protected m_rotationIdentity: BABYLON.Quaternion;
+        protected m_timelineScrubbing: boolean;
         protected m_vertexAnimationMode: boolean;
         protected m_vertexAnimationRenderers: BABYLON.Mesh[];
         protected m_vertexAnimationController: TOOLKIT.VertexAnimationController;
@@ -4016,10 +4253,15 @@ declare namespace TOOLKIT {
         protected awake(): void;
         protected update(): void;
         protected destroy(): void;
-        playDefaultAnimation(transitionDuration?: number, animationLayer?: number, frameRate?: number): boolean;
+        playDefault(transitionDuration?: number, animationLayer?: number, frameRate?: number): boolean;
         playAnimation(state: string, transitionDuration?: number, animationLayer?: number, frameRate?: number): boolean;
         stopAnimation(animationLayer?: number): boolean;
         killAnimations(): boolean;
+        setTimelineScrubbing(isScrubbing: boolean): void;
+        getIsTimelineScrubbing(): boolean;
+        setAnimationTime(seconds: number): boolean;
+        setAnimationSpeed(speed: number): boolean;
+        setAnimationLoop(loop: boolean): boolean;
         hasBool(name: string): boolean;
         getBool(name: string): boolean;
         setBool(name: string, value: boolean): void;
@@ -4034,37 +4276,50 @@ declare namespace TOOLKIT {
         setTrigger(name: string): void;
         resetTrigger(name: string): void;
         /**
-         * Set Smooth Float
-         * @param name name of the float
-         * @param targetValue the target value
-         * @param lerpSpeed the lerp speed factor (0.0 - 1.0)
+         * Smoothly damps a float parameter toward a target. Set-and-forget: a single call
+         * stores the (target, dampTime) and the AnimationState update loop drives the spring
+         * one step per frame until it converges. Calling this every frame is fine too —
+         * subsequent calls just refresh the target / dampTime without resetting velocity.
+         *
+         * Internally backed by TOOLKIT.Utilities.SmoothDamp (Game Programming Gems 4 §1.10 —
+         * the same critically-damped spring Unity's Mathf.SmoothDamp uses). Velocity is held
+         * across frames in _smoothTargets so the spring carries momentum the way Unity does;
+         * a frame-rate-dependent Lerp cannot produce that feel.
+         *
+         * @param name        Animator float parameter name.
+         * @param targetValue Value to ease toward.
+         * @param dampTime    Approximate seconds it takes to reach the target (Unity semantics).
+         *                    0 or negative collapses to an instant snap.
+         * @param _deltaTime  Accepted for Unity API parity (Animator.SetFloat takes deltaTime),
+         *                    but ignored — the update loop uses scene delta each tick.
          */
-        setSmoothFloat(name: string, targetValue: number, lerpSpeed: number): void;
+        setSmoothFloat(name: string, targetValue: number, dampTime?: number, _deltaTime?: number): void;
         /**
-         * Set Smooth Interger
-         * @param name the name of the integer
-         * @param targetValue the target value
-         * @param lerpSpeed the lerp speed factor (0.0 - 1.0)
+         * Smoothly damps an integer parameter toward a target. The underlying _numbers map
+         * stores arbitrary floats either way (setInteger/getInteger don't actually round), so
+         * this is just an alias for setSmoothFloat — same spring, same convergence behavior.
          */
-        setSmoothInteger(name: string, targetValue: number, lerpSpeed: number): void;
+        setSmoothInteger(name: string, targetValue: number, dampTime?: number, _deltaTime?: number): void;
+        /** Drives every active smooth-damp spring one step. Called once per frame from update(). */
+        private updateSmoothParameters;
         private getMachineState;
         private setMachineState;
         getCurrentState(layer: number): TOOLKIT.MachineState;
         getDefaultClips(): any[];
         getDefaultSource(): string;
         setLayerWeight(layer: number, weight: number): void;
+        private sourceAnimationGroups;
         fixAnimationGroup(group: BABYLON.AnimationGroup): string;
         getAnimationGroup(name: string): BABYLON.AnimationGroup;
         getAnimationGroups(): BABYLON.AnimationGroup[];
         setAnimationGroups(groups: BABYLON.AnimationGroup[]): void;
         private updateAnimationGroups;
-        private awakeStateMachine;
-        delayStart: number;
-        private sourceAnimationGroups;
-        private updateStateMachine;
         private setupSourceAnimationGroups;
+        private awakeStateMachine;
+        private updateStateMachine;
         private destroyStateMachine;
         private updateAnimationState;
+        private updateVertexAnimationLayer;
         private updateAnimationTargets;
         private updateBlendableTargets;
         private finalizeAnimationTargets;
@@ -4076,6 +4331,8 @@ declare namespace TOOLKIT {
         private filterTargetAvatarMask;
         private sortWeightedBlendingList;
         private computeWeightedFrameRatio;
+        private getFirstMotion;
+        private getLastMotion;
         private setupTreeBranches;
         private parseTreeBranches;
         private parse1DSimpleTreeBranches;
@@ -4153,6 +4410,7 @@ declare namespace TOOLKIT {
         result: string;
         offest: number;
         blending: number;
+        duration: number;
         triggered: string[];
     }
     class AnimationMixer {
@@ -4247,6 +4505,11 @@ declare namespace TOOLKIT {
         animationLoopCount: number;
         animationLoopEvents: any;
         animationStateMachine: TOOLKIT.MachineState;
+        vatTransitionActive?: boolean;
+        vatTransitionElapsed?: number;
+        vatTransitionDuration?: number;
+        vatSourceClipName?: string;
+        vatSourceTimeSec?: number;
     }
     interface IAnimationCurve {
         length: number;
@@ -4903,13 +5166,13 @@ declare namespace TOOLKIT {
         static FILTER_GROUP_VEHICLE_COLLIDERS: number;
         /** Wall Colliders - Unity Layer: 21 - Hex: 0x00200000  - Decimal: 2097152 */
         static FILTER_GROUP_BRIDGE_COLLIDERS: number;
-        /** Curb Colliders - Unity Layer: 22 - Hex: 0x00400000  - Decimal: 4194304 */
+        /** Road Colliders - Unity Layer: 22 - Hex: 0x00400000  - Decimal: 4194304 */
         static FILTER_GROUP_ROAD_COLLIDERS: number;
         /** Grass Colliders - Unity Layer: 23 - Hex: 0x00800000  - Decimal: 8388608 */
         static FILTER_GROUP_GRASS_COLLIDERS: number;
-        /** Ground Colliders Unity Layer: 24 - Hex: 0x01000000  - Decimal: 16777216 */
+        /** Curb Colliders - Unity Layer: 24 - Hex: 0x01000000  - Decimal: 16777216 */
         static FILTER_GROUP_CURB_COLLIDERS: number;
-        /** Ground Colliders - Unity Layer: 25 - Hex: 0x02000000  - Decimal: 33554432 */
+        /** Fence Colliders - Unity Layer: 25 - Hex: 0x02000000  - Decimal: 33554432 */
         static FILTER_GROUP_FENCE_COLLIDERS: number;
         /** All Vehicle Colliders (Vehicle, Bridge, Road, Grass, Curb, Fence) */
         static FILTER_GROUP_ALL_VEHICLE_COLLIDERS: number;
@@ -5000,13 +5263,30 @@ declare namespace TOOLKIT {
         arcadeHandbrakeMaxYawRateDegPerSec: number;
         arcadeHandbrakeReferenceSpeedKmh: number;
         arcadeHandbrakeSpeedGateEnabled: boolean;
+        arcadeHandbrakeLowSpeedShape: number;
+        arcadeHandbrakeDirectYawEnabled: boolean;
+        arcadeHandbrakeDirectYawDegPerSec: number;
+        arcadeHandbrakeDirectYawDurationMs: number;
+        arcadeHandbrakeDirectYawFadeMs: number;
+        arcadeDonutDirectYawEnabled: boolean;
+        arcadeDonutDirectYawDegPerSec: number;
+        arcadeDonutDirectYawDurationMs: number;
+        arcadeDonutDirectYawFadeMs: number;
         arcadeHandbrakeMaxSlideAngleDeg: number;
+        arcadeHandbrakeCounterSteerClampEnabled: boolean;
+        arcadeHandbrakeCounterSteerYawThresholdDegPerSec: number;
+        arcadeHandbrakeClampReleaseFadeMs: number;
+        arcadeHandbrakeSteerSlewLimitEnabled: boolean;
+        arcadeHandbrakeSteerSlewLimitDegPerSec: number;
         private _wasArcadeHandBrakeActive;
         private _wasArcadeYawAssistApplyingForce;
-        private _handbrakeAssistMagnitude;
         private _handbrakeKickJzRemaining;
         private _handbrakeKickFramesRemaining;
         private _arcadeHandbrakeLatchedDriveSign;
+        private _arcadeHandbrakeHoldElapsedSec;
+        private _arcadeHandbrakeSlewedSteerRad;
+        private _arcadeHandbrakeClampReleaseFadeSec;
+        private _arcadeDonutHoldElapsedSec;
         private _arcadeYawAssistDebugFrameCounter;
         private _arcadeYawAssistLastKickRad;
         private _arcadeYawAssistLastIaddPerWheel;
@@ -5102,7 +5382,6 @@ declare namespace TOOLKIT {
         updateWheelTransform(wheelIndex: number, interpolatedTransform?: boolean): void;
         private rayCast;
         private smoothRaycastHit;
-        private logRaycastHit;
         private getGravityUpToRef;
         private computeStabilizationUpVector;
         private applyFlyingStabilization;
@@ -5110,6 +5389,7 @@ declare namespace TOOLKIT {
         private applyTrackConnectionAndDownforce;
         updateVehicle(step: number): void;
         private updateSuspension;
+        private applyEasyDonutYawAssist;
         private applyHandbrakeYawAssist;
         private resolveWheelSpinDirection;
         private updateArcadeWheelRotationBoost;
@@ -5594,6 +5874,14 @@ declare namespace TOOLKIT {
         getArcadeSteeringAssist(): number;
         /** Sets the arcade steering yaw assist strength. Higher values kick the rear end around more aggressively during skids. (Advanced Use Only) */
         setArcadeSteeringAssist(value: number): void;
+        /** Gets the arcade donut direct yaw in degrees per second. (Advanced Use Only) */
+        getArcadeDonutDirectYawDegPerSec(): number;
+        /** Sets the arcade donut direct yaw in degrees per second. (Advanced Use Only) */
+        setArcadeDonutDirectYawDegPerSec(value: number): void;
+        /** Gets the arcade handbrake direct yaw in degrees per second. (Advanced Use Only) */
+        getArcadeHandbrakeDirectYawDegPerSec(): number;
+        /** Sets the arcade handbrake direct yaw in degrees per second. (Advanced Use Only) */
+        setArcadeHandbrakeDirectYawDegPerSec(value: number): void;
         /** Gets the arcade handbrake max slide angle in degrees. (Advanced Use Only) */
         getArcadeHandbrakeMaxSlideAngleDeg(): number;
         /** Sets the arcade handbrake max slide angle in degrees. (Advanced Use Only) */
