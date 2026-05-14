@@ -1,5 +1,5 @@
 
-declare module ADDONS {
+declare namespace ADDONS {
 
 
     /**
@@ -833,7 +833,7 @@ declare module ADDONS {
      */
     /**
      * Builds a any and any from meshes using provided parameters.
-     * @param meshes The array of meshes used to create the any
+     * @param meshes The array of meshes used to create the any.
      * @param parameters The parameters used to configure the any generation.
      * @param workerOptions Options for the worker, including a completion callback and the worker instance.
      * @throws Error if the any data is invalid or cannot be deserialized.
@@ -841,8 +841,8 @@ declare module ADDONS {
     export function GenerateNavMeshWithWorker(meshes: Array<BABYLON.Mesh>, parameters: INavMeshParametersV2, workerOptions: {
         /**
          * Completion callback that is called when the any generation is complete.
-         * @param navMesh The generated any
-         * @param navMeshQuery The any associated with the generated any
+         * @param navMesh The generated any.
+         * @param navMeshQuery The any associated with the generated any.
          * @param tileCache Optional any if tile cache generation was used.
          */
         completion: (navMesh: any, navMeshQuery: any, tileCache?: any) => void;
@@ -1024,8 +1024,8 @@ declare module ADDONS {
          * * You can modify this property to include or exclude specific primitive types based on your debugging needs.
          * @returns An array of primitive types that the debug drawer will render.
          */
-        get primitiveTypes(): any;
-        set primitiveTypes(value: any);
+        get primitiveTypes(): any[];
+        set primitiveTypes(value: any[]);
         private _lineMaterialOptions;
         private _pointMesh;
         private _debugDrawerUtils;
@@ -1034,7 +1034,7 @@ declare module ADDONS {
             parent?: {
                 node?: BABYLON.TransformNode | string;
             };
-            primitiveTypes?: any;
+            primitiveTypes?: any[];
             materials?: {
                 triMaterial?: BABYLON.StandardMaterial;
                 pointMaterial?: BABYLON.StandardMaterial;
@@ -1060,7 +1060,7 @@ declare module ADDONS {
          * @param primitives An array of debug drawer primitives to be drawn.
          * @param options Optional parameters to control the drawing behavior, such as whether to join meshes.
          */
-        drawPrimitives(primitives: any, options?: {
+        drawPrimitives(primitives: any[], options?: {
             joinMeshes?: boolean;
         }): void;
         /**
@@ -1175,11 +1175,11 @@ declare module ADDONS {
          *  @returns An object containing lists of heightfields, compact heightfields, contour sets
          */
         getIntermediates: (intermediates: GeneratorIntermediates) => {
-            heightfieldList: any;
-            compactHeightfieldList: any;
-            contourSetList: any;
-            polyMeshList: any;
-            polyMeshDetailList: any;
+            heightfieldList: any[];
+            compactHeightfieldList: any[];
+            contourSetList: any[];
+            polyMeshList: any[];
+            polyMeshDetailList: any[];
         };
         /**
          *  Draw debug information based on the selected option
@@ -1226,7 +1226,7 @@ declare module ADDONS {
      * @param flags the flags to be set for each poly
      * @returns the tile cache mesh process function
      */
-    export function CreateDefaultTileCacheMeshProcess(offMeshConnections?: any, area?: number, flags?: number): any;
+    export function CreateDefaultTileCacheMeshProcess(offMeshConnections?: any[], area?: number, flags?: number): any;
     /**
      * Waits until the tile cache is fully updated
      * @param navMesh The any
@@ -1432,6 +1432,10 @@ declare module ADDONS {
          * @param worldMatrix define the world matrix to use for the paragraph (optional)
          */
         addParagraph(text: string, options?: Partial<ParagraphOptions>, worldMatrix?: BABYLON.IMatrixLike): void;
+        /**
+         * Clear all paragraphs from the renderer to allow adding new ones from scratch
+         */
+        clearParagraphs(): void;
         /**
          * Render the text using the provided view and projection matrices
          * @param viewMatrix define the view matrix to use
@@ -1814,7 +1818,7 @@ declare module ADDONS {
         interface Window {
             "pointer-events-capture-debug": boolean | null;
         }
-    declare module ADDONS {
+    declare namespace ADDONS {
     
 
 
@@ -2109,10 +2113,10 @@ declare module ADDONS {
      * @param heightPx - The height of the texture in texels.
      * @param data - The texture data to sample.
      * @param result - The color to store the sample.
-     * @param normalizeFunc - The function to normalize the texel values. Default is to divide by 255.
+     * @param normalizeFunc - The function to normalize the texel values. Default is to divide by 255. Pass null for no normalization.
      * @returns The result color.
      */
-    export function Sample2DRgbaToRef<T extends BABYLON.IColor4Like>(u: number, v: number, widthPx: number, heightPx: number, data: Uint8Array | Uint16Array | Float32Array, result: T, normalizeFunc?: (value: number) => number): T;
+    export function Sample2DRgbaToRef<T extends BABYLON.IColor4Like>(u: number, v: number, widthPx: number, heightPx: number, data: Uint8Array | Uint16Array | Float32Array, result: T, normalizeFunc?: ((value: number) => number) | null): T;
 
 
 
@@ -2498,6 +2502,7 @@ declare module ADDONS {
 
 
     class AtmospherePBRMaterialDefines extends BABYLON.MaterialDefines {
+        USE_CUSTOM_REFLECTION: boolean;
         USE_AERIAL_PERSPECTIVE_LUT: boolean;
         APPLY_AERIAL_PERSPECTIVE_INTENSITY: boolean;
         APPLY_AERIAL_PERSPECTIVE_RADIANCE_BIAS: boolean;

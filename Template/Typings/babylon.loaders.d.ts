@@ -1,5 +1,5 @@
 
-declare module BABYLON {
+declare namespace BABYLON {
 
 
     /**
@@ -7,6 +7,27 @@ declare module BABYLON {
      * Loaders will be dynamically imported on demand, only when a SceneLoader load operation needs each respective loader.
      */
     export function registerBuiltInLoaders(): void;
+
+
+
+
+
+
+
+
+
+
+    var GLTF2Legacy: typeof GLTF2;
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -601,13 +622,12 @@ declare module BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         /**
      * Material Loading Adapter for PBR materials that provides a unified OpenPBR-like interface.
      */
     export class PBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
-        private _extinctionCoefficient;
         /**
          * Creates a new instance of the PBRMaterialLoadingAdapter.
          * @param material - The PBR material to adapt.
@@ -1024,6 +1044,7 @@ declare module BABYLON.GLTF2 {
          * @returns The scatter coefficient as a Color3
          */
         get transmissionScatter(): Color3;
+        set transmissionScatterTexture(value: Nullable<BaseTexture>);
         /**
          * Sets the transmission scattering anisotropy.
          * @param value The anisotropy intensity value (-1 to 1)
@@ -1054,6 +1075,15 @@ declare module BABYLON.GLTF2 {
          * Sets up the material for proper thin-surface transmission behavior.
          */
         configureTransmission(): void;
+        configureVolume(): void;
+        /**
+         * Sets whether the material is thin-walled (i.e. non-volumetric) or not.
+         */
+        set geometryThinWalled(value: boolean);
+        /**
+         * Gets whether the material is thin-walled (i.e. non-volumetric) or not.
+         */
+        get geometryThinWalled(): boolean;
         /**
          * Sets the thickness texture (mapped to PBR subSurface.thicknessTexture).
          * Automatically enables refraction.
@@ -1070,15 +1100,6 @@ declare module BABYLON.GLTF2 {
          * Configures subsurface properties for PBR material
          */
         configureSubsurface(): void;
-        /**
-         * Sets the extinction coefficient of the volume.
-         * @param value The extinction coefficient as a Vector3
-         */
-        set extinctionCoefficient(value: Vector3);
-        /**
-         * Gets the extinction coefficient of the volume.
-         */
-        get extinctionCoefficient(): Vector3;
         /**
          * Sets the subsurface weight
          */
@@ -1105,17 +1126,17 @@ declare module BABYLON.GLTF2 {
         /**
          * Sets the surface tint of the material (when using subsurface scattering)
          */
-        set subsurfaceConstantTint(value: Color3);
+        set diffuseTransmissionTint(value: Color3);
         /**
          * Gets the subsurface constant tint (when using subsurface scattering)
          * @returns The subsurface constant tint as a Color3
          */
-        get subsurfaceConstantTint(): Color3;
+        get diffuseTransmissionTint(): Color3;
         /**
          * Sets the subsurface constant tint texture (when using subsurface scattering)
          * @param value The subsurface constant tint texture or null
          */
-        set subsurfaceConstantTintTexture(value: Nullable<BaseTexture>);
+        set diffuseTransmissionTintTexture(value: Nullable<BaseTexture>);
         /**
          * Gets the subsurface radius (used for subsurface scattering)
          * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
@@ -1146,6 +1167,11 @@ declare module BABYLON.GLTF2 {
          * @param value The anisotropy intensity value (ignored for PBR)
          */
         set subsurfaceScatterAnisotropy(value: number);
+        /**
+         * Does this material have a translucent surface (i.e. either transmission or subsurface)?
+         * @returns True if the material is translucent, false otherwise
+         */
+        isTranslucent(): boolean;
         /**
          * Configures sheen for PBR material.
          * Enables sheen and sets up proper configuration.
@@ -1304,17 +1330,16 @@ declare module BABYLON.GLTF2 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         /**
      * Material Loading Adapter for OpenPBR materials that provides a unified OpenPBR-like interface.
      */
     export class OpenPBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
-        private _extinctionCoefficient;
         /**
          * Creates a new instance of the OpenPBRMaterialLoadingAdapter.
          * @param material - The OpenPBR material to adapt.
@@ -1706,7 +1731,15 @@ declare module BABYLON.GLTF2 {
          * @returns The scatter coefficient as a Vector3
          */
         get transmissionScatter(): Color3;
+        /**
+         * Sets the transmission scatter texture.
+         * @param value The transmission scatter texture or null
+         */
         set transmissionScatterTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the transmission scatter texture.
+         * @returns The transmission scatter texture or null
+         */
         get transmissionScatterTexture(): Nullable<BaseTexture>;
         /**
          * Sets the transmission scattering anisotropy.
@@ -1751,6 +1784,15 @@ declare module BABYLON.GLTF2 {
          * @param value The refraction background texture or null
          */
         set refractionBackgroundTexture(value: Nullable<BaseTexture>);
+        configureVolume(): void;
+        /**
+         * Sets whether the material is thin-walled (i.e. non-volumetric) or not.
+         */
+        set geometryThinWalled(value: boolean);
+        /**
+         * Gets whether the material is thin-walled (i.e. non-volumetric) or not.
+         */
+        get geometryThinWalled(): boolean;
         /**
          * Sets the thickness texture.
          * @param value The thickness texture or null
@@ -1765,15 +1807,6 @@ declare module BABYLON.GLTF2 {
          * Configures subsurface properties for PBR material
          */
         configureSubsurface(): void;
-        /**
-         * Sets the extinction coefficient of the volume.
-         * @param value The extinction coefficient as a Vector3
-         */
-        set extinctionCoefficient(value: Vector3);
-        /**
-         * Gets the extinction coefficient of the volume.
-         */
-        get extinctionCoefficient(): Vector3;
         /**
          * Sets the subsurface weight
          */
@@ -1793,18 +1826,20 @@ declare module BABYLON.GLTF2 {
          * @param value The subsurface tint texture or null
          */
         set subsurfaceColorTexture(value: Nullable<BaseTexture>);
+        private _diffuseTransmissionTint;
+        private _diffuseTransmissionTintTexture;
         /**
-         * Sets the surface tint of the material (when using subsurface scattering)
+         * Sets the diffuse transmission tint of the material
          */
-        set subsurfaceConstantTint(value: Color3);
+        set diffuseTransmissionTint(value: Color3);
         /**
-         * Gets the surface tint of the material (when using subsurface scattering)
+         * Gets the diffuse transmission tint of the material
          */
-        get subsurfaceConstantTint(): Color3;
+        get diffuseTransmissionTint(): Color3;
         /**
-         * Sets the surface tint texture of the material (when using subsurface scattering)
+         * Sets the diffuse transmission tint texture of the material
          */
-        set subsurfaceConstantTintTexture(value: Nullable<BaseTexture>);
+        set diffuseTransmissionTintTexture(value: Nullable<BaseTexture>);
         /**
          * Gets the subsurface radius for subsurface scattering.
          * subsurfaceRadiusScale * subsurfaceRadius gives the mean free path per color channel.
@@ -1832,6 +1867,11 @@ declare module BABYLON.GLTF2 {
          * @param value The anisotropy intensity value
          */
         set subsurfaceScatterAnisotropy(value: number);
+        /**
+         * Does this material have a translucent surface (i.e. either transmission or subsurface)?
+         * @returns True if the material is translucent, false otherwise
+         */
+        isTranslucent(): boolean;
         /**
          * Configures fuzz for OpenPBR.
          * Enables fuzz and sets up proper configuration.
@@ -1975,16 +2015,17 @@ declare module BABYLON.GLTF2 {
          * @param value The scale value for the coat normal texture
          */
         set geometryCoatNormalTextureScale(value: number);
+        finalize(): void;
     }
 
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         /**
      * Interface for material loading adapters that provides a unified OpenPBR-like interface
      * for both OpenPBR and PBR materials, eliminating conditional branches in extensions.
@@ -1994,6 +2035,10 @@ declare module BABYLON.GLTF2 {
          * Gets the underlying material
          */
         readonly material: Material;
+        /**
+         * Finalizes material properties after loading is complete.
+         */
+        finalize?(): void;
         /**
          * Whether the material should be treated as unlit
          */
@@ -2176,6 +2221,10 @@ declare module BABYLON.GLTF2 {
          */
         transmissionScatter: Color3;
         /**
+         * Sets the transmission scatter texture
+         */
+        transmissionScatterTexture: Nullable<BaseTexture>;
+        /**
          * Sets the scattering anisotropy (-1 to 1)
          */
         transmissionScatterAnisotropy: number;
@@ -2195,6 +2244,11 @@ declare module BABYLON.GLTF2 {
          * Configures transmission for thin-surface transmission (KHR_materials_transmission)
          */
         configureTransmission(): void;
+        configureVolume(): void;
+        /**
+         * Sets whether the material is thin-walled (i.e. non-volumetric) or not.
+         */
+        geometryThinWalled: boolean;
         /**
          * Sets the thickness texture
          */
@@ -2207,11 +2261,6 @@ declare module BABYLON.GLTF2 {
          * Configures subsurface properties
          */
         configureSubsurface(): void;
-        /**
-         * @internal
-         * Sets/gets the extinction coefficient
-         */
-        extinctionCoefficient: Vector3;
         /**
          * Sets/gets the subsurface weight
          */
@@ -2229,13 +2278,13 @@ declare module BABYLON.GLTF2 {
          */
         subsurfaceColorTexture: Nullable<BaseTexture>;
         /**
-         * Sets/gets the surface tint of the material (when using subsurface scattering)
+         * Sets/gets the diffuse transmission tint of the material
          */
-        subsurfaceConstantTint: Color3;
+        diffuseTransmissionTint: Color3;
         /**
-         * Sets/gets the surface tint texture of the material (when using subsurface scattering)
+         * Sets/gets the diffuse transmission tint texture of the material
          */
-        subsurfaceConstantTintTexture: Nullable<BaseTexture>;
+        diffuseTransmissionTintTexture: Nullable<BaseTexture>;
         /**
          * Sets/gets the subsurface radius (used for subsurface scattering)
          */
@@ -2248,6 +2297,10 @@ declare module BABYLON.GLTF2 {
          * Sets/gets the subsurface scattering anisotropy
          */
         subsurfaceScatterAnisotropy: number;
+        /**
+         * Does this material have a translucent surface (i.e. either transmission or subsurface)?
+         */
+        isTranslucent(): boolean;
         /**
          * Configures initial settings for fuzz for material.
          */
@@ -2348,20 +2401,20 @@ declare module BABYLON.GLTF2 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
     
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader {
+declare namespace BABYLON.GLTF2.Loader {
         /**
      * Loader interface with an index field.
      */
@@ -2618,11 +2671,11 @@ declare module BABYLON.GLTF2.Loader {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         interface IRegisteredGLTFExtension {
         isGLTFExtension: boolean;
         factory: GLTFExtensionFactory;
@@ -2649,11 +2702,11 @@ declare module BABYLON.GLTF2 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         /**
      * Interface for a glTF loader extension.
      */
@@ -2808,11 +2861,11 @@ declare module BABYLON.GLTF2 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         /** @internal */
     export type GetValueFn = (target: any, source: Float32Array, offset: number, scale: number) => any;
     /** @internal */
@@ -2855,11 +2908,11 @@ declare module BABYLON.GLTF2 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2 {
+declare namespace BABYLON.GLTF2 {
         interface IWithMetadata {
         metadata: any;
         _internalMetadata: any;
@@ -2931,6 +2984,7 @@ declare module BABYLON.GLTF2 {
         private _defaultBabylonMaterialData;
         private readonly _postSceneLoadActions;
         private readonly _materialAdapterCache;
+        private readonly _materialAdapters;
         /** @internal */
         _pbrMaterialImpl: Nullable<Readonly<PBRMaterialImplementation>> | false;
         /**
@@ -3287,11 +3341,11 @@ declare module BABYLON.GLTF2 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         export interface IGLTFObjectModelTree {
         cameras: IGLTFObjectModelTreeCamerasObject;
         nodes: IGLTFObjectModelTreeNodesObject;
@@ -3586,20 +3640,20 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
     
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Adding an exception here will break traversing through the glTF object tree.
      * This is used for properties that might not be in the glTF object model, but are optional and have a default value.
@@ -3646,11 +3700,11 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Registers the built-in glTF 2.0 extension async factories, which dynamically imports and loads each glTF extension on demand (e.g. only when a glTF model uses the extension).
      */
@@ -3659,11 +3713,11 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /** @internal */
     export class MSFT_sRGBFactors implements BABYLON.GLTF2.IGLTFLoaderExtension {
         /** @internal */
@@ -3682,7 +3736,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the MSFT_sRGBFactors extension.
@@ -3691,7 +3745,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /** @internal */
     export class MSFT_minecraftMesh implements BABYLON.GLTF2.IGLTFLoaderExtension {
         /** @internal */
@@ -3710,7 +3764,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the MSFT_minecraftMesh extension.
@@ -3719,7 +3773,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/MSFT_lod/README.md)
      */
@@ -3806,7 +3860,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the MSFT_lod extension.
@@ -3820,7 +3874,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/najadojo/glTF/blob/MSFT_audio_emitter/extensions/2.0/Vendor/MSFT_audio_emitter/README.md)
      * !!! Experimental Extension Subject to Changes !!!
@@ -3866,7 +3920,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the MSFT_audio_emitter extension.
@@ -3875,7 +3929,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_xmp_json_ld/README.md)
      * @since 5.0.0
@@ -3909,7 +3963,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_xmp_json_ld extension.
@@ -3918,7 +3972,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_texture_transform/README.md)
      */
@@ -3947,7 +4001,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_texture_transform extension.
@@ -3956,7 +4010,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_texture_basisu/README.md)
      */
@@ -3981,7 +4035,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_texture_basisu extension.
@@ -3990,7 +4044,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Loader extension for KHR_node_visibility
      */
@@ -4015,7 +4069,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_node_visibility extension.
@@ -4024,7 +4078,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Loader extension for KHR_selectability
      */
@@ -4049,7 +4103,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_selectability extension.
@@ -4058,7 +4112,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Loader extension for KHR_node_hoverability
      * @see https://github.com/KhronosGroup/glTF/pull/2426
@@ -4084,7 +4138,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_node_hoverability extension.
@@ -4093,7 +4147,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_mesh_quantization/README.md)
      */
@@ -4117,7 +4171,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_mesh_quantization extension.
@@ -4126,7 +4180,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * TODO: In-progress specification
      * [Specification](https://github.com/KhronosGroup/glTF/blob/7ea427ed55d44427e83c0a6d1c87068b1a4151c5/extensions/2.0/Khronos/KHR_materials_volume_scatter/README.md)
@@ -4163,7 +4217,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_volume_scatter extension.
@@ -4172,7 +4226,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_volume/README.md)
      * @since 5.0.0
@@ -4207,7 +4261,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_volume extension.
@@ -4216,7 +4270,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_variants/README.md)
      */
@@ -4297,7 +4351,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     type MaterialVariantsController = {
         /**
          * The list of available variant names for this asset.
@@ -4326,7 +4380,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_unlit/README.md)
      */
@@ -4360,7 +4414,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_unlit extension.
@@ -4369,7 +4423,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_transmission/README.md)
      */
@@ -4403,7 +4457,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_transmission extension.
@@ -4412,7 +4466,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_specular/README.md)
      */
@@ -4446,7 +4500,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_specular extension.
@@ -4455,7 +4509,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_sheen/README.md)
      * [Playground Sample](https://www.babylonjs-playground.com/frame.html#BNIZX6#4)
@@ -4490,7 +4544,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_sheen extension.
@@ -4499,7 +4553,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Archived/KHR_materials_pbrSpecularGlossiness/README.md)
      */
@@ -4533,7 +4587,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_pbrSpecularGlossiness extension.
@@ -4542,7 +4596,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_iridescence/README.md)
      */
@@ -4576,7 +4630,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_iridescence extension.
@@ -4585,7 +4639,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_ior/README.md)
      */
@@ -4623,7 +4677,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_ior extension.
@@ -4632,7 +4686,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/9734e44accd0dfb986ec5f376117aa00192745fe/extensions/2.0/Khronos/KHR_materials_fuzz/README.md)
      * @experimental
@@ -4667,7 +4721,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_fuzz extension.
@@ -4676,7 +4730,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_emissive_strength/README.md)
      */
@@ -4710,7 +4764,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_emissive_strength extension.
@@ -4719,7 +4773,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/87bd64a7f5e23c84b6aef2e6082069583ed0ddb4/extensions/2.0/Khronos/KHR_materials_dispersion/README.md)
      * @experimental
@@ -4754,7 +4808,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_dispersion extension.
@@ -4763,7 +4817,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Proposed Specification](https://github.com/KhronosGroup/glTF/pull/1825)
      * !!! Experimental Extension Subject to Changes !!!
@@ -4798,7 +4852,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_diffuse_transmission extension.
@@ -4807,7 +4861,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/b102d2d2b40d44a8776800bb2bf85e218853c17d/extensions/2.0/Khronos/KHR_materials_diffuse_roughness/README.md)
      * @experimental
@@ -4842,7 +4896,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_diffuse_roughness extension.
@@ -4851,7 +4905,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/6cb2cb84b504c245c49cf2e9a8ae16d26f72ac97/extensions/2.0/Khronos/KHR_materials_coat/README.md)
      * @experimental
@@ -4892,7 +4946,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_coat extension.
@@ -4901,7 +4955,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_clearcoat/README.md)
      * [Playground Sample](https://www.babylonjs-playground.com/frame.html#7F7PN6#8)
@@ -4936,7 +4990,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_clearcoat extension.
@@ -4945,7 +4999,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_anisotropy)
      */
@@ -4979,7 +5033,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_materials_anisotropy extension.
@@ -4988,7 +5042,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md)
      */
@@ -5021,7 +5075,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_lights_punctual extension.
@@ -5030,7 +5084,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Loader extension for KHR_interactivity
      */
@@ -5062,7 +5116,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_interactivity extension.
@@ -5071,7 +5125,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_draco_mesh_compression/README.md)
      */
@@ -5108,7 +5162,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_draco_mesh_compression extension.
@@ -5117,16 +5171,16 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
     
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification PR](https://github.com/KhronosGroup/glTF/pull/2147)
      * !!! Experimental Extension Subject to Changes !!!
@@ -5163,7 +5217,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the KHR_animation_pointer extension.
@@ -5172,7 +5226,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Store glTF extras (if present) in BJS objects' metadata
      */
@@ -5214,7 +5268,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the ExtrasAsMetadata extension.
@@ -5223,7 +5277,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_texture_webp/README.md)
      */
@@ -5248,7 +5302,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_texture_webp extension.
@@ -5257,7 +5311,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [glTF PR](https://github.com/KhronosGroup/glTF/pull/2235)
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_texture_avif/README.md)
@@ -5283,7 +5337,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_texture_avif extension.
@@ -5292,7 +5346,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_meshopt_compression/README.md)
      *
@@ -5324,7 +5378,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_meshopt_compression extension.
@@ -5333,7 +5387,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_mesh_gpu_instancing/README.md)
      * [Playground Sample](https://playground.babylonjs.com/#QFIGLW#9)
@@ -5363,7 +5417,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_mesh_gpu_instancing extension.
@@ -5372,7 +5426,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
             /** @internal */
         interface IEXTLightsImageBased_LightImageBased {
             _babylonTexture?: BaseTexture;
@@ -5410,7 +5464,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_lights_image_based extension.
@@ -5419,7 +5473,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Vendor/EXT_lights_ies)
      */
@@ -5452,7 +5506,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_lights_ies extension.
@@ -5461,7 +5515,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_lights_area/README.md)
      */
@@ -5494,7 +5548,7 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
          * Defines options for the EXT_lights_area extension.
@@ -5503,7 +5557,7 @@ declare module BABYLON {
     }
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         export interface InteractivityEvent {
         eventId: string;
         eventData?: {
@@ -5573,20 +5627,20 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
     
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * a configuration interface for this block
      */
@@ -5618,11 +5672,11 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF2.Loader.Extensions {
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         interface IGLTFToFlowGraphMappingObject {
         /**
          * The name of the property in the FlowGraph block.
@@ -5969,20 +6023,20 @@ declare module BABYLON.GLTF2.Loader.Extensions {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF1 {
+declare namespace BABYLON.GLTF1 {
     
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF1 {
+declare namespace BABYLON.GLTF1 {
         /**
      * @internal
      * @deprecated
@@ -5997,11 +6051,11 @@ declare module BABYLON.GLTF1 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF1 {
+declare namespace BABYLON.GLTF1 {
         /**
      * Utils functions for GLTF
      * @internal
@@ -6071,11 +6125,11 @@ declare module BABYLON.GLTF1 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF1 {
+declare namespace BABYLON.GLTF1 {
         /**
      * Enums
      * @internal
@@ -6485,11 +6539,11 @@ declare module BABYLON.GLTF1 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF1 {
+declare namespace BABYLON.GLTF1 {
         /**
      * Implementation of the base glTF spec
      * @internal
@@ -6630,11 +6684,11 @@ declare module BABYLON.GLTF1 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
 
 }
-declare module BABYLON.GLTF1 {
+declare namespace BABYLON.GLTF1 {
         /**
      * @internal
      * @deprecated
@@ -6651,7 +6705,7 @@ declare module BABYLON.GLTF1 {
 
 
 }
-declare module BABYLON {
+declare namespace BABYLON {
 
     export var STLFileLoaderMetadata: {
         readonly name: "stl";
@@ -6737,13 +6791,45 @@ declare module BABYLON {
 
 
     /**
-     * Parses SPZ data and returns a promise resolving to an IParsedPLY object.
+     * Parses SPZ data and returns a promise resolving to an IParsedSplat object.
      * @param data The ArrayBuffer containing SPZ data.
      * @param scene The Babylon.js scene.
-     * @param loadingOptions Options for loading Gaussian Splatting files.
+     * @param _loadingOptions Options for loading Gaussian Splatting files.
      * @returns A promise resolving to the parsed SPZ data.
      */
-    export function ParseSpz(data: ArrayBuffer, scene: Scene, loadingOptions: SPLATLoadingOptions): Promise<IParsedSplat>;
+    export function ParseSpz(data: ArrayBuffer, scene: Scene, _loadingOptions: SPLATLoadingOptions): Promise<IParsedSplat>;
+    /**
+     * Returns the initialized spz WASM module loaded from the given URL, loading it on first call.
+     * @param url URL to the spz WASM ES module (its default export should be a factory function)
+     * @returns A promise resolving to the initialized spz WASM module
+     */
+    export function GetSpzModule(url: string): Promise<SpzModule>;
+    /**
+     * Converts a GaussianCloud object (from the spz WASM module) into the packed 32-byte-per-splat
+     * ArrayBuffer and SH texture arrays expected by GaussianSplattingMeshBase.updateData.
+     *
+     * Packed layout per splat (32 bytes):
+     *   [0-11]  position xyz   (float32 x3)
+     *   [12-23] scale xyz      (float32 x3)
+     *   [24-27] color RGBA     (uint8 x4, colors in [0,255], alpha in [0,255])
+     *   [28-31] quaternion wxyz (uint8 x4, encoded as q * 127.5 + 127.5)
+     *
+     * SH coefficients from the cloud (Float32, range ~[-1,1]) are encoded to bytes
+     * using the SPZ convention (load-spz.cc unquantizeSH): byte = coeff * 128 + 128.
+     *
+     * @param cloud The GaussianCloud returned by spz.loadSpzFromBuffer
+     * @param scene The Babylon.js scene (used to query maxTextureSize for SH textures)
+     * @param useCoroutine If true, yields periodically to avoid blocking the main thread
+     * @returns A coroutine returning an IParsedSplat ready to be passed to updateData
+     */
+    export function ConvertSpzToSplat(cloud: GaussianCloud, scene: Scene, useCoroutine?: boolean): Coroutine<IParsedSplat>;
+    /**
+     * Async version of ConvertSpzToSplat that yields periodically to avoid blocking the main thread.
+     * @param cloud The GaussianCloud returned by spz.loadSpzFromBuffer
+     * @param scene The Babylon.js scene
+     * @returns A promise resolving to an IParsedSplat
+     */
+    export function ConvertSpzToSplatAsync(cloud: any, scene: Scene): Promise<IParsedSplat>;
 
 
     /**
@@ -6777,6 +6863,22 @@ declare module BABYLON {
          * Mesh that will be used to load data instead of creating a new one
          */
         gaussianSplattingMesh?: GaussianSplattingMesh;
+        /**
+         * Generate rotation and scale matrix textures required for voxel-based IBL shadows.
+         * Required for IBL shadows to work if keepInRam is false.
+         */
+        needsRotationScaleTextures?: boolean;
+        /**
+         * URL to load the spz WASM ES module from (e.g. the \@adobe/spz package).
+         * When provided, the WASM-based SPZ loader is used, which supports extra features
+         * such as antialiasing metadata, and vendor-specific extensions such as safe-orbit
+         * camera limits.
+         * Defaults to the \@adobe/spz unpkg URL when WebAssembly is supported, and undefined otherwise.
+         * Set to undefined to force the built-in manual SPZ parser regardless of WebAssembly support.
+         * @example Setting the URL directly on the loader options
+         * spzLibraryUrl: "https://unpkg.com/\@adobe/spz\@0.2.0/dist/spz.js"
+         */
+        spzLibraryUrl?: string;
     };
 
 
@@ -6915,6 +7017,7 @@ declare module BABYLON {
         faces?: number[];
         hasVertexColors?: boolean;
         sh?: Uint8Array[];
+        shDegree?: number;
         trainedWithAntialiasing?: boolean;
         compressed?: boolean;
         rawSplat?: boolean;

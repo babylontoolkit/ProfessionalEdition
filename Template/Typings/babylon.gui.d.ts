@@ -1,5 +1,5 @@
 
-declare module BABYLON.GUI {
+declare namespace BABYLON.GUI {
 
 
     /**

@@ -1,5 +1,5 @@
 
-declare module BABYLON {
+declare namespace BABYLON {
 
 
     export class WaterMaterial extends PushMaterial {
@@ -92,6 +92,7 @@ declare module BABYLON {
         private _offsetMirror;
         private _tempPlane;
         private _lastTime;
+        private _shadersLoaded;
         private _lastDeltaTime;
         private _waitingRenderList;
         private _imageProcessingConfiguration;
@@ -105,8 +106,9 @@ declare module BABYLON {
          * @param name
          * @param scene
          * @param renderTargetSize
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
          */
-        constructor(name: string, scene?: Scene, renderTargetSize?: Vector2);
+        constructor(name: string, scene?: Scene, renderTargetSize?: Vector2, forceGLSL?: boolean);
         get refractionTexture(): Nullable<RenderTargetTexture>;
         get reflectionTexture(): Nullable<RenderTargetTexture>;
         addToRenderList(node: any): void;
@@ -149,6 +151,20 @@ declare module BABYLON {
 
 
     /** @internal */
+    export var waterVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var waterPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var triplanarVertexShader: {
         name: string;
         shader: string;
@@ -184,7 +200,14 @@ declare module BABYLON {
         disableLighting: boolean;
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a TriPlanar Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -201,6 +224,20 @@ declare module BABYLON {
     }
 
 
+
+
+    /** @internal */
+    export var triplanarVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var triplanarPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     export class TerrainMaterial extends PushMaterial {
@@ -225,7 +262,14 @@ declare module BABYLON {
         disableLighting: boolean;
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Terrain Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -256,6 +300,20 @@ declare module BABYLON {
     };
 
 
+
+
+    /** @internal */
+    export var terrainVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var terrainPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     /**
@@ -322,6 +380,7 @@ declare module BABYLON {
         dithering: boolean;
         private _cameraPosition;
         private _skyOrientation;
+        private _shadersLoaded;
         /**
          * Instantiates a new sky material.
          * This material allows to create dynamic and texture free
@@ -329,8 +388,9 @@ declare module BABYLON {
          * @see https://doc.babylonjs.com/toolsAndResources/assetLibraries/materialsLibrary/skyMat
          * @param name Define the name of the material in the scene
          * @param scene Define the scene the material belong to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
          */
-        constructor(name: string, scene?: Scene);
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         /**
          * Specifies if the material will require alpha blending
          * @returns a boolean specifying if alpha blending is needed
@@ -415,6 +475,20 @@ declare module BABYLON {
 
 
 
+    /** @internal */
+    export var skyVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var skyPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
     export class SimpleMaterial extends PushMaterial {
         private _diffuseTexture;
         diffuseTexture: BaseTexture;
@@ -423,7 +497,14 @@ declare module BABYLON {
         disableLighting: boolean;
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Simple Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -456,10 +537,31 @@ declare module BABYLON {
 
 
 
+    /** @internal */
+    export var simpleVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var simplePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
     export class ShadowOnlyMaterial extends PushMaterial {
         private _activeLight;
         private _needAlphaBlending;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a ShadowOnly Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         shadowColor: Color3;
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
@@ -492,6 +594,20 @@ declare module BABYLON {
 
 
 
+    /** @internal */
+    export var shadowOnlyVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var shadowOnlyPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
     export class NormalMaterial extends PushMaterial {
         private _diffuseTexture;
         diffuseTexture: BaseTexture;
@@ -500,7 +616,14 @@ declare module BABYLON {
         disableLighting: boolean;
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Normal Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaBlendingForMesh(mesh: AbstractMesh): boolean;
         needAlphaTesting(): boolean;
@@ -532,6 +655,20 @@ declare module BABYLON {
     };
 
 
+
+
+    /** @internal */
+    export var normalVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var normalPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     export class MixMaterial extends PushMaterial {
@@ -571,7 +708,14 @@ declare module BABYLON {
         disableLighting: boolean;
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Mix Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -604,6 +748,50 @@ declare module BABYLON {
 
 
 
+    /** @internal */
+    export var mixVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var mixPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     export class LavaMaterial extends PushMaterial {
         private _diffuseTexture;
         diffuseTexture: BaseTexture;
@@ -622,7 +810,14 @@ declare module BABYLON {
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
         private _scaledDiffuse;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Lava Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -653,6 +848,20 @@ declare module BABYLON {
     };
 
 
+
+
+    /** @internal */
+    export var lavaVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var lavaPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
 
@@ -712,8 +921,10 @@ declare module BABYLON {
          * constructor
          * @param name The name given to the material in order to identify it afterwards.
          * @param scene The scene the material is used in.
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
          */
-        constructor(name: string, scene?: Scene);
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
+        private _shadersLoaded;
         /**
          * @returns whether or not the grid requires alpha blending.
          */
@@ -747,6 +958,20 @@ declare module BABYLON {
     };
 
 
+    /** @internal */
+    export var gridVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var gridPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
 
 
     export class GradientMaterial extends PushMaterial {
@@ -761,7 +986,14 @@ declare module BABYLON {
         smoothness: number;
         private _disableLighting;
         disableLighting: boolean;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Gradient Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -785,6 +1017,20 @@ declare module BABYLON {
 
     /** @internal */
     export var gradientPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var gradientVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var gradientPixelShaderWGSL: {
         name: string;
         shader: string;
     };
@@ -815,7 +1061,14 @@ declare module BABYLON {
         highLevelFur: boolean;
         _meshes: AbstractMesh[];
         private _furTime;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Fur Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         get furTime(): number;
         set furTime(furTime: number);
         needAlphaBlending(): boolean;
@@ -851,6 +1104,20 @@ declare module BABYLON {
     };
 
 
+    /** @internal */
+    export var furVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var furPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
 
 
     export class FireMaterial extends PushMaterial {
@@ -864,7 +1131,14 @@ declare module BABYLON {
         speed: number;
         private _scaledDiffuse;
         private _lastTime;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Fire Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -890,6 +1164,20 @@ declare module BABYLON {
 
     /** @internal */
     export var firePixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fireVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var firePixelShaderWGSL: {
         name: string;
         shader: string;
     };
@@ -1471,7 +1759,14 @@ declare module BABYLON {
         disableLighting: boolean;
         private _maxSimultaneousLights;
         maxSimultaneousLights: number;
-        constructor(name: string, scene?: Scene);
+        private _shadersLoaded;
+        /**
+         * Instantiates a Cell Material in the given scene
+         * @param name The friendly name of the material
+         * @param scene The scene to add the material to
+         * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
+         */
+        constructor(name: string, scene?: Scene, forceGLSL?: boolean);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
         getAlphaTestTexture(): Nullable<BaseTexture>;
@@ -1502,34 +1797,18 @@ declare module BABYLON {
     };
 
 
+    /** @internal */
+    export var cellVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    /** @internal */
+    export var cellPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
 
