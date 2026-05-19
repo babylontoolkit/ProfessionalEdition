@@ -1341,6 +1341,12 @@ declare namespace BABYLON {
             [pointName: string]: string;
         };
         constructor(name: string, scene?: Scene);
+        /**
+         * Disposes the material
+         * @param forceDisposeEffect specifies if effects should be forcefully disposed
+         * @param forceDisposeTextures specifies if textures should be forcefully disposed
+         */
+        dispose(forceDisposeEffect?: boolean, forceDisposeTextures?: boolean): void;
         protected _afterBind(mesh?: Mesh, effect?: Nullable<Effect>, subMesh?: SubMesh): void;
         /**
          * Adds a new uniform to the shader

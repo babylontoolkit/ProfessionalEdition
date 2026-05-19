@@ -628,6 +628,7 @@ declare namespace BABYLON.GLTF2 {
      */
     export class PBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
+        private _specWorkflow;
         /**
          * Creates a new instance of the PBRMaterialLoadingAdapter.
          * @param material - The PBR material to adapt.
@@ -637,6 +638,11 @@ declare namespace BABYLON.GLTF2 {
          * Gets the underlying material
          */
         get material(): PBRMaterial;
+        /**
+         * No-op: PBRMaterial has no deferred finalization.
+         * @param _loader Unused.
+         */
+        finalizeAsync(_loader: BABYLON.GLTF2.GLTFLoader): Promise<void>;
         /**
          * Whether the material should be treated as unlit
          */
@@ -770,6 +776,10 @@ declare namespace BABYLON.GLTF2 {
          */
         enableSpecularEdgeColor(enableEdgeColor?: boolean): void;
         /**
+         * Enable the specular/glossiness workflow and disable metallic/roughness.
+         */
+        configureSpecularGlossiness(): void;
+        /**
          * Sets the specular weight (mapped to PBR metallicF0Factor).
          * @param value The specular weight value
          */
@@ -842,6 +852,16 @@ declare namespace BABYLON.GLTF2 {
          * @returns The IOR value
          */
         get specularIor(): number;
+        /**
+         * Sets/gets the glossiness (inverted roughness)
+         * ONLY used for specular/glossiness workflow; has no effect when metallic/roughness workflow is active
+         */
+        get glossiness(): number;
+        /**
+         * Sets/gets the glossiness (inverted roughness)
+         * ONLY used for specular/glossiness workflow; has no effect when metallic/roughness workflow is active
+         */
+        set glossiness(value: number);
         /**
          * Sets the emission color (mapped to PBR emissiveColor).
          * @param value The emission color as a Color3
@@ -1075,6 +1095,9 @@ declare namespace BABYLON.GLTF2 {
          * Sets up the material for proper thin-surface transmission behavior.
          */
         configureTransmission(): void;
+        /**
+         * Configures volume properties for PBR material. Nothing to do for PBRMaterial.
+         */
         configureVolume(): void;
         /**
          * Sets whether the material is thin-walled (i.e. non-volumetric) or not.
@@ -1340,6 +1363,7 @@ declare namespace BABYLON.GLTF2 {
      */
     export class OpenPBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
+        private _specWorkflow;
         /**
          * Creates a new instance of the OpenPBRMaterialLoadingAdapter.
          * @param material - The OpenPBR material to adapt.
@@ -1482,6 +1506,7 @@ declare namespace BABYLON.GLTF2 {
          * @param _enableEdgeColor Whether to enable edge color support (ignored for OpenPBR)
          */
         enableSpecularEdgeColor(_enableEdgeColor?: boolean): void;
+        configureSpecularGlossiness(): void;
         /**
          * Sets the specular weight of the OpenPBR material.
          * @param value The specular weight value (0-1)
@@ -1554,6 +1579,11 @@ declare namespace BABYLON.GLTF2 {
          * @returns The IOR value
          */
         get specularIor(): number;
+        /**
+         * Sets the glossiness (inverted roughness) of the OpenPBR material.
+         */
+        set glossiness(value: number);
+        get glossiness(): number;
         /**
          * Sets the emission color of the OpenPBR material.
          * @param value The emission color as a Color3
@@ -1635,6 +1665,10 @@ declare namespace BABYLON.GLTF2 {
          */
         set coatColor(value: Color3);
         /**
+         * Gets the coat color of the OpenPBR material.
+         */
+        get coatColor(): Color3;
+        /**
          * Sets the coat color texture of the OpenPBR material.
          * @param value The coat color texture or null
          */
@@ -1663,11 +1697,13 @@ declare namespace BABYLON.GLTF2 {
          * Sets the coat index of refraction (IOR) of the OpenPBR material.
          */
         set coatIor(value: number);
+        get coatIor(): number;
         /**
          * Sets the coat darkening value of the OpenPBR material.
          * @param value The coat darkening value
          */
         set coatDarkening(value: number);
+        get coatDarkening(): number;
         /**
          * Sets the coat darkening texture (OpenPBR: coatDarkeningTexture, no PBR equivalent)
          */
@@ -1716,6 +1752,7 @@ declare namespace BABYLON.GLTF2 {
          * @param value The transmission weight texture or null
          */
         set transmissionWeightTexture(value: Nullable<BaseTexture>);
+        get transmissionWeightTexture(): Nullable<BaseTexture>;
         /**
          * Gets the transmission weight.
          * @returns Currently returns 0 as transmission is not yet available
@@ -1784,6 +1821,9 @@ declare namespace BABYLON.GLTF2 {
          * @param value The refraction background texture or null
          */
         set refractionBackgroundTexture(value: Nullable<BaseTexture>);
+        /**
+         * Configures volume properties for OpenPBR material.
+         */
         configureVolume(): void;
         /**
          * Sets whether the material is thin-walled (i.e. non-volumetric) or not.
@@ -1816,6 +1856,7 @@ declare namespace BABYLON.GLTF2 {
          * Sets the subsurface weight texture
          */
         set subsurfaceWeightTexture(value: Nullable<BaseTexture>);
+        get subsurfaceWeightTexture(): Nullable<BaseTexture>;
         /**
          * Sets the subsurface color.
          * @param value The subsurface tint color as a Color3
@@ -2015,7 +2056,12 @@ declare namespace BABYLON.GLTF2 {
          * @param value The scale value for the coat normal texture
          */
         set geometryCoatNormalTextureScale(value: number);
-        finalize(): void;
+        /**
+         * Finalizes material properties after all loading is complete.
+         * @param loader The glTF loader; `loader._disposed` is polled between texture passes to bail early on dispose.
+         */
+        finalizeAsync(loader: BABYLON.GLTF2.GLTFLoader): Promise<void>;
+        private copySurfaceToCoatAsync;
     }
 
 
@@ -2036,9 +2082,16 @@ declare namespace BABYLON.GLTF2 {
          */
         readonly material: Material;
         /**
-         * Finalizes material properties after loading is complete.
+         * Finalizes material properties after all loading is complete.
+         * May do async work (e.g. GPU texture processing); the returned Promise is tracked
+         * by the loader and awaited before the COMPLETE state is reached, so callers can rely
+         * on onCompleteObservable for fully processed materials.
+         *
+         * Implementations should check `loader._disposed` between awaits to bail out early
+         * when the loader is disposed mid-flight.
+         * @param loader The glTF loader driving the finalize step.
          */
-        finalize?(): void;
+        finalizeAsync(loader: BABYLON.GLTF2.GLTFLoader): Promise<void>;
         /**
          * Whether the material should be treated as unlit
          */
@@ -2101,6 +2154,10 @@ declare namespace BABYLON.GLTF2 {
          */
         enableSpecularEdgeColor(enableEdgeColor?: boolean): void;
         /**
+         * Enable the specular/glossiness workflow and disable metallic/roughness.
+         */
+        configureSpecularGlossiness(): void;
+        /**
          * Sets/gets the specular weight
          */
         specularWeight: number;
@@ -2128,6 +2185,11 @@ declare namespace BABYLON.GLTF2 {
          * Sets/gets the specular IOR
          */
         specularIor: number;
+        /**
+         * Sets/gets the glossiness (inverted roughness)
+         * ONLY used for specular/glossiness workflow; has no effect when metallic/roughness workflow is active
+         */
+        glossiness: number;
         /**
          * Sets/gets the emissive color
          */
@@ -2244,6 +2306,9 @@ declare namespace BABYLON.GLTF2 {
          * Configures transmission for thin-surface transmission (KHR_materials_transmission)
          */
         configureTransmission(): void;
+        /**
+         * Configures volume properties for volumetric transmission (KHR_materials_volume)
+         */
         configureVolume(): void;
         /**
          * Sets whether the material is thin-walled (i.e. non-volumetric) or not.
@@ -2973,7 +3038,8 @@ declare namespace BABYLON.GLTF2 {
         _skipStartAnimationStep: boolean;
         private readonly _parent;
         private readonly _extensions;
-        private _disposed;
+        /** @internal */
+        _disposed: boolean;
         private _rootUrl;
         private _fileName;
         private _uniqueRootUrl;
