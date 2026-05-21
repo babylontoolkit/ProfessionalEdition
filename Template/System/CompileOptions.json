@@ -2,7 +2,6 @@
     "compilerOptions": {
         "experimentalDecorators": true,
         "target": "###ECMASCRIPT###",
-        "module": "none",
         "lib": [
             "es5",
             "dom",
@@ -20,6 +19,8 @@
         "noImplicitAny": false,
         "inlineSources": ###SOURCEMAP###,
         "inlineSourceMap": ###SOURCEMAP###,
+        "ignoreDeprecations": "6.0",
+        "rootDir": "./Assets",
         "outFile": "###OUTFILE###"
     },
     "include": [
