@@ -1306,6 +1306,7 @@ declare namespace BABYLON {
          * List of the custom attributes
          */
         _customAttributes: string[];
+        private readonly _customEffects;
         /**
          * Fragment shader string
          */
@@ -1341,6 +1342,7 @@ declare namespace BABYLON {
             [pointName: string]: string;
         };
         constructor(name: string, scene?: Scene);
+        private _isCreatedShaderEffect;
         /**
          * Disposes the material
          * @param forceDisposeEffect specifies if effects should be forcefully disposed
