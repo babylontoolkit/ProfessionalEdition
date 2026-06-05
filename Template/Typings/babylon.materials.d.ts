@@ -896,13 +896,53 @@ declare namespace BABYLON {
          */
         minorUnitVisibility: number;
         /**
-         * The grid opacity outside of the lines.
+         * Overall mesh opacity. In linesOnly mode this also scales the maximum line alpha.
          */
         opacity: number;
         /**
          * Whether to antialias the grid
          */
         antialias: boolean;
+        /**
+         * Color of grid lines when the camera is below the surface.
+         * When set, lineColor acts as the above-surface color.
+         */
+        get belowLineColor(): Nullable<Color3>;
+        set belowLineColor(value: Nullable<Color3>);
+        private _belowLineColor;
+        /**
+         * Enable multi-scale logarithmic grid LOD. Number of octaves is controlled by gridOctaves.
+         */
+        useMultiScale: boolean;
+        /**
+         * World-unit spacing of the finest octave. Default 0.001.
+         */
+        minGridSpacing: number;
+        /**
+         * Number of logarithmic octaves rendered (1–8). Default 4.
+         */
+        gridOctaves: number;
+        /**
+         * Enable camera-distance-aware horizon (grazing-angle) fade.
+         */
+        useHorizonFade: boolean;
+        /**
+         * Render an ultra-fine crosshair at the world origin.
+         */
+        useOriginMarker: boolean;
+        /**
+         * When true, only grid lines are visible — non-grid pixels are discarded.
+         * Puts the material in the alpha-blend queue and enables a depth pre-pass so grid lines
+         * correctly occlude translucent objects (e.g. Gaussian splats). Set mesh.alphaIndex to a
+         * value lower than other transparent objects so the depth pre-pass fires first.
+         */
+        get linesOnly(): boolean;
+        set linesOnly(value: boolean);
+        private _linesOnly;
+        /**
+         * Scales grid line width. Values \> 1 produce thicker lines. Default 1.0.
+         */
+        gridThicknessModifier: number;
         /**
          * Determine RBG output is premultiplied by alpha value.
          */
@@ -917,6 +957,7 @@ declare namespace BABYLON {
          */
         opacityTexture: BaseTexture;
         private _gridControl;
+        private _viewportSize;
         /**
          * constructor
          * @param name The name given to the material in order to identify it afterwards.
@@ -940,6 +981,13 @@ declare namespace BABYLON {
         clone(name: string): GridMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Parse a JSON input to create back a grid material.
+         * @param source the JSON data to parse
+         * @param scene defines the hosting scene
+         * @param rootUrl defines the root URL to use to load textures and relative dependencies
+         * @returns a new grid material
+         */
         static Parse(source: any, scene: Scene, rootUrl: string): GridMaterial;
     }
 

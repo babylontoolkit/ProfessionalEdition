@@ -1420,7 +1420,7 @@ declare namespace BABYLON.GLTF2 {
         set useAlphaFromBaseColorTexture(value: boolean);
         /**
          * Gets whether alpha is used from the base color texture.
-         * @returns Always false for OpenPBR as it's handled automatically
+         * @returns True if alpha is used from the base color texture
          */
         get useAlphaFromBaseColorTexture(): boolean;
         /**
@@ -7113,6 +7113,12 @@ declare namespace BABYLON {
          */
         needsRotationScaleTextures?: boolean;
         /**
+         * Load SOG files as raw GPU textures and dequantize in the shader.
+         * Skips the CPU decode pass and yields much faster load times.
+         * Requires WebGL2 / WebGPU. Defaults to false (CPU decode).
+         */
+        useSogTextures?: boolean;
+        /**
          * URL to load the spz WASM ES module from (e.g. the \@adobe/spz package).
          * When provided, the WASM-based SPZ loader is used, which supports extra features
          * such as antialiasing metadata, and vendor-specific extensions such as safe-orbit
@@ -7253,6 +7259,45 @@ declare namespace BABYLON {
         Reject = 3
     }
     /**
+     * SOG (Self-Organized Gaussians) raw texture set + decoding parameters.
+     * Used when SOG webp textures are fed directly to the GPU and dequantized in the shader.
+     */
+    export interface ISogTexturePack {
+        /** SOG file version (1 or 2). */
+        version: 1 | 2;
+        /** Number of splats. */
+        splatCount: number;
+        /** SH degree (0..3+). */
+        shDegree: number;
+        /** Raw webp textures, all RGBA8 with nearest sampling. */
+        meansTextureL: BaseTexture;
+        meansTextureU: BaseTexture;
+        scalesTexture: BaseTexture;
+        quatsTexture: BaseTexture;
+        sh0Texture: BaseTexture;
+        shCentroidsTexture?: BaseTexture;
+        shLabelsTexture?: BaseTexture;
+        /** Optional codebook (v2) packed into a 1D R32F texture. Encoding:
+         *  - texels [0..255]   : scales codebook
+         *  - texels [256..511] : sh0 codebook
+         *  - texels [512..767] : shN codebook
+         */
+        codebookTexture?: BaseTexture;
+        /** Mins/maxs (v1) used as uniforms. */
+        meansMin: [number, number, number];
+        meansMax: [number, number, number];
+        scalesMin?: [number, number, number];
+        scalesMax?: [number, number, number];
+        sh0Min?: [number, number, number, number];
+        sh0Max?: [number, number, number, number];
+        shnMin?: number;
+        shnMax?: number;
+        /** SH layout info. */
+        shCoeffCount: number;
+        /** CPU-side decoded positions for the depth-sort worker. */
+        positions: Float32Array;
+    }
+    /**
      * A parsed buffer and how to use it
      */
     export interface IParsedSplat {
@@ -7269,6 +7314,8 @@ declare namespace BABYLON {
         safeOrbitCameraElevationMinMax?: [number, number];
         upAxis?: "X" | "Y" | "Z";
         chirality?: "LeftHanded" | "RightHanded";
+        /** When set, the splats are to be uploaded as raw SOG textures and dequantized in the shader. */
+        sogTextures?: ISogTexturePack;
     }
 
 
@@ -7354,6 +7401,15 @@ declare namespace BABYLON {
      * @returns Parsed data
      */
     export function ParseSogMeta(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedSplat>;
+    /**
+     * Parse SOG data and produce a set of GPU textures + dequantization parameters.
+     * The shader will sample these raw RGBA8 textures and reconstruct positions/scales/rotations/colors/SH on the GPU.
+     * @param dataOrFiles Either the SOGRootData or a Map of filenames to Uint8Array file data (including meta.json)
+     * @param rootUrl Base URL to load webp files from (if dataOrFiles is SOGRootData)
+     * @param scene The Babylon.js scene
+     * @returns Parsed splat info with `sogTextures` populated.
+     */
+    export function ParseSogMetaAsTextures(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedSplat>;
 
 
 
