@@ -1353,6 +1353,20 @@ declare namespace BABYLON.GUI {
 
 
     /** @internal */
+    export var handleVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var handlePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var handleVertexShader: {
         name: string;
         shader: string;
@@ -1373,6 +1387,7 @@ declare namespace BABYLON.GUI {
      * @since 5.0.0
      */
     export class FluentButtonMaterial extends BABYLON.PushMaterial {
+        private _shadersLoaded;
         /**
          * URL pointing to the texture used to define the coloring for the fluent blob effect.
          */
@@ -1528,6 +1543,7 @@ declare namespace BABYLON.GUI {
          */
         globalRightIndexTipPosition: BABYLON.Vector3;
         private _blobTexture;
+        private _blobTextureUrl;
         constructor(name: string, scene?: BABYLON.Scene);
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
@@ -1539,12 +1555,37 @@ declare namespace BABYLON.GUI {
          * @returns the list of animatables object used in the material
          */
         getAnimatables(): BABYLON.IAnimatable[];
+        /**
+         * Disposes the material.
+         * @param forceDisposeEffect specifies if effects should be forcefully disposed
+         */
         dispose(forceDisposeEffect?: boolean): void;
         clone(name: string): FluentButtonMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Creates a fluent button material from parsed material data.
+         * @param source defines the JSON representation of the material
+         * @param scene defines the hosting scene
+         * @param rootUrl defines the root URL to use to load textures and relative dependencies
+         * @returns a new fluent button material
+         */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): FluentButtonMaterial;
     }
+
+
+    /** @internal */
+    export var fluentButtonVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fluentButtonPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     /** @internal */
@@ -1567,6 +1608,7 @@ declare namespace BABYLON.GUI {
      * Class used to render square buttons with fluent design
      */
     export class FluentBackplateMaterial extends BABYLON.PushMaterial {
+        private _shadersLoaded;
         /**
          * URL pointing to the texture used to define the coloring for the fluent blob effect.
          */
@@ -1699,12 +1741,37 @@ declare namespace BABYLON.GUI {
          * @returns the list of animatables object used in the material
          */
         getAnimatables(): BABYLON.IAnimatable[];
+        /**
+         * Disposes the material.
+         * @param forceDisposeEffect specifies if effects should be forcefully disposed
+         */
         dispose(forceDisposeEffect?: boolean): void;
         clone(name: string): FluentBackplateMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Creates a fluent backplate material from parsed material data.
+         * @param source defines the JSON representation of the material
+         * @param scene defines the hosting scene
+         * @param rootUrl defines the root URL to use to load textures and relative dependencies
+         * @returns a new fluent backplate material
+         */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): FluentBackplateMaterial;
     }
+
+
+    /** @internal */
+    export var fluentBackplateVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fluentBackplatePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     /** @internal */
@@ -1735,6 +1802,7 @@ declare namespace BABYLON.GUI {
      * Class used to render controls with fluent design
      */
     export class FluentMaterial extends BABYLON.PushMaterial {
+        private _shadersLoaded;
         /**
          * Gets or sets inner glow intensity. A value of 0 means no glow (default is 0.5)
          */
@@ -1795,12 +1863,37 @@ declare namespace BABYLON.GUI {
         bindForSubMesh(world: BABYLON.Matrix, mesh: BABYLON.Mesh, subMesh: BABYLON.SubMesh): void;
         getActiveTextures(): BABYLON.BaseTexture[];
         hasTexture(texture: BABYLON.BaseTexture): boolean;
+        /**
+         * Disposes the material.
+         * @param forceDisposeEffect specifies if effects should be forcefully disposed
+         */
         dispose(forceDisposeEffect?: boolean): void;
         clone(name: string): FluentMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Creates a fluent material from parsed material data.
+         * @param source defines the JSON representation of the material
+         * @param scene defines the hosting scene
+         * @param rootUrl defines the root URL to use to load textures and relative dependencies
+         * @returns a new fluent material
+         */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): FluentMaterial;
     }
+
+
+    /** @internal */
+    export var fluentVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fluentPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
 
 
     /** @internal */

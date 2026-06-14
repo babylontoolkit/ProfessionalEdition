@@ -3500,6 +3500,9 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         private _opaqueMeshesCache;
         private _transparentMeshesCache;
         private _materialObservers;
+        private _newMeshObserver;
+        private _removedMeshObserver;
+        private _disposed;
         private readonly _materialImpls;
         private readonly _adapterCache;
         /**
