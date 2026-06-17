@@ -7215,6 +7215,14 @@ declare namespace BABYLON {
          * @returns a promise containing the loaded meshes, particles, skeletons and animations
          */
         importMeshAsync(meshesNames: any, scene: Scene, data: any, rootUrl: string, _onProgress?: (event: ISceneLoaderProgressEvent) => void, _fileName?: string): Promise<ISceneLoaderAsyncResult>;
+        /**
+         * Detects a PlayCanvas-style `lod-meta.json` payload and, if found, creates a streaming mesh for it.
+         * @param scene hosting scene
+         * @param data loaded file data
+         * @param rootUrl root url the metadata's relative paths resolve against
+         * @returns the streaming mesh, or null when the data is not SOG LOD metadata
+         */
+        private _tryCreateLODStream;
         private static _BuildPointCloud;
         private static _BuildMesh;
         private _unzipWithFFlateAsync;
@@ -7415,6 +7423,421 @@ declare namespace BABYLON {
     export function ParseSogMetaAsTextures(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedSplat>;
 
 
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Shared shader names for the SOG -> decoded work-buffer copy pass.
+     */
+    export const GaussianSplattingWorkBufferShaderName = "gsSogDecodeToWorkBuffer";
+    /**
+     * Pass-through vertex shader (GLSL): the geometry is a fullscreen triangle already in NDC.
+     */
+    export const GaussianSplattingWorkBufferVertexShaderGLSL = "precision highp float;\nattribute vec3 position;\nvoid main() {\n    gl_Position = vec4(position.xy, 0.0, 1.0);\n}\n";
+    /**
+     * Fragment shader (GLSL/WebGL2): decodes one SOG source file into the decoded GS work-buffer layout,
+     * writing each splat into its allocated pixel. Mirrors the USE_SOG decode in ShadersInclude/gaussianSplatting.fx
+     * but outputs the decoded MRT (center, covA, covB, color) consumed by the standard (non-SOG) draw path.
+     *
+     * MRT layout: 0 = center (x,y,z,1), 1 = covA (Sigma00,01,02,11), 2 = covB (Sigma12,22,0,0), 3 = color (rgba).
+     */
+    export const GaussianSplattingWorkBufferFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogMeansLTex;\nuniform sampler2D sogMeansUTex;\nuniform sampler2D sogScalesTex;\nuniform sampler2D sogQuatsTex;\nuniform sampler2D sogSh0Tex;\nuniform sampler2D sogCodebookTex;\n\nuniform vec3 sogMeansMin;\nuniform vec3 sogMeansMax;\nuniform vec3 sogScalesMin;\nuniform vec3 sogScalesMax;\nuniform vec4 sogSh0Min;\nuniform vec4 sogSh0Max;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\n\nlayout(location = 0) out vec4 glFragData[4];\n\nmat3 transposeM(mat3 m) {\n    return mat3(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]);\n}\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int k = global - uOffset;\n    ivec2 src = ivec2(k - (k / uSrcWidth) * uSrcWidth, k / uSrcWidth);\n\n    vec3 mL = texelFetch(sogMeansLTex, src, 0).xyz;\n    vec3 mU = texelFetch(sogMeansUTex, src, 0).xyz;\n    vec3 sRaw = texelFetch(sogScalesTex, src, 0).xyz;\n    vec4 qRaw = texelFetch(sogQuatsTex, src, 0);\n    vec4 c0 = texelFetch(sogSh0Tex, src, 0);\n\n    // Position: q16 = (u<<8)|l normalized; n = lerp(min,max,q16); pos = sign(n)*(exp(|n|)-1)\n    vec3 q16 = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    vec3 nPos = mix(sogMeansMin, sogMeansMax, q16);\n    vec3 center = sign(nPos) * (exp(abs(nPos)) - vec3(1.0));\n\n    // Scale (v1: lerp+exp ; v2: codebook lookup)\n    vec3 splatScale;\n    if (uVersion == 2) {\n        vec3 sIdx = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.x), 0), 0).r);\n        splatScale.y = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.y), 0), 0).r);\n        splatScale.z = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(sogScalesMin, sogScalesMax, sRaw));\n    }\n\n    // Quaternion (largest-omitted, mode in alpha as 252 + omitted-index)\n    const float invSqrt2 = 0.70710678118;\n    vec3 qabc = (qRaw.xyz - vec3(0.5)) * 2.0 * invSqrt2;\n    int qMode = int(qRaw.w * 255.0 + 0.5) - 252;\n    float qd = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    vec4 quat;\n    if (qMode == 0) {\n        quat = vec4(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    float qw = quat.x, qx = quat.y, qy = quat.z, qz = quat.w;\n    mat3 R = mat3(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    mat3 S2 = mat3(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    mat3 Sigma = R * S2 * transposeM(R);\n\n    // Color (sh0)\n    const float SH_C0 = 0.28209479177387814;\n    vec3 colRgb;\n    float colA;\n    if (uVersion == 2) {\n        vec3 c3;\n        c3.x = texelFetch(sogCodebookTex, ivec2(256 + int(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = texelFetch(sogCodebookTex, ivec2(256 + int(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = texelFetch(sogCodebookTex, ivec2(256 + int(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        vec4 cLerp = mix(sogSh0Min, sogSh0Max, c0);\n        colRgb = vec3(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    glFragData[0] = vec4(center, 1.0);\n    glFragData[1] = vec4(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    glFragData[2] = vec4(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    glFragData[3] = vec4(colRgb, colA);\n}\n";
+    /**
+     * Pass-through vertex shader (WGSL).
+     */
+    export const GaussianSplattingWorkBufferVertexShaderWGSL = "\nattribute position : vec3<f32>;\n@vertex\nfn main(input : VertexInputs) -> FragmentInputs {\n    vertexOutputs.position = vec4<f32>(input.position.xy, 0.0, 1.0);\n}\n";
+    /**
+     * Fragment shader (WGSL/WebGPU) — same decode as the GLSL variant, writing 4 MRT attachments.
+     */
+    export const GaussianSplattingWorkBufferFragmentShaderWGSL = "\nvar sogMeansLTexSampler : sampler;\nvar sogMeansLTex : texture_2d<f32>;\nvar sogMeansUTexSampler : sampler;\nvar sogMeansUTex : texture_2d<f32>;\nvar sogScalesTexSampler : sampler;\nvar sogScalesTex : texture_2d<f32>;\nvar sogQuatsTexSampler : sampler;\nvar sogQuatsTex : texture_2d<f32>;\nvar sogSh0TexSampler : sampler;\nvar sogSh0Tex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogMeansMin : vec3<f32>;\nuniform sogMeansMax : vec3<f32>;\nuniform sogScalesMin : vec3<f32>;\nuniform sogScalesMax : vec3<f32>;\nuniform sogSh0Min : vec4<f32>;\nuniform sogSh0Max : vec4<f32>;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let k : i32 = global - uniforms.uOffset;\n    let src : vec2<i32> = vec2<i32>(k - (k / uniforms.uSrcWidth) * uniforms.uSrcWidth, k / uniforms.uSrcWidth);\n\n    let mL : vec3<f32> = textureLoad(sogMeansLTex, src, 0).xyz;\n    let mU : vec3<f32> = textureLoad(sogMeansUTex, src, 0).xyz;\n    let sRaw : vec3<f32> = textureLoad(sogScalesTex, src, 0).xyz;\n    let qRaw : vec4<f32> = textureLoad(sogQuatsTex, src, 0);\n    let c0 : vec4<f32> = textureLoad(sogSh0Tex, src, 0);\n\n    let q16 : vec3<f32> = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    let nPos : vec3<f32> = mix(uniforms.sogMeansMin, uniforms.sogMeansMax, q16);\n    let center : vec3<f32> = sign(nPos) * (exp(abs(nPos)) - vec3<f32>(1.0));\n\n    var splatScale : vec3<f32>;\n    if (uniforms.uVersion == 2) {\n        let sIdx : vec3<f32> = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.x), 0), 0).r);\n        splatScale.y = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.y), 0), 0).r);\n        splatScale.z = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(uniforms.sogScalesMin, uniforms.sogScalesMax, sRaw));\n    }\n\n    let invSqrt2 : f32 = 0.70710678118;\n    let qabc : vec3<f32> = (qRaw.xyz - vec3<f32>(0.5)) * 2.0 * invSqrt2;\n    let qMode : i32 = i32(qRaw.w * 255.0 + 0.5) - 252;\n    let qd : f32 = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    var quat : vec4<f32>;\n    if (qMode == 0) {\n        quat = vec4<f32>(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4<f32>(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4<f32>(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4<f32>(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    let qw : f32 = quat.x;\n    let qx : f32 = quat.y;\n    let qy : f32 = quat.z;\n    let qz : f32 = quat.w;\n    let R : mat3x3<f32> = mat3x3<f32>(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    let S2 : mat3x3<f32> = mat3x3<f32>(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    let Sigma : mat3x3<f32> = R * S2 * transpose(R);\n\n    let SH_C0 : f32 = 0.28209479177387814;\n    var colRgb : vec3<f32>;\n    var colA : f32;\n    if (uniforms.uVersion == 2) {\n        var c3 : vec3<f32>;\n        c3.x = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3<f32>(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        let cLerp : vec4<f32> = mix(uniforms.sogSh0Min, uniforms.sogSh0Max, c0);\n        colRgb = vec3<f32>(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    fragmentOutputs.fragData0 = vec4<f32>(center, 1.0);\n    fragmentOutputs.fragData1 = vec4<f32>(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    fragmentOutputs.fragData2 = vec4<f32>(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    fragmentOutputs.fragData3 = vec4<f32>(colRgb, colA);\n}\n";
+
+
+    /**
+     * A unified, GPU-decoded Gaussian Splatting work buffer.
+     *
+     * Holds a square MRT texture set (centers / covA / covB / colors) sized to a fixed splat capacity
+     * (PlayCanvas-style: `ceil(sqrt(capacity))`). Each streamed SOG file is decoded directly on the GPU
+     * (no CPU readback) into its allocated pixel range. The decoded textures are consumed unchanged by the
+     * standard (non-SOG) Gaussian Splatting draw path.
+     *
+     * @experimental
+     */
+    export class GaussianSplattingWorkBuffer {
+        private readonly _scene;
+        private readonly _mrt;
+        private readonly _textureSize;
+        private readonly _shaderLanguage;
+        private readonly _material;
+        private readonly _quad;
+        private _disposed;
+        /**
+         * Square edge length (in pixels) of the work-buffer textures.
+         */
+        get textureSize(): number;
+        /**
+         * The decoded work-buffer textures: [centers, covA, covB, colors].
+         */
+        get textures(): Texture[];
+        /**
+         * Creates a work buffer sized to hold `capacity` splats.
+         * @param scene hosting scene
+         * @param capacity total number of splats the work buffer must address
+         */
+        constructor(scene: Scene, capacity: number);
+        /**
+         * Decodes one SOG file into the work buffer at the given splat offset (accumulating; previously
+         * decoded files are preserved). Resolves once the GPU decode has been issued. The caller may
+         * dispose the source pack textures after this resolves.
+         * @param pack the SOG texture pack (GPU source textures + per-file decode parameters)
+         * @param offset first splat index (pixel offset) for this file in the work buffer
+         */
+        decodeAsync(pack: ISogTexturePack, offset: number): Promise<void>;
+        /**
+         * Disposes the work buffer and its decode resources.
+         */
+        dispose(): void;
+        private _createQuad;
+        private _createMaterial;
+        private _applyPack;
+    }
+
+
+    /**
+     * A single LOD variant of a tree node: a contiguous splat range inside one streamed SOG file.
+     */
+    interface ISOGLODEntry {
+        /** Index into {@link ISOGLODMetadata.filenames}. */
+        file: number;
+        /** First splat index inside that file. */
+        offset: number;
+        /** Number of splats. */
+        count: number;
+    }
+    /**
+     * A node of the PlayCanvas-style SOG LOD octree. Internal nodes have `children`; leaves have `lods`.
+     */
+    interface ISOGLODNode {
+        bound: {
+            min: number[];
+            max: number[];
+        };
+        children?: ISOGLODNode[];
+        lods?: {
+            [level: string]: ISOGLODEntry;
+        };
+        /** LOD level currently streamed/rendered for this node, or undefined until its base LOD is ready. */
+        activeLod?: number;
+        /** Distance-based ideal LOD level for this node, recomputed per frame. */
+        optimalLod?: number;
+        /** Available LOD levels for this leaf, sorted ascending (0 = finest). Set during the tree walk. */
+        availableLevels?: number[];
+        /** Coarsest available level (= max key), always streamed as the permanent base layer. */
+        baseLod?: number;
+        /** Final LOD level the node should stream/render (distance optimal, capped by maxDetailLod). */
+        targetLevel?: number;
+        /** Frames remaining before this node may switch LOD again (oscillation damping). */
+        lodCooldown?: number;
+    }
+    /**
+     * Parsed contents of a PlayCanvas-style `lod-meta.json` file.
+     */
+    export interface ISOGLODMetadata {
+        /** Number of LOD levels (0 = highest detail). */
+        lodLevels: number;
+        /** SOG `meta.json` paths, relative to the metadata file, indexed by `ISOGLODEntry.file`. */
+        filenames: string[];
+        /** Optional always-on environment `.sog` bundle, relative to the metadata file. */
+        environment?: string;
+        /** Root of the LOD octree. */
+        tree: ISOGLODNode;
+    }
+    /**
+     * Selects which LOD value drives the {@link GaussianSplattingStream} debug wireframe colors.
+     */
+    export type GaussianSplattingStreamDebugLodSource = "optimal" | "current";
+    /**
+     * Options for {@link GaussianSplattingStream}.
+     */
+    export interface IGaussianSplattingStreamOptions {
+        /** URL of the fflate UMD module used to unzip `.sog` environment bundles. */
+        deflateURL?: string;
+        /** Pre-loaded fflate module. */
+        fflate?: any;
+        /** When true, renders a wireframe box per LOD node, colored by the node's LOD level. */
+        debugDisplay?: boolean;
+        /** Which LOD value drives the debug wireframe colors. Defaults to `"optimal"`. */
+        debugLodSource?: GaussianSplattingStreamDebugLodSource;
+        /** Distance (in local units) of the first LOD transition. PlayCanvas default `5`. */
+        lodBaseDistance?: number;
+        /** Geometric ratio between successive LOD transition distances. PlayCanvas default `3`. */
+        lodMultiplier?: number;
+        /** Distance multiplier applied to nodes behind the camera (`1` = no penalty). PlayCanvas default `1`. */
+        lodBehindPenalty?: number;
+        /** Lowest LOD index the optimal-LOD heuristic may select. Defaults to `0`. */
+        lodRangeMin?: number;
+        /** Highest LOD index the optimal-LOD heuristic may select. Defaults to `lodLevels - 1`. */
+        lodRangeMax?: number;
+        /** Maximum number of LOD source files to GPU-decode per frame (spreads work to avoid hitches). Defaults to `1`. */
+        maxDecodesPerFrame?: number;
+        /** Frames a node must wait after switching LOD before it may switch again (oscillation damping). Defaults to `10`. */
+        lodCooldownFrames?: number;
+        /** Minimum number of frames between LOD re-evaluations (throttles per-frame work during motion). Defaults to `4`. */
+        lodUpdateInterval?: number;
+        /** Minimum camera movement (world units) required to re-evaluate LODs. Defaults to `0.5`. */
+        lodUpdateDistance?: number;
+        /**
+         * Finest (most detailed) LOD level any node is allowed to render. `0` allows full detail (level 0);
+         * `1` caps detail at the next-coarser level, and so on. Higher values force a coarser maximum detail.
+         */
+        maxDetailLod?: number;
+    }
+    /**
+     * Streams a PlayCanvas-style SOG LOD scene (`lod-meta.json`) into a single Gaussian Splatting mesh.
+     *
+     * Each selected SOG file (plus the environment) is loaded directly as GPU textures and decoded on the
+     * GPU into one unified, PlayCanvas-style square work buffer (no CPU splat decode or `updateData`). Only
+     * the splats of each node's currently-selected LOD are rendered/sorted via the mesh's interval filter.
+     *
+     * The coarsest (least-detail) LOD of every node is streamed first as a permanent base layer so the whole
+     * scene is visible quickly with no holes. A distance-based "optimal" LOD is then computed per node (see
+     * {@link evaluateOptimalLods}); finer LOD source files are streamed on demand and a node only switches to
+     * a finer LOD once that file is decoded, so transitions never flash or leave gaps.
+     *
+     * @experimental
+     */
+    export class GaussianSplattingStream extends GaussianSplattingMesh {
+        private readonly _metadata;
+        private readonly _rootUrl;
+        private readonly _streamOptions;
+        private readonly _leafNodes;
+        private _lodBaseDistance;
+        private _lodMultiplier;
+        private _lodBehindPenalty;
+        private _lodRangeMin;
+        private _lodRangeMax;
+        private _maxDecodesPerFrame;
+        private _lodCooldownFrames;
+        private _lodUpdateInterval;
+        private _lodUpdateDistance;
+        private _maxDetailLod;
+        private _workBuffer;
+        private readonly _fileBaseSplat;
+        private readonly _fileCounts;
+        private readonly _fileMeta;
+        private readonly _decodedFiles;
+        private readonly _loadingFiles;
+        private readonly _decodeQueue;
+        private _environmentRange;
+        private _environmentFiles;
+        private _lodObserver;
+        private _baseLayerReady;
+        private _framesSinceLodUpdate;
+        private readonly _lastLodCamPos;
+        private _forceLodUpdate;
+        private readonly _boundsMin;
+        private readonly _boundsMax;
+        private _debugDisplay;
+        private _debugLodSource;
+        private _debugMesh;
+        private _debugObserver;
+        private _debugColorData;
+        private _debugSignature;
+        private _disposed;
+        /**
+         * Returns true when the parsed JSON looks like a PlayCanvas-style `lod-meta.json` payload.
+         * @param data parsed JSON
+         * @returns whether the data is SOG LOD metadata
+         */
+        static IsLODMetadata(data: unknown): data is ISOGLODMetadata;
+        /**
+         * Creates a new SOG LOD streaming mesh and immediately starts streaming (non-blocking).
+         * @param name mesh name
+         * @param metadata parsed `lod-meta.json`
+         * @param rootUrl base URL the metadata's relative paths resolve against
+         * @param scene hosting scene
+         * @param options streaming options
+         */
+        constructor(name: string, metadata: ISOGLODMetadata, rootUrl: string, scene: Scene, options?: IGaussianSplattingStreamOptions);
+        getClassName(): string;
+        /**
+         * Finest (most detailed) LOD level any node is allowed to render. `0` allows full detail (level 0);
+         * `1` caps detail at the next-coarser level, and so on. Nodes already coarser than this cap (by
+         * distance) are unaffected. Changes take effect in real time.
+         */
+        get maxDetailLod(): number;
+        set maxDetailLod(value: number);
+        /**
+         * Coarsest LOD level index in the scene (number of LOD levels minus one). Useful as the upper bound
+         * for {@link maxDetailLod}.
+         */
+        get maxLodLevel(): number;
+        /**
+         * When true, renders a wireframe box per LOD node, colored by the LOD level selected by {@link debugLodSource}.
+         */
+        get debugDisplay(): boolean;
+        set debugDisplay(value: boolean);
+        /**
+         * Selects which LOD value drives the debug wireframe colors: the distance-based `"optimal"` LOD
+         * (default, recomputed as the camera moves) or the `"current"` streamed/rendered LOD.
+         */
+        get debugLodSource(): GaussianSplattingStreamDebugLodSource;
+        set debugLodSource(value: GaussianSplattingStreamDebugLodSource);
+        dispose(doNotRecurse?: boolean): void;
+        /**
+         * Re-evaluates the optimal LOD for every node based on the camera position. The result is stored in
+         * each node's `optimalLod`. Rendering is unaffected; this currently drives only diagnostics and the
+         * debug wireframe display.
+         * @param camera camera to evaluate against (defaults to the scene's active camera)
+         */
+        evaluateOptimalLods(camera?: Nullable<Camera>): void;
+        /**
+         * The LOD level used to color a node's debug box, per {@link debugLodSource}.
+         * @param node leaf node
+         * @returns the displayed LOD level
+         */
+        private _displayedLodLevel;
+        /**
+         * Rebuilds the debug wireframe (evaluating the optimal LOD first when needed) and wires up the per-frame
+         * recolor observer. The observer runs for both LOD sources: "optimal" colors track the camera, and
+         * "current" colors track LOD levels as they stream in/out.
+         */
+        private _refreshDebugDisplay;
+        /**
+         * Per-frame debug update: recolors the existing wireframe in place whenever the displayed LOD levels
+         * change. For the "optimal" source the optimal LOD is recomputed first (it tracks the camera); for the
+         * "current" source the levels are driven by the streaming loop, so no recomputation is needed here. The
+         * geometry is never rebuilt, which avoids the dispose/recreate flicker while the camera moves.
+         */
+        private _onDebugFrame;
+        /**
+         * Builds the LOD-node wireframe boxes once (one box per leaf node), colored by the displayed LOD level.
+         * The color vertex buffer is created updatable so subsequent recolors can happen in place.
+         */
+        private _buildDebugMesh;
+        /**
+         * Recolors the existing wireframe in place from the current displayed LOD levels, without rebuilding geometry.
+         */
+        private _updateDebugColors;
+        /**
+         * Computes a cheap 32-bit rolling hash of every leaf's displayed LOD level, used to detect when the
+         * debug wireframe needs recoloring. Avoids per-frame string allocation in the render loop.
+         * @returns a numeric signature of the current displayed LOD levels
+         */
+        private _computeDebugSignature;
+        /**
+         * Disposes the LOD-node wireframe boxes and stops live debug updates.
+         */
+        private _clearDebugDisplay;
+        /**
+         * Walks the LOD tree and records every leaf that carries renderable LOD entries, capturing the set of
+         * available levels and the coarsest (base) level for each.
+         * @param node current tree node
+         */
+        private _collectLodEntries;
+        /**
+         * Streams the scene: learns every source file's splat count, allocates one unified GPU work buffer
+         * sized for all LOD files, decodes the environment and the coarsest LOD of every node as a permanent
+         * base layer, then installs the per-frame loop that streams finer LODs on demand.
+         */
+        private _streamAllAsync;
+        /**
+         * Collects the unique set of source file indices referenced by any LOD of any leaf, sorted ascending.
+         * @returns sorted unique file indices
+         */
+        private _collectAllFileIds;
+        /**
+         * Fetches the environment bundle and every referenced file's metadata to learn splat counts, caching
+         * each file's parsed metadata for the later on-demand decode. Metadata fetches run in parallel.
+         * @param fileIds file indices to fetch metadata for
+         * @returns the environment splat count (0 when there is no environment)
+         */
+        private _gatherCountsAsync;
+        /**
+         * Queues a file for on-demand decode if it isn't already decoded, in flight, or already queued.
+         * @param fileId file index to decode
+         */
+        private _enqueueDecode;
+        /**
+         * Starts up to {@link _maxDecodesPerFrame} queued decodes for this frame. Decodes run asynchronously
+         * and promote any waiting nodes once they complete.
+         */
+        private _pumpDecodeQueue;
+        /**
+         * Decodes the always-on environment bundle into its work-buffer block and activates its range.
+         */
+        private _decodeEnvironmentAsync;
+        /**
+         * Loads one LOD source file as GPU textures, decodes it into its fixed work-buffer block, records its
+         * CPU centers for sorting, frees the source textures, then promotes any nodes that were waiting for it.
+         * Concurrent or repeat requests for the same file are ignored.
+         * @param fileId file index to decode
+         */
+        private _decodeFileAsync;
+        /**
+         * Snaps a desired LOD level to the nearest level the node provides, while never selecting a level finer
+         * than {@link maxDetailLod} (i.e. with an index below the cap). Ties prefer the finer allowed level. If
+         * the node has no level at or coarser than the cap, its coarsest available level is used.
+         * @param node leaf node
+         * @param desired desired LOD level
+         * @returns the chosen available level
+         */
+        private _cappedLevelForNode;
+        /**
+         * Computes each node's {@link ISOGLODNode.targetLevel}: the distance-based optimal level snapped to an
+         * available level, capped so no node renders finer (more detailed) than {@link maxDetailLod}.
+         */
+        private _computeTargetLevels;
+        /**
+         * Applies each node's {@link ISOGLODNode.targetLevel}: switches a node to its target level when that
+         * level's file is already decoded, otherwise queues the file and leaves the node on its current LOD (so
+         * nothing ever disappears). Nodes within their post-switch cooldown are left untouched to damp oscillation.
+         * @returns true when at least one node changed LOD (callers should refresh the active ranges)
+         */
+        private _applyDesiredLods;
+        /**
+         * Per-frame LOD streaming loop. Ticks cooldowns and pumps the decode queue every frame, but throttles
+         * the expensive LOD re-evaluation (optimal-LOD computation, budget balancing, desired-LOD application
+         * and interval rebuild) to run at most every {@link _lodUpdateInterval} frames and only after the camera
+         * has moved far enough, so continuous camera motion no longer rebuilds the interval set every frame. A
+         * budget change forces a single immediate update regardless of the throttle.
+         */
+        private _onLodFrame;
+        /**
+         * Reads the splat count from SOG metadata.
+         * @param data SOG metadata
+         * @returns the splat count
+         */
+        private static _GetSplatCount;
+        /**
+         * Disposes all GPU source textures of a SOG pack (they are only needed for the one decode pass).
+         * @param pack the SOG texture pack
+         */
+        private static _DisposePack;
+        /**
+         * Expands the running splat-center bounds with a newly decoded file's centers and updates the
+         * mesh bounding info so the GS is correctly frustum-culled and pickable.
+         * @param positions stride-4 splat centers for the new file
+         * @param count number of splats
+         */
+        private _updateBounds;
+        /**
+         * Rebuilds the active interval set from the environment plus each node's currently-selected LOD entry,
+         * coalesces adjacent ranges, and pushes the result to the sort worker.
+         */
+        private _refreshActiveRanges;
+        /**
+         * Sorts and merges adjacent/overlapping ranges to keep the interval list compact.
+         * @param ranges raw ranges
+         * @returns coalesced ranges
+         */
+        private static _CoalesceRanges;
+        /**
+         * Unzips a `.sog` bundle into a name -> bytes map, loading fflate on demand.
+         * @param data zipped bytes
+         * @returns map of entry name to bytes
+         */
+        private _unzipAsync;
+    }
 
 
     /**
@@ -7812,6 +8235,974 @@ declare namespace BABYLON {
     }
 
 
+
+
+
+
+    /**
+     * Defines the FBX loader plugin metadata.
+     */
+    export var FBXFileLoaderMetadata: {
+        readonly name: "fbx";
+        readonly extensions: {
+            readonly ".fbx": {
+                readonly isBinary: true;
+            };
+        };
+    };
+
+
+    /**
+     * Source convention for tangent-space normal maps loaded from FBX normal-map slots.
+     */
+    export type FBXNormalMapCoordinateSystem = "y-up" | "y-down";
+    /**
+     * Defines options for the FBX loader.
+     */
+    export interface FBXFileLoaderOptions {
+        /**
+         * Source convention for tangent-space normal maps connected through FBX normal-map slots.
+         * FBX does not standardize this convention, so the loader defaults to the glTF/USD-style Y-up convention.
+         * Set to "y-down" for assets authored with inverted green/Y normal maps.
+         */
+        normalMapCoordinateSystem?: FBXNormalMapCoordinateSystem;
+    }
+        interface SceneLoaderPluginOptions {
+            /**
+             * Defines options for the FBX loader.
+             */
+            [FBXFileLoaderMetadata.name]: FBXFileLoaderOptions;
+        }
+    /**
+     * FBX file loader plugin for Babylon.js.
+     * Pure TypeScript implementation — no Autodesk FBX SDK dependency.
+     */
+    export class FBXFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPluginFactory {
+        /**
+         * Defines the name of the plugin.
+         */
+        readonly name: "fbx";
+        /**
+         * Defines the extension the plugin is able to load.
+         */
+        readonly extensions: {
+            readonly ".fbx": {
+                readonly isBinary: true;
+            };
+        };
+        private readonly _options;
+        private readonly _bindRestBones;
+        private readonly _sourceBonesBySkeleton;
+        private readonly _scaleCompensationHelpersBySkeleton;
+        /**
+         * Creates a new FBX loader.
+         * @param options - Options controlling FBX loading behavior
+         */
+        constructor(options?: FBXFileLoaderOptions);
+        /**
+         * Creates an FBX loader plugin instance with options from SceneLoader.
+         * @param options - Scene loader plugin options
+         * @returns The configured FBX loader
+         */
+        createPlugin(options: SceneLoaderPluginOptions): ISceneLoaderPluginAsync;
+        /**
+         * Imports meshes from an FBX file and adds them to the scene.
+         * @param meshesNames - A string or array of mesh names to import, or null/undefined to import all meshes
+         * @param scene - The scene to add imported meshes to
+         * @param data - The FBX data to load
+         * @param rootUrl - Root URL used to resolve external resources
+         * @param _onProgress - Callback called while the file is loading
+         * @param _fileName - Name of the file being loaded
+         * @returns A promise containing the loaded meshes, particle systems, skeletons, animation groups, transform nodes, geometries, and lights
+         */
+        importMeshAsync(meshesNames: string | readonly string[] | null | undefined, scene: Scene, data: unknown, rootUrl: string, _onProgress?: (event: ISceneLoaderProgressEvent) => void, _fileName?: string): Promise<ISceneLoaderAsyncResult>;
+        /**
+         * Loads all FBX content into the scene.
+         * @param scene - The scene to load the FBX content into
+         * @param data - The FBX data to load
+         * @param rootUrl - Root URL used to resolve external resources
+         * @param _onProgress - Callback called while the file is loading
+         * @param _fileName - Name of the file being loaded
+         * @returns A promise that resolves when loading is complete
+         */
+        loadAsync(scene: Scene, data: unknown, rootUrl: string, _onProgress?: (event: ISceneLoaderProgressEvent) => void, _fileName?: string): Promise<void>;
+        /**
+         * Loads all FBX content into an asset container.
+         * @param scene - The scene used to create the asset container
+         * @param data - The FBX data to load
+         * @param rootUrl - Root URL used to resolve external resources
+         * @param _onProgress - Callback called while the file is loading
+         * @param _fileName - Name of the file being loaded
+         * @returns A promise containing the loaded asset container
+         */
+        loadAssetContainerAsync(scene: Scene, data: unknown, rootUrl: string, _onProgress?: (event: ISceneLoaderProgressEvent) => void, _fileName?: string): Promise<AssetContainer>;
+        private _parse;
+        private _parseFromArrayBuffer;
+        private _buildScene;
+        private _addMaterialToContainer;
+        private _addTextureToContainer;
+        private _setAssetContainer;
+        private static _computeFBXAxisConversionMatrix;
+        private _buildModel;
+        private static _modelSubtreeMatchesNameFilter;
+        private static _applyModelMetadata;
+        private _createMesh;
+        /**
+         * Apply multi-material to a mesh by creating sub-meshes grouped by material index.
+         * Reorders the index buffer so that triangles sharing the same material are contiguous.
+         */
+        private _applyMultiMaterial;
+        private static _collectCullingConflictMaterialIds;
+        private static _getModelMaterial;
+        private _applyMaterialUVSetCoordinates;
+        private _applyStandardMaterialUVSetCoordinates;
+        /**
+         * Babylon multiplies vertex colors by material diffuse color. Use per-mesh
+         * material clones so vertex-colored geometry can render unmodulated without
+         * changing shared materials used by non-vertex-colored meshes.
+         */
+        private _useUnmodulatedVertexColorMaterials;
+        /**
+         * Build per-polygon-vertex bone indices and weights from the control-point-based skin data.
+         * The geometry expands control points to per-polygon-vertex, so we need to look up
+         * each polygon-vertex's control point index.
+         */
+        private _buildSkinningData;
+        private _createMaterial;
+        private _configureNormalTexture;
+        private _getNormalMapTangentHandednessScale;
+        private static _isSupportedMaterialTextureSlot;
+        private static _isNormalMapTextureSlot;
+        private static _createTexture;
+        private static _createExternalTexture;
+        private static _buildTextureFallbackUrls;
+        private static _getTextureCreationOptions;
+        private static _getExternalTextureUrls;
+        private static _getTextureSourceName;
+        private static _getTextureSourceNameFromPath;
+        private static _isSafeRelativeTexturePath;
+        private static _getForcedExtension;
+        private static _getMimeType;
+        /**
+         * Apply blend shape (morph target) deformers to meshes.
+         * FBX Shape vertices are stored as absolute positions for sparse control points.
+         * We compute deltas relative to the base mesh positions.
+         */
+        private _applyBlendShapes;
+        private _createCamera;
+        private _createLight;
+        private _createSkeleton;
+        private _getSourceBone;
+        private _getScaleCompensationHelper;
+        private static _computeFBXAbsoluteMatrices;
+        private static _computeFBXRuntimeLocalMatrix;
+        private static _applyParentScaleCompensation;
+        private static _splitParentScaleCompensatedLocalMatrix;
+        private static _safeInverseScale;
+        private static _getInverseScaleVector;
+        private static _shouldUseBindMatricesAsRest;
+        private static _getMaxScaleRatio;
+        private static _getScaleRatio;
+        private static _computeFBXGeometricMatrix;
+        private static _computeFBXGeometricDeltaMatrix;
+        private static _computeFBXGeometricNormalMatrix;
+        /**
+         * Compute the full FBX local transform matrix:
+         * M = T * Roff * Rp * Rpre * R * Rpost^-1 * Rp^-1 * Soff * Sp * S * Sp^-1
+         *
+         * In row-vector convention: v' = v * M
+         */
+        private static _computeFBXLocalMatrix;
+        /**
+         * Apply the FBX transform chain to a Babylon TransformNode or Mesh.
+         * Decomposes the full local matrix into position/rotation/scale.
+         */
+        private static _applyFBXTransform;
+        private static _computeFBXModelLocalMatrix;
+        private static _getBoneReferenceWorldMatrix;
+        private static _applyMatrixToTransform;
+        private _createAnimationGroup;
+        private _buildInheritedRigBoneAnimations;
+        private static _pushMatrixKeys;
+        /**
+         * Build animations for a non-bone node, correctly handling pivots.
+         * Computes the full FBX transform matrix at each keyframe and decomposes into TRS.
+         */
+        private _buildNodeAnimations;
+        private _isVector3KeysConstant;
+        private _sampleModelLocalMatrix;
+        private _sampleModelScale;
+        /**
+         * Build matrix-baked bone animation from full FBX local transforms.
+         * The bind matrix carries the skinning offset, so animation curves drive
+         * the same FBX local transform chain as the source skeleton.
+         */
+        private _buildBoneAnimations;
+        private _buildNameFilter;
+    }
+
+
+    /**
+     * Intermediate representation for parsed FBX data.
+     * Both binary and ASCII parsers produce this same structure.
+     */
+    /** Individual property value within an FBX node */
+    export type FBXPropertyValue = boolean | number | string | Float32Array | Float64Array | Int32Array | Uint8Array;
+    /** Parsed FBX property type identifier. */
+    export type FBXPropertyType = "boolean" | "int16" | "int32" | "int64" | "float32" | "float64" | "string" | "raw" | "float32[]" | "float64[]" | "int32[]" | "int64[]" | "boolean[]";
+    /** Individual property within an FBX node. */
+    export interface FBXProperty {
+        /** Parsed property type. */
+        type: FBXPropertyType;
+        /** Parsed property value. */
+        value: FBXPropertyValue;
+    }
+    /** A node in the FBX document tree */
+    export interface FBXNode {
+        /** Node name. */
+        name: string;
+        /** Node properties. */
+        properties: FBXProperty[];
+        /** Child nodes. */
+        children: FBXNode[];
+    }
+    /** Top-level parsed FBX document */
+    export interface FBXDocument {
+        /** FBX file version. */
+        version: number;
+        /** Top-level document nodes. */
+        nodes: FBXNode[];
+    }
+    /** Helper to find a child node by name */
+    export function findChildByName(node: FBXNode, name: string): FBXNode | undefined;
+    /** Helper to find all children with a given name */
+    export function findChildrenByName(node: FBXNode, name: string): FBXNode[];
+    /** Helper to find a top-level node in a document */
+    export function findDocumentNode(doc: FBXDocument, name: string): FBXNode | undefined;
+    /** Extract a property value by index, with type narrowing */
+    export function getPropertyValue<T extends FBXPropertyValue>(node: FBXNode, index: number): T | undefined;
+    /**
+     * Converts an FBX object ID value to a safe JavaScript number.
+     * @param value - Parsed FBX object ID value
+     * @returns The object ID, or undefined when the value is not numeric
+     */
+    export function getSafeFBXObjectId(value: unknown): number | undefined;
+    /** Get the numeric ID from a node (first property is typically the int64 UID) */
+    export function getNodeId(node: FBXNode): number | undefined;
+    /**
+     * Clean FBX object names.
+     * FBX names may contain:
+     *   - A "Class::" prefix (e.g. "Model::valkyrie_mesh") — strip it
+     *   - A binary null/control-character class suffix — strip it
+     */
+    export function cleanFBXName(fbxName: string): string;
+
+
+    /**
+     * Inflate a zlib-wrapped deflate stream.
+     *
+     * This implementation is intentionally scoped to FBX binary array payloads: one-shot,
+     * synchronous zlib streams with the exact uncompressed length known up front.
+     */
+    export function inflateZlib(input: Uint8Array, expectedLength: number): Uint8Array;
+
+
+    /**
+     * Parse a binary FBX file into an FBXDocument.
+     * Supports FBX versions 7.0–7.7 (v7.5+ uses 64-bit node headers).
+     */
+    export function parseBinaryFBX(buffer: ArrayBuffer): FBXDocument;
+
+
+    /**
+     * Parse an ASCII FBX file into an FBXDocument.
+     */
+    export function parseAsciiFBX(text: string): FBXDocument;
+
+
+    export type FBXVector3 = [number, number, number];
+    export interface FBXTransformComponents {
+        translation: FBXVector3;
+        rotation: FBXVector3;
+        scale: FBXVector3;
+        preRotation: FBXVector3;
+        postRotation: FBXVector3;
+        rotationPivot: FBXVector3;
+        scalingPivot: FBXVector3;
+        rotationOffset: FBXVector3;
+        scalingOffset: FBXVector3;
+        rotationOrder: number;
+        inheritType?: number;
+    }
+    export function eulerToMatrixXYZ(rx: number, ry: number, rz: number): Matrix;
+    export function eulerToMatrix(rx: number, ry: number, rz: number, order: number): Matrix;
+    export function computeFBXGeometricMatrix(translation: FBXVector3, rotation: FBXVector3, scale: FBXVector3): Matrix;
+    export function computeFBXGeometricDeltaMatrix(rotation: FBXVector3, scale: FBXVector3): Matrix;
+    export function computeFBXGeometricNormalMatrix(rotation: FBXVector3, scale: FBXVector3): Matrix;
+    export function computeFBXLocalMatrix(components: FBXTransformComponents): Matrix;
+
+
+    export type FBXClusterMode = "Normalize" | "Additive" | "TotalOne" | "Unknown";
+    export interface FBXSkinDiagnostic {
+        type: "cluster-mode-runtime-unsupported" | "missing-cluster-transform" | "missing-cluster-transform-link" | "missing-bind-pose-matrix" | "associate-model-present";
+        message: string;
+        boneModelId?: number;
+        boneName?: string;
+        clusterMode?: FBXClusterMode;
+    }
+    /** Represents a single bone (cluster) in the FBX skeleton */
+    export interface FBXBoneData {
+        /** The Model node ID for this bone */
+        modelId: number;
+        /** Bone name (from the Model node) */
+        name: string;
+        /** Index of this bone in the skeleton */
+        index: number;
+        /** Index of the parent bone (-1 for root) */
+        parentIndex: number;
+        /** Whether this bone corresponds to an FBX Cluster with vertex weights */
+        isCluster: boolean;
+        /** Local translation from parent (Lcl Translation) */
+        translation: [number, number, number];
+        /** Local rotation in degrees (Lcl Rotation) */
+        rotation: [number, number, number];
+        /** Pre-rotation in degrees (applied before Lcl Rotation) */
+        preRotation: [number, number, number];
+        /** Post-rotation in degrees (applied after Lcl Rotation, inverted) */
+        postRotation: [number, number, number];
+        /** Rotation pivot point */
+        rotationPivot: [number, number, number];
+        /** Scaling pivot point */
+        scalingPivot: [number, number, number];
+        /** Rotation offset */
+        rotationOffset: [number, number, number];
+        /** Scaling offset */
+        scalingOffset: [number, number, number];
+        /** Local scale (Lcl Scaling) */
+        scale: [number, number, number];
+        /** Rotation order: 0=XYZ, 1=XZY, 2=YZX, 3=YXZ, 4=ZXY, 5=ZYX */
+        rotationOrder: number;
+        /** FBX transform inheritance mode. 0=RrSs, 1=RSrs, 2=Rrs */
+        inheritType: number;
+        /** Cluster skinning mode */
+        clusterMode: FBXClusterMode;
+        /** Bind pose transform matrix (cluster Transform, 4x4) */
+        bindPoseMatrix: Float64Array | null;
+        /** Bone's world transform at bind time (cluster TransformLink, 4x4) */
+        transformLinkMatrix: Float64Array | null;
+        /** Associate model world transform at bind time (cluster TransformAssociateModel, 4x4) */
+        transformAssociateModelMatrix: Float64Array | null;
+        /** Model's absolute matrix from the FBX BindPose, when present */
+        modelBindPoseMatrix: Float64Array | null;
+        /** Recoverable bind/skinning diagnostics for this bone */
+        diagnostics: FBXSkinDiagnostic[];
+    }
+    /** Represents a skin deformer with its clusters */
+    export interface FBXSkinData {
+        /** Skin deformer ID */
+        id: number;
+        /** Geometry ID this skin is attached to */
+        geometryId: number;
+        /** Mesh model world matrix from the FBX BindPose, when present */
+        meshBindPoseMatrix: Float64Array | null;
+        /** Bones in this skeleton */
+        bones: FBXBoneData[];
+        /** Per-vertex bone indices, sorted by descending weight and capped for Babylon skinning */
+        boneIndices: number[][];
+        /** Per-vertex bone weights, matching boneIndices */
+        boneWeights: number[][];
+        /** Recoverable skinning/bind diagnostics */
+        diagnostics: FBXSkinDiagnostic[];
+    }
+    /**
+     * Extract all skin deformers from the FBX scene.
+     * Returns skin data including bone hierarchy and vertex weights.
+     */
+    export function extractSkins(objectMap: FBXObjectMap): FBXSkinData[];
+    export function isSkeletonModel(modelNode: FBXNode): boolean;
+    export function extractBoneTransform(modelNode: FBXNode): {
+        translation: [number, number, number];
+        rotation: [number, number, number];
+        preRotation: [number, number, number];
+        postRotation: [number, number, number];
+        rotationPivot: [number, number, number];
+        scalingPivot: [number, number, number];
+        rotationOffset: [number, number, number];
+        scalingOffset: [number, number, number];
+        scale: [number, number, number];
+        rotationOrder: number;
+        inheritType: number;
+    };
+
+
+    export type FBXSceneDiagnosticType = "unsupported-constraint" | "unsupported-helper" | "unsupported-deformer" | "unsupported-node-attribute" | "unsupported-pose" | "unsupported-layered-texture" | "connection-graph";
+    export interface FBXSceneDiagnostic {
+        type: FBXSceneDiagnosticType;
+        message: string;
+        objectId?: number;
+        objectName?: string;
+        nodeName?: string;
+        subType?: string;
+        /** Number of accepted parent graph edges for objectId, when objectId is known. */
+        parentCount?: number;
+        childCount?: number;
+    }
+    export function extractSceneDiagnostics(objectMap: FBXObjectMap): FBXSceneDiagnostic[];
+
+
+    export type FBXRigBoneData = FBXBoneData;
+    export interface FBXSkinBindingData {
+        skinId: number;
+        geometryId: number;
+        rigId: string;
+        skinBoneIndexToRigBoneIndex: number[];
+        clusterModelIds: Set<number>;
+    }
+    export interface FBXRigData {
+        id: string;
+        rootModelIds: number[];
+        bones: FBXRigBoneData[];
+        modelIdToBoneIndex: Map<number, number>;
+        clusterModelIds: Set<number>;
+        skinBindings: FBXSkinBindingData[];
+        warnings: string[];
+    }
+    export function resolveRigs(objectMap: FBXObjectMap, skins: FBXSkinData[]): FBXRigData[];
+
+
+    export interface FBXTemplateProperty {
+        name: string;
+        propertyType: string;
+        label: string;
+        flags: string;
+        values: FBXPropertyValue[];
+    }
+    export interface FBXPropertyTemplate {
+        objectType: string;
+        templateName: string;
+        properties: Map<string, FBXTemplateProperty>;
+    }
+    export type FBXPropertyTemplateMap = Map<string, Map<string, FBXPropertyTemplate>>;
+    export function extractPropertyTemplates(doc: FBXDocument): FBXPropertyTemplateMap;
+    export function getPropertyTemplate(templates: FBXPropertyTemplateMap, objectType: string, templateName?: string): FBXPropertyTemplate | undefined;
+    export function getTemplatePropertyValue<T extends FBXPropertyValue>(template: FBXPropertyTemplate | undefined, propertyName: string, valueIndex?: number): T | undefined;
+    export function resolvePropertyValue<T extends FBXPropertyValue>(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string, valueIndex?: number): T | undefined;
+    export function resolveNumberProperty(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string, fallback: number): number;
+    export function resolveVector2Property(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string, fallback: [number, number]): [number, number];
+    export function resolveVector3Property(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string, fallback: [number, number, number]): [number, number, number];
+    export function resolvePropertyValues(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string): FBXPropertyValue[] | undefined;
+
+
+    /** Parsed material data */
+    export interface FBXMaterialData {
+        id: number;
+        name: string;
+        type: "Lambert" | "Phong";
+        properties: FBXMaterialProperties;
+        textures: FBXTextureRef[];
+    }
+    export interface FBXMaterialProperties {
+        diffuseColor?: [number, number, number];
+        diffuseFactor?: number;
+        ambientColor?: [number, number, number];
+        ambientFactor?: number;
+        specularColor?: [number, number, number];
+        specularFactor?: number;
+        shininess?: number;
+        emissiveColor?: [number, number, number];
+        emissiveFactor?: number;
+        opacity?: number;
+        transparencyFactor?: number;
+    }
+    export interface FBXTextureRef {
+        /** Which material property this texture is connected to */
+        propertyName: string;
+        /** Absolute file path from the FBX */
+        fileName: string;
+        /** Relative file path from the FBX */
+        relativeFileName: string;
+        /** Texture node ID */
+        id: number;
+        /** Embedded texture data (from Video node Content), if available */
+        embeddedData: Uint8Array | null;
+        /** UV translation [u, v] */
+        uvTranslation?: [number, number];
+        /** UV scaling [u, v] */
+        uvScaling?: [number, number];
+        /** UV rotation in degrees */
+        uvRotation?: number;
+        /** Which UV set index this texture uses */
+        uvSetIndex?: number;
+        /** Which named UV set this texture uses */
+        uvSetName?: string;
+    }
+    /**
+     * Extract material data from an FBX Material node.
+     */
+    export function extractMaterial(materialNode: FBXNode, materialId: number, objectMap: FBXObjectMap, templates?: FBXPropertyTemplateMap): FBXMaterialData;
+
+
+    /** A named UV set */
+    export interface FBXUVSet {
+        /** UV set name (e.g. "UVMap", "lightmap") */
+        name: string;
+        /** Per-vertex UV data [u,v, ...] (expanded to match triangle vertices) */
+        data: Float64Array;
+    }
+    /** Recoverable geometry import issue. */
+    export interface FBXGeometryDiagnostic {
+        /** Diagnostic category. */
+        type: "degenerate-polygon" | "triangulation-fallback" | "layer-index-out-of-bounds" | "layer-data-too-short";
+        /** Human-readable diagnostic message. */
+        message: string;
+        /** Polygon index associated with the diagnostic, if applicable. */
+        polygonIndex?: number;
+        /** Layer element name associated with the diagnostic, if applicable. */
+        layerName?: string;
+        /** Source data index associated with the diagnostic, if applicable. */
+        index?: number;
+    }
+    /** Parsed geometry data ready for Babylon consumption */
+    export interface FBXGeometryData {
+        /** Node ID from the FBX document */
+        id: number;
+        /** Geometry name */
+        name: string;
+        /** Flat array of vertex positions [x,y,z, x,y,z, ...] */
+        positions: Float64Array;
+        /** Triangle indices (already triangulated from n-gons) */
+        indices: Uint32Array;
+        /** Per-vertex normals [x,y,z, ...] (expanded to match triangle vertices) */
+        normals: Float64Array | null;
+        /** Per-vertex UVs [u,v, ...] (expanded to match triangle vertices) — first UV set for convenience */
+        uvs: Float64Array | null;
+        /** All UV sets (including the first) */
+        uvSets: FBXUVSet[];
+        /** Per-vertex colors [r,g,b,a, ...] (expanded to match triangle vertices) */
+        colors: Float32Array | null;
+        /** Per-vertex tangents [x,y,z,w, ...] expanded to match triangle vertices */
+        tangents: Float64Array | null;
+        /** Per-vertex binormals [x,y,z, ...] expanded to match triangle vertices */
+        binormals: Float64Array | null;
+        /** Control point index for each polygon-vertex (for skinning lookup) */
+        controlPointIndices: Uint32Array | null;
+        /** Per-triangle material index (which material each triangle belongs to) */
+        materialIndices: Int32Array | null;
+        /** Recoverable geometry import issues */
+        diagnostics: FBXGeometryDiagnostic[];
+    }
+    /**
+     * Extract geometry data from an FBX Geometry node.
+     * Handles polygon triangulation and layer element expansion.
+     */
+    export function extractGeometry(geometryNode: FBXNode, nodeId: number): FBXGeometryData;
+
+
+    /** Represents a model (transform node) in the FBX scene */
+    export interface FBXModelData {
+        id: number;
+        name: string;
+        subType: string;
+        /** Geometry attached to this model (if it's a Mesh type) */
+        geometry?: FBXGeometryData;
+        /** Materials assigned to this model */
+        materials: FBXMaterialData[];
+        /** Child models */
+        children: FBXModelData[];
+        /** Transform properties */
+        translation: [number, number, number];
+        rotation: [number, number, number];
+        scale: [number, number, number];
+        /** PreRotation (applied before Lcl Rotation, in degrees) */
+        preRotation: [number, number, number];
+        /** PostRotation (applied after Lcl Rotation, inverted, in degrees) */
+        postRotation: [number, number, number];
+        /** RotationPivot — point around which rotation occurs */
+        rotationPivot: [number, number, number];
+        /** ScalingPivot — point around which scaling occurs */
+        scalingPivot: [number, number, number];
+        /** RotationOffset — translation after rotation pivot */
+        rotationOffset: [number, number, number];
+        /** ScalingOffset — translation after scaling pivot */
+        scalingOffset: [number, number, number];
+        /** Geometric transforms — applied to geometry only, do not affect children */
+        geometricTranslation: [number, number, number];
+        geometricRotation: [number, number, number];
+        geometricScaling: [number, number, number];
+        /** Rotation order: 0=XYZ, 1=XZY, 2=YZX, 3=YXZ, 4=ZXY, 5=ZYX */
+        rotationOrder: number;
+        /** FBX transform inheritance mode. 0=RrSs, 1=RSrs, 2=Rrs */
+        inheritType: number;
+        /** Whether backface culling is disabled ("CullingOff") */
+        cullingOff: boolean;
+        /** User-defined custom properties from Properties70 */
+        customProperties?: Record<string, string | number | boolean>;
+        /** Recoverable model import diagnostics */
+        diagnostics: string[];
+    }
+    /** Camera data extracted from FBX */
+    export interface FBXCameraData {
+        /** Model ID this camera is attached to */
+        modelId: number;
+        /** Camera name */
+        name: string;
+        /** Field of view in degrees */
+        fieldOfView: number;
+        /** Near clip plane */
+        nearPlane: number;
+        /** Far clip plane */
+        farPlane: number;
+        /** Aspect ratio (width/height), 0 = use viewport */
+        aspectRatio: number;
+        /** Projection type */
+        projectionType: "perspective" | "orthographic";
+        /** Focal length in millimeters when present */
+        focalLength?: number;
+        /** Filmback width in inches when present */
+        filmWidth?: number;
+        /** Filmback height in inches when present */
+        filmHeight?: number;
+        /** Orthographic zoom/height when present */
+        orthoZoom?: number;
+        /** Camera roll in degrees when present */
+        roll?: number;
+        /** Known unsupported or unrecognized camera properties */
+        unknownProperties: string[];
+        /** Recoverable camera import diagnostics */
+        diagnostics: string[];
+    }
+    /** Light data extracted from FBX */
+    export interface FBXLightData {
+        /** Model ID this light is attached to */
+        modelId: number;
+        /** Light name */
+        name: string;
+        /** Light type: 0=Point, 1=Directional, 2=Spot */
+        lightType: number;
+        /** Color [r,g,b] 0-1 */
+        color: [number, number, number];
+        /** Intensity multiplier */
+        intensity: number;
+        /** Cone angle in degrees (for spot lights) */
+        coneAngle: number;
+        /** Decay type: 0=None, 1=Linear, 2=Quadratic */
+        decayType: number;
+        /** Inner cone angle in degrees for spot lights */
+        innerAngle?: number;
+        /** Outer cone angle in degrees for spot lights */
+        outerAngle?: number;
+        /** Distance at which FBX attenuation starts; preserved as metadata */
+        decayStart?: number;
+        /** Whether FBX near attenuation is enabled */
+        enableNearAttenuation?: boolean;
+        /** Whether FBX far attenuation is enabled */
+        enableFarAttenuation?: boolean;
+        /** Whether the source light requested shadow casting */
+        castShadows?: boolean;
+        /** Known unsupported or unrecognized light properties */
+        unknownProperties: string[];
+        /** Recoverable light import diagnostics */
+        diagnostics: string[];
+    }
+    /** Result of interpreting an FBX document */
+    export interface FBXSceneData {
+        /** All root-level models */
+        rootModels: FBXModelData[];
+        /** All geometries in the scene */
+        geometries: FBXGeometryData[];
+        /** All materials in the scene */
+        materials: FBXMaterialData[];
+        /** Skin deformers (skeletons + vertex weights) */
+        skins: FBXSkinData[];
+        /** Resolved deformation rigs shared by one or more skins */
+        rigs: FBXRigData[];
+        /** Blend shape deformers (morph targets) */
+        blendShapes: FBXBlendShapeData[];
+        /** Animation stacks (clips) */
+        animations: FBXAnimationStackData[];
+        /** Cameras */
+        cameras: FBXCameraData[];
+        /** Lights */
+        lights: FBXLightData[];
+        /** Scene-level unsupported feature diagnostics */
+        diagnostics: FBXSceneDiagnostic[];
+        /** Global settings */
+        upAxis: number;
+        upAxisSign: number;
+        frontAxis: number;
+        frontAxisSign: number;
+        coordAxis: number;
+        coordAxisSign: number;
+        unitScaleFactor: number;
+    }
+    /**
+     * Interpret a parsed FBX document into scene data.
+     */
+    export function interpretFBX(doc: FBXDocument): FBXSceneData;
+
+
+    /** Connection type: OO = object-to-object, OP = object-to-property */
+    export type ConnectionType = "OO" | "OP";
+    /** A resolved FBX object connection. */
+    export interface FBXConnection {
+        /** Connection type. */
+        type: ConnectionType;
+        /** Child object ID. */
+        childId: number;
+        /** Parent object ID. */
+        parentId: number;
+        /** For OP connections, the property name on the parent (e.g. "DiffuseColor") */
+        propertyName?: string;
+    }
+    /** Object table entry used by the FBX connection graph. */
+    export interface FBXObjectEntry {
+        /** Object ID. */
+        id: number;
+        /** Object node. */
+        node: FBXNode;
+        /** Source of the object entry. */
+        source: "Objects" | "legacySyntheticGeometry";
+        /** Legacy string object name, when applicable. */
+        legacyName?: string;
+        /** True if the object was synthesized for legacy compatibility. */
+        synthetic: boolean;
+    }
+    /** Raw connection-table entry and import status. */
+    export interface FBXConnectionEntry {
+        /** Source node name. */
+        source: "C" | "Connect";
+        /** Raw connection type. */
+        rawType?: string;
+        /** Child object ID, when resolved. */
+        childId?: number;
+        /** Parent object ID, when resolved. */
+        parentId?: number;
+        /** OP connection property name, when present. */
+        propertyName?: string;
+        /** True if the connection was accepted into the resolved graph. */
+        accepted: boolean;
+    }
+    /** Reason a connection produced a diagnostic. */
+    export type FBXConnectionDiagnosticReason = "unsupported-connection-type" | "missing-connection-endpoint" | "unresolved-legacy-endpoint" | "unresolved-object-reference" | "duplicate-parent" | "self-loop";
+    /** Recoverable connection graph issue. */
+    export interface FBXConnectionDiagnostic {
+        /** Diagnostic reason. */
+        reason: FBXConnectionDiagnosticReason;
+        /** Human-readable diagnostic message. */
+        message: string;
+        /** Connection-table index associated with the diagnostic, if applicable. */
+        connectionIndex?: number;
+        /** Connection type associated with the diagnostic, if applicable. */
+        type?: string;
+        /** Child object ID associated with the diagnostic, if applicable. */
+        childId?: number;
+        /** Parent object ID associated with the diagnostic, if applicable. */
+        parentId?: number;
+        /** OP connection property name associated with the diagnostic, if applicable. */
+        propertyName?: string;
+    }
+    /** Resolved FBX object and connection graph. */
+    export interface FBXObjectMap {
+        /** All objects by their unique ID */
+        objects: Map<number, FBXNode>;
+        /** Object table entries, including synthetic compatibility objects */
+        objectEntries: FBXObjectEntry[];
+        /** Children of each object ID */
+        childrenOf: Map<number, {
+            id: number;
+            propertyName?: string;
+        }[]>;
+        /** Parent of each object ID */
+        parentOf: Map<number, {
+            id: number;
+            propertyName?: string;
+        }>;
+        /** Raw connection list */
+        connections: FBXConnection[];
+        /** Raw connection-table entries and whether they were accepted into the graph */
+        connectionEntries: FBXConnectionEntry[];
+        /** Unsupported or suspicious connection shapes encountered while preserving graph behavior */
+        diagnostics: FBXConnectionDiagnostic[];
+    }
+    /**
+     * Build a connection graph from a parsed FBX document.
+     * Maps object IDs to their FBXNode and resolves parent-child relationships.
+     */
+    export function resolveConnections(doc: FBXDocument): FBXObjectMap;
+    /** Get all child objects of a given parent ID, optionally filtered by node name */
+    export function getChildren(map: FBXObjectMap, parentId: number, nodeName?: string): {
+        id: number;
+        node: FBXNode;
+        propertyName?: string;
+    }[];
+
+
+    /** A single morph target (shape) within a blend shape channel */
+    export interface FBXShapeData {
+        /** Sparse vertex indices affected by this shape */
+        indices: Uint32Array;
+        /** Absolute vertex positions for affected vertices [x,y,z,...] */
+        vertices: Float64Array;
+        /** Normals for affected vertices [x,y,z,...] (optional) */
+        normals: Float64Array | null;
+    }
+    export interface FBXBlendShapeDiagnostic {
+        type: "full-weights-mismatch" | "missing-full-weights";
+        message: string;
+        channelId: number;
+        channelName: string;
+    }
+    /** A blend shape channel (one animatable morph target) */
+    export interface FBXBlendShapeChannelData {
+        /** Channel name */
+        name: string;
+        /** Channel node ID */
+        id: number;
+        /** Default weight (0-100 in FBX) */
+        deformPercent: number;
+        /** Shape geometry (typically one per channel, but FBX supports in-between shapes) */
+        shapes: FBXShapeData[];
+        /** In-between full weights in FBX DeformPercent units (0-100), one per shape when present */
+        fullWeights: number[] | null;
+        /** Recoverable blend-shape diagnostics */
+        diagnostics: FBXBlendShapeDiagnostic[];
+    }
+    /** A blend shape deformer attached to a geometry */
+    export interface FBXBlendShapeData {
+        /** Deformer ID */
+        id: number;
+        /** Geometry ID this blend shape is attached to */
+        geometryId: number;
+        /** Channels (each is an animatable morph target) */
+        channels: FBXBlendShapeChannelData[];
+    }
+    /**
+     * Extract all blend shape deformers from the FBX scene.
+     */
+    export function extractBlendShapes(objectMap: FBXObjectMap): FBXBlendShapeData[];
+
+
+    export type FBXInterpolationType = "constant" | "linear" | "cubic";
+    /** A single keyframe */
+    export interface FBXKeyframe {
+        /** Time in seconds */
+        time: number;
+        /** Value at this keyframe */
+        value: number;
+        /** Interpolation used from this key to the next key */
+        interpolation: FBXInterpolationType;
+        /** Constant interpolation variant */
+        constantMode?: "standard" | "next";
+        /** Cubic outgoing slope in value units per second */
+        rightSlope?: number;
+        /** Cubic incoming slope for the next key, in value units per second */
+        nextLeftSlope?: number;
+    }
+    /** An animation curve (one axis of one property) */
+    export interface FBXCurveData {
+        /** Channel: "d|X", "d|Y", "d|Z" */
+        channel: string;
+        /** Keyframes */
+        keys: FBXKeyframe[];
+        /** True for baked sample curves that should be connected as linear samples */
+        isSampled?: boolean;
+    }
+    /** An animation curve node (T/R/S for one bone) */
+    export interface FBXCurveNodeData {
+        /** Property type: "T" (translation), "R" (rotation), "S" (scale) */
+        type: string;
+        /** Target model (bone) ID */
+        targetModelId: number;
+        /** Curves for each axis */
+        curves: FBXCurveData[];
+    }
+    /** Unsupported animation curve node preserved for diagnostics and future support. */
+    export interface FBXUnsupportedCurveNodeData {
+        /** Raw AnimationCurveNode property type/name */
+        type: string;
+        /** CurveNode object ID */
+        id: number;
+        /** Target object ID if the curve node is connected to an object/property */
+        targetId: number | null;
+        /** OP connection property name on the target, e.g. Visibility */
+        propertyName?: string;
+        /** Number of connected animation curves that were ignored */
+        curveCount: number;
+        /** Connected curves preserved for diagnostics and future runtime support */
+        curves: FBXCurveData[];
+        /** Local default values stored on the unsupported curve node */
+        defaultValues: Record<string, number>;
+    }
+    /** Recoverable animation import issue. */
+    export interface FBXAnimationDiagnostic {
+        /** Diagnostic category. */
+        type: "multiple-animation-layers" | "unsupported-layer-blend-mode" | "partial-layer-weight" | "unsupported-curve-node";
+        /** Human-readable diagnostic message. */
+        message: string;
+        /** Animation layer name associated with the diagnostic, if applicable. */
+        layerName?: string;
+        /** AnimationCurveNode object ID associated with the diagnostic, if applicable. */
+        curveNodeId?: number;
+        /** AnimationCurveNode type/name associated with the diagnostic, if applicable. */
+        curveNodeType?: string;
+        /** Target object ID associated with the diagnostic, if applicable. */
+        targetId?: number | null;
+        /** Target property name associated with the diagnostic, if applicable. */
+        propertyName?: string;
+    }
+    /** Animation layer with blend mode info */
+    export interface FBXAnimationLayerData {
+        /** Layer name */
+        name: string;
+        /** Layer weight (0-100, default 100) */
+        weight: number;
+        /** Layer weight normalized to 0-1 */
+        normalizedWeight: number;
+        /** Blend mode: 0=Additive, 1=Override, 2=OverridePassthrough */
+        blendMode: number;
+        /** Curve nodes in this layer */
+        curveNodes: FBXCurveNodeData[];
+        /** Unsupported/non-TRS curve nodes preserved for diagnostics */
+        unsupportedCurveNodes: FBXUnsupportedCurveNodeData[];
+        /** Recoverable layer diagnostics */
+        diagnostics: FBXAnimationDiagnostic[];
+    }
+    /** One animation clip (AnimationStack) */
+    export interface FBXAnimationStackData {
+        /** Animation name */
+        name: string;
+        /** Clip start in seconds after any keyframe rebasing */
+        startTime: number;
+        /** Clip stop in seconds after any keyframe rebasing */
+        stopTime: number;
+        /** Duration in seconds */
+        duration: number;
+        /** Per-bone curve nodes (flattened from all layers for backward compat) */
+        curveNodes: FBXCurveNodeData[];
+        /** Animation layers (preserves blend mode info) */
+        layers: FBXAnimationLayerData[];
+        /** Unsupported/non-TRS curve nodes preserved for diagnostics */
+        unsupportedCurveNodes: FBXUnsupportedCurveNodeData[];
+        /** Recoverable animation diagnostics */
+        diagnostics: FBXAnimationDiagnostic[];
+    }
+    /**
+     * Extract all animation stacks from the FBX scene.
+     */
+    export function extractAnimations(objectMap: FBXObjectMap): FBXAnimationStackData[];
+    /**
+     * Determines whether a key sequence appears to be a uniformly frame-baked sampled curve.
+     * @param keys - Keyframes to inspect
+     * @returns true if the keys look like sampled frame data rather than authored interpolation
+     */
+    export function isFrameBakedSampledCurve(keys: readonly FBXKeyframe[]): boolean;
+    /**
+     * Samples an FBX animation curve at a specific time.
+     * @param curveData - Curve data to sample
+     * @param time - Time in seconds
+     * @returns The sampled value, or null when the curve has no keys
+     */
+    export function sampleFBXCurveAtTime(curveData: FBXCurveData | undefined, time: number): number | null;
 
 
 
