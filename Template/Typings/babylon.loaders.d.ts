@@ -1,5 +1,8 @@
 
 declare namespace BABYLON {
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
 
 
     /**
@@ -28,6 +31,9 @@ declare namespace BABYLON {
 
 
 
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -67,21 +73,12 @@ declare namespace BABYLON {
     }
 
 
-    export const GLTFMagicBase64Encoded = "Z2xURg";
-    export var GLTFFileLoaderMetadata: {
-        readonly name: "gltf";
-        readonly extensions: {
-            readonly ".gltf": {
-                readonly isBinary: false;
-                readonly mimeType: "model/gltf+json";
-            };
-            readonly ".glb": {
-                readonly isBinary: true;
-                readonly mimeType: "model/gltf-binary";
-            };
-        };
-        readonly canDirectLoad: (data: string) => boolean;
-    };
+        interface SceneLoaderPluginOptions {
+            /**
+             * Defines options for the glTF loader.
+             */
+            [GLTFFileLoaderMetadata.name]: Partial<GLTFLoaderOptions>;
+        }
 
 
     /**
@@ -89,12 +86,6 @@ declare namespace BABYLON {
      */
     export interface GLTFLoaderExtensionOptions extends Record<string, Record<string, unknown> | undefined> {
     }
-        interface SceneLoaderPluginOptions {
-            /**
-             * Defines options for the glTF loader.
-             */
-            [GLTFFileLoaderMetadata.name]: Partial<GLTFLoaderOptions>;
-        }
     /**
      * Mode that determines the coordinate system to use.
      */
@@ -234,6 +225,16 @@ declare namespace BABYLON {
          */
         loadMorphTargets: boolean;
         /**
+         * When loading a mesh with morph targets, configure its MorphTargetManager so the morph shader is compiled
+         * once for all targets (`numMaxInfluencers = numTargets`, `optimizeInfluencers = false`). This prevents the
+         * shader from being recompiled (and the resulting one-frame visual glitch) when an animated morph target
+         * influence passes through zero and the active influencer count changes.
+         * Disable to restore the previous behavior, where only the currently active (non-zero) influencers drive the
+         * shader. That is cheaper per frame for meshes with very large morph target counts, but recompiles the shader
+         * during animation. Defaults to true.
+         */
+        useMaxMorphTargetInfluencers: boolean;
+        /**
          * Defines if the loader should load node animations. Defaults to true.
          * NOTE: The animation of this node will still load if the node is also a joint of a skin and `loadSkins` is true.
          */
@@ -299,6 +300,9 @@ declare namespace BABYLON {
      * To specify options for a specific load call, pass those options into the associated load function.
      */
     export var GLTFLoaderDefaultOptions: GLTFLoaderBaseOptions;
+    /**
+     * Base class for glTF loader options that supports copying values from a partial options object.
+     */
     abstract class GLTFLoaderOptions extends GLTFLoaderBaseOptions {
         protected copyFrom(options?: Partial<Readonly<GLTFLoaderOptions>>): void;
         /**
@@ -618,7 +622,45 @@ declare namespace BABYLON {
         private _endPerformanceCounterEnabled;
         private _endPerformanceCounterDisabled;
     }
+    /**
+     * Registers the GLTFFileLoader scene loader plugin.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterGLTFFileLoader(): void;
 
+
+    export const GLTFMagicBase64Encoded = "Z2xURg";
+    export var GLTFFileLoaderMetadata: {
+        readonly name: "gltf";
+        readonly extensions: {
+            readonly ".gltf": {
+                readonly isBinary: false;
+                readonly mimeType: "model/gltf+json";
+            };
+            readonly ".glb": {
+                readonly isBinary: true;
+                readonly mimeType: "model/gltf-binary";
+            };
+        };
+        readonly canDirectLoad: (data: string) => boolean;
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./glTFFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON.GLTF2 {
+        /** Pure barrel — re-exports only side-effect-free modules */
+
+
+
+}
+declare namespace BABYLON {
 
 
 }
@@ -3423,7 +3465,21 @@ declare namespace BABYLON.GLTF2 {
          */
         endPerformanceCounter(counterName: string): void;
     }
+    /**
+     * Registers the GLTF 2.0 loader factory on the GLTFFileLoader. Idempotent.
+     * @internal
+     */
+    export function RegisterGLTF2Loader(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2 {
+    
 
 
 }
@@ -3584,6 +3640,16 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * @param babylonMaterial A material belonging to the scene where the helper should live
      */
     export function ensureTransmissionHelper(loader: BABYLON.GLTF2.GLTFLoader, babylonMaterial: Material): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -3965,6 +4031,20 @@ declare namespace BABYLON {
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the MSFT_sRGBFactors extension.
+         */
+        ["MSFT_sRGBFactors"]: {};
+    }
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /** @internal */
     export class MSFT_sRGBFactors implements BABYLON.GLTF2.IGLTFLoaderExtension {
         /** @internal */
@@ -3979,16 +4059,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         /** @internal*/
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
     }
+    /**
+     * Registers the MSFT_sRGBFactors glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMSFT_sRGBFactors(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./MSFT_sRGBFactors.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the MSFT_sRGBFactors extension.
+         * Defines options for the MSFT_minecraftMesh extension.
          */
-        ["MSFT_sRGBFactors"]: {};
+        ["MSFT_minecraftMesh"]: {};
     }
 
 }
@@ -4007,16 +4114,48 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         /** @internal */
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
     }
+    /**
+     * Registers the MSFT_minecraftMesh glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMSFT_minecraftMesh(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./MSFT_minecraftMesh.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the MSFT_minecraftMesh extension.
+         * Defines options for the MSFT_lod extension.
          */
-        ["MSFT_minecraftMesh"]: {};
+        ["MSFT_lod"]: Partial<{
+            /**
+             * Maximum number of LODs to load, starting from the lowest LOD.
+             */
+            maxLODsToLoad: number;
+        }>;
     }
 
 }
@@ -4103,21 +4242,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         private _disposeTransformNode;
         private _disposeMaterials;
     }
+    /**
+     * Registers the MSFT_lod glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMSFT_lod(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./MSFT_lod.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the MSFT_lod extension.
+         * Defines options for the MSFT_audio_emitter extension.
          */
-        ["MSFT_lod"]: Partial<{
-            /**
-             * Maximum number of LODs to load, starting from the lowest LOD.
-             */
-            maxLODsToLoad: number;
-        }>;
+        ["MSFT_audio_emitter"]: {};
     }
 
 }
@@ -4163,16 +4324,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         private _getEventAction;
         private _loadAnimationEventAsync;
     }
+    /**
+     * Registers the MSFT_audio_emitter glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMSFT_audio_emitter(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./MSFT_audio_emitter.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the MSFT_audio_emitter extension.
+         * Defines options for the KHR_xmp_json_ld extension.
          */
-        ["MSFT_audio_emitter"]: {};
+        ["KHR_xmp_json_ld"]: {};
     }
 
 }
@@ -4206,16 +4394,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         onLoading(): void;
     }
+    /**
+     * Registers the KHR_xmp_json_ld glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_xmp_json_ld(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_xmp_json_ld.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_xmp_json_ld extension.
+         * Defines options for the KHR_texture_transform extension.
          */
-        ["KHR_xmp_json_ld"]: {};
+        ["KHR_texture_transform"]: {};
     }
 
 }
@@ -4244,16 +4459,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadTextureInfoAsync(context: string, textureInfo: BABYLON.GLTF2.Loader.ITextureInfo, assign: (babylonTexture: BaseTexture) => void): Nullable<Promise<BaseTexture>>;
     }
+    /**
+     * Registers the KHR_texture_transform glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_texture_transform(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_texture_transform.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_texture_transform extension.
+         * Defines options for the KHR_texture_basisu extension.
          */
-        ["KHR_texture_transform"]: {};
+        ["KHR_texture_basisu"]: {};
     }
 
 }
@@ -4278,16 +4520,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         _loadTextureAsync(context: string, texture: BABYLON.GLTF2.Loader.ITexture, assign: (babylonTexture: BaseTexture) => void): Nullable<Promise<BaseTexture>>;
     }
+    /**
+     * Registers the KHR_texture_basisu glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_texture_basisu(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_texture_basisu.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_texture_basisu extension.
+         * Defines options for the KHR_node_visibility extension.
          */
-        ["KHR_texture_basisu"]: {};
+        ["KHR_node_visibility"]: {};
     }
 
 }
@@ -4312,16 +4581,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         onReady(): void;
         dispose(): void;
     }
+    /**
+     * Registers the KHR_node_visibility glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_node_visibility(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_node_visibility.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_node_visibility extension.
+         * Defines options for the KHR_selectability extension.
          */
-        ["KHR_node_visibility"]: {};
+        ["KHR_node_selectability"]: {};
     }
 
 }
@@ -4346,16 +4642,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         onReady(): Promise<void>;
         dispose(): void;
     }
+    /**
+     * Registers the KHR_node_selectability glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_node_selectability(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_node_selectability.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_selectability extension.
+         * Defines options for the KHR_node_hoverability extension.
          */
-        ["KHR_node_selectability"]: {};
+        ["KHR_node_hoverability"]: {};
     }
 
 }
@@ -4381,16 +4704,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         onReady(): Promise<void>;
         dispose(): void;
     }
+    /**
+     * Registers the KHR_node_hoverability glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_node_hoverability(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_node_hoverability.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_node_hoverability extension.
+         * Defines options for the KHR_mesh_quantization extension.
          */
-        ["KHR_node_hoverability"]: {};
+        ["KHR_mesh_quantization"]: {};
     }
 
 }
@@ -4414,16 +4764,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         /** @internal */
         dispose(): void;
     }
+    /**
+     * Registers the KHR_mesh_quantization glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_mesh_quantization(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_mesh_quantization.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_mesh_quantization extension.
+         * Defines options for the KHR_materials_volume_scatter extension.
          */
-        ["KHR_mesh_quantization"]: {};
+        ["KHR_materials_volume_scatter"]: {};
     }
 
 }
@@ -4460,16 +4837,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadVolumePropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_volume_scatter glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_volume_scatter(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_volume_scatter.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_volume_scatter extension.
+         * Defines options for the KHR_materials_volume extension.
          */
-        ["KHR_materials_volume_scatter"]: {};
+        ["KHR_materials_volume"]: {};
     }
 
 }
@@ -4504,21 +4908,78 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadVolumePropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_volume glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_volume(): void;
 
 
 
 }
 declare namespace BABYLON {
-    interface GLTFLoaderExtensionOptions {
-        /**
-         * Defines options for the KHR_materials_volume extension.
-         */
-        ["KHR_materials_volume"]: {};
-    }
+
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_volume.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
+    type MaterialVariantsController = {
+        /**
+         * The list of available variant names for this asset.
+         */
+        readonly variants: readonly string[];
+        /**
+         * Gets or sets the selected variant.
+         */
+        selectedVariant: string;
+    };
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_materials_variants extension.
+         */
+        ["KHR_materials_variants"]: Partial<{
+            /**
+             * Specifies the name of the variant that should be selected by default.
+             */
+            defaultVariant: string;
+            /**
+             * Defines a callback that will be called if material variants are loaded.
+             * @experimental
+             */
+            onLoaded: (controller: MaterialVariantsController) => void;
+        }>;
+    }
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        export type MaterialVariantsController = {
+        /**
+         * The list of available variant names for this asset.
+         */
+        readonly variants: readonly string[];
+        /**
+         * Gets or sets the selected variant.
+         */
+        selectedVariant: string;
+    };
+    /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_materials_variants/README.md)
      */
     export class KHR_materials_variants implements BABYLON.GLTF2.IGLTFLoaderExtension {
@@ -4594,36 +5055,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         _loadMeshPrimitiveAsync(context: string, name: string, node: BABYLON.GLTF2.Loader.INode, mesh: BABYLON.GLTF2.Loader.IMesh, primitive: BABYLON.GLTF2.Loader.IMeshPrimitive, assign: (babylonMesh: AbstractMesh) => void): Nullable<Promise<AbstractMesh>>;
     }
+    /**
+     * Registers the KHR_materials_variants glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_variants(): void;
 
 
 
 }
 declare namespace BABYLON {
-    type MaterialVariantsController = {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
-         * The list of available variant names for this asset.
-         */
-        readonly variants: readonly string[];
-        /**
-         * Gets or sets the selected variant.
-         */
-        selectedVariant: string;
-    };
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_variants.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_variants extension.
+         * Defines options for the KHR_materials_unlit extension.
          */
-        ["KHR_materials_variants"]: Partial<{
-            /**
-             * Specifies the name of the variant that should be selected by default.
-             */
-            defaultVariant: string;
-            /**
-             * Defines a callback that will be called if material variants are loaded.
-             * @experimental
-             */
-            onLoaded: (controller: MaterialVariantsController) => void;
-        }>;
+        ["KHR_materials_unlit"]: {};
     }
 
 }
@@ -4657,16 +5125,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadUnlitPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_unlit glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_unlit(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_unlit.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_unlit extension.
+         * Defines options for the KHR_materials_transmission extension.
          */
-        ["KHR_materials_unlit"]: {};
+        ["KHR_materials_transmission"]: {};
     }
 
 }
@@ -4700,16 +5195,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadTransparentPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_transmission glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_transmission(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_transmission.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_transmission extension.
+         * Defines options for the KHR_materials_specular extension.
          */
-        ["KHR_materials_transmission"]: {};
+        ["KHR_materials_specular"]: {};
     }
 
 }
@@ -4743,16 +5265,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadSpecularPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_specular glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_specular(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_specular.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_specular extension.
+         * Defines options for the KHR_materials_sheen extension.
          */
-        ["KHR_materials_specular"]: {};
+        ["KHR_materials_sheen"]: {};
     }
 
 }
@@ -4787,16 +5336,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadSheenPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_sheen glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_sheen(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_sheen.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_sheen extension.
+         * Defines options for the KHR_materials_pbrSpecularGlossiness extension.
          */
-        ["KHR_materials_sheen"]: {};
+        ["KHR_materials_pbrSpecularGlossiness"]: {};
     }
 
 }
@@ -4830,16 +5406,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadSpecularGlossinessPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_pbrSpecularGlossiness glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_pbrSpecularGlossiness(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_pbrSpecularGlossiness.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_pbrSpecularGlossiness extension.
+         * Defines options for the KHR_materials_iridescence extension.
          */
-        ["KHR_materials_pbrSpecularGlossiness"]: {};
+        ["KHR_materials_iridescence"]: {};
     }
 
 }
@@ -4873,16 +5476,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadIridescencePropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_iridescence glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_iridescence(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_iridescence.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_iridescence extension.
+         * Defines options for the KHR_materials_ior extension.
          */
-        ["KHR_materials_iridescence"]: {};
+        ["KHR_materials_ior"]: {};
     }
 
 }
@@ -4920,16 +5550,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadIorPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_ior glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_ior(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_ior.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_ior extension.
+         * Defines options for the KHR_materials_fuzz extension.
          */
-        ["KHR_materials_ior"]: {};
+        ["KHR_materials_fuzz"]: {};
     }
 
 }
@@ -4964,16 +5621,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadFuzzPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_fuzz glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_fuzz(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_fuzz.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_fuzz extension.
+         * Defines options for the KHR_materials_emissive_strength extension.
          */
-        ["KHR_materials_fuzz"]: {};
+        ["KHR_materials_emissive_strength"]: {};
     }
 
 }
@@ -5007,16 +5691,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadEmissiveProperties;
     }
+    /**
+     * Registers the KHR_materials_emissive_strength glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_emissive_strength(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_emissive_strength.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_emissive_strength extension.
+         * Defines options for the KHR_materials_dispersion extension.
          */
-        ["KHR_materials_emissive_strength"]: {};
+        ["KHR_materials_dispersion"]: {};
     }
 
 }
@@ -5051,16 +5762,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadDispersionPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_dispersion glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_dispersion(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_dispersion.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_dispersion extension.
+         * Defines options for the KHR_materials_diffuse_transmission extension.
          */
-        ["KHR_materials_dispersion"]: {};
+        ["KHR_materials_diffuse_transmission"]: {};
     }
 
 }
@@ -5095,16 +5833,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadTranslucentPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_diffuse_transmission glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_diffuse_transmission(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_diffuse_transmission.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_diffuse_transmission extension.
+         * Defines options for the KHR_materials_diffuse_roughness extension.
          */
-        ["KHR_materials_diffuse_transmission"]: {};
+        ["KHR_materials_diffuse_roughness"]: {};
     }
 
 }
@@ -5139,16 +5904,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadDiffuseRoughnessPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_diffuse_roughness glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_diffuse_roughness(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_diffuse_roughness.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_diffuse_roughness extension.
+         * Defines options for the KHR_materials_coat extension.
          */
-        ["KHR_materials_diffuse_roughness"]: {};
+        ["KHR_materials_coat"]: {};
     }
 
 }
@@ -5189,16 +5981,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadCoatPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_coat glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_coat(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_coat.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_coat extension.
+         * Defines options for the KHR_materials_clearcoat extension.
          */
-        ["KHR_materials_coat"]: {};
+        ["KHR_materials_clearcoat"]: {};
     }
 
 }
@@ -5233,16 +6052,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadClearCoatPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_clearcoat glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_clearcoat(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_clearcoat.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_clearcoat extension.
+         * Defines options for the KHR_materials_anisotropy extension.
          */
-        ["KHR_materials_clearcoat"]: {};
+        ["KHR_materials_anisotropy"]: {};
     }
 
 }
@@ -5276,16 +6122,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
         private _loadAnisotropyPropertiesAsync;
     }
+    /**
+     * Registers the KHR_materials_anisotropy glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_anisotropy(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_anisotropy.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_materials_anisotropy extension.
+         * Defines options for the KHR_lights_punctual extension.
          */
-        ["KHR_materials_anisotropy"]: {};
+        ["KHR_lights_punctual"]: {};
     }
 
 }
@@ -5318,16 +6191,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadNodeAsync(context: string, node: BABYLON.GLTF2.Loader.INode, assign: (babylonTransformNode: TransformNode) => void): Nullable<Promise<TransformNode>>;
     }
+    /**
+     * Registers the KHR_lights glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_lights(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_lights_punctual.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_lights_punctual extension.
+         * Defines options for the KHR_interactivity extension.
          */
-        ["KHR_lights_punctual"]: {};
+        ["KHR_interactivity"]: {};
     }
 
 }
@@ -5359,16 +6259,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * populates the object model with the interactivity extension
      */
     export function _AddInteractivityObjectModel(scene: Scene): void;
+    /**
+     * Registers the KHR_interactivity glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_interactivity(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_interactivity.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_interactivity extension.
+         * Defines options for the KHR_draco_mesh_compression extension.
          */
-        ["KHR_interactivity"]: {};
+        ["KHR_draco_mesh_compression"]: {};
     }
 
 }
@@ -5405,17 +6332,30 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         _loadVertexDataAsync(context: string, primitive: BABYLON.GLTF2.Loader.IMeshPrimitive, babylonMesh: Mesh): Nullable<Promise<Geometry>>;
     }
+    /**
+     * Registers the KHR_draco_mesh_compression glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_draco_mesh_compression(): void;
 
 
 
 }
 declare namespace BABYLON {
-    interface GLTFLoaderExtensionOptions {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
-         * Defines options for the KHR_draco_mesh_compression extension.
-         */
-        ["KHR_draco_mesh_compression"]: {};
-    }
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_draco_mesh_compression.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
@@ -5424,7 +6364,12 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
 
 }
 declare namespace BABYLON {
-
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_animation_pointer extension.
+         */
+        ["KHR_animation_pointer"]: {};
+    }
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
@@ -5460,16 +6405,52 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         _loadAnimationChannelAsync(context: string, animationContext: string, animation: BABYLON.GLTF2.Loader.IAnimation, channel: BABYLON.GLTF2.Loader.IAnimationChannel, onLoad: (babylonAnimatable: IAnimatable, babylonAnimation: Animation) => void): Nullable<Promise<void>>;
     }
+    /**
+     * Registers the KHR_animation_pointer glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_animation_pointer(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_animation_pointer.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the KHR_animation_pointer extension.
+         * Defines options for the ExtrasAsMetadata extension.
          */
-        ["KHR_animation_pointer"]: {};
+        ["ExtrasAsMetadata"]: {};
     }
 
 }
@@ -5511,16 +6492,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadAnimationAsync(context: string, animation: BABYLON.GLTF2.Loader.IAnimation): Nullable<Promise<AnimationGroup>>;
     }
+    /**
+     * Registers the ExtrasAsMetadata glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterExtrasAsMetadata(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./ExtrasAsMetadata.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the ExtrasAsMetadata extension.
+         * Defines options for the EXT_texture_webp extension.
          */
-        ["ExtrasAsMetadata"]: {};
+        ["EXT_texture_webp"]: {};
     }
 
 }
@@ -5545,16 +6553,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         _loadTextureAsync(context: string, texture: BABYLON.GLTF2.Loader.ITexture, assign: (babylonTexture: BaseTexture) => void): Nullable<Promise<BaseTexture>>;
     }
+    /**
+     * Registers the EXT_texture_webp glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_texture_webp(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_texture_webp.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the EXT_texture_webp extension.
+         * Defines options for the EXT_texture_avif extension.
          */
-        ["EXT_texture_webp"]: {};
+        ["EXT_texture_avif"]: {};
     }
 
 }
@@ -5580,16 +6615,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         _loadTextureAsync(context: string, texture: BABYLON.GLTF2.Loader.ITexture, assign: (babylonTexture: BaseTexture) => void): Nullable<Promise<BaseTexture>>;
     }
+    /**
+     * Registers the EXT_texture_avif glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_texture_avif(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_texture_avif.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the EXT_texture_avif extension.
+         * Defines options for the EXT_meshopt_compression extension.
          */
-        ["EXT_texture_avif"]: {};
+        ["EXT_meshopt_compression"]: {};
     }
 
 }
@@ -5621,16 +6683,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadBufferViewAsync(context: string, bufferView: BABYLON.GLTF2.Loader.IBufferView): Nullable<Promise<ArrayBufferView>>;
     }
+    /**
+     * Registers the EXT_meshopt_compression glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_meshopt_compression(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_meshopt_compression.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the EXT_meshopt_compression extension.
+         * Defines options for the EXT_mesh_gpu_instancing extension.
          */
-        ["EXT_meshopt_compression"]: {};
+        ["EXT_mesh_gpu_instancing"]: {};
     }
 
 }
@@ -5660,17 +6749,30 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadNodeAsync(context: string, node: BABYLON.GLTF2.Loader.INode, assign: (babylonTransformNode: TransformNode) => void): Nullable<Promise<TransformNode>>;
     }
+    /**
+     * Registers the EXT_mesh_gpu_instancing glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_mesh_gpu_instancing(): void;
 
 
 
 }
 declare namespace BABYLON {
-    interface GLTFLoaderExtensionOptions {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
-         * Defines options for the EXT_mesh_gpu_instancing extension.
-         */
-        ["EXT_mesh_gpu_instancing"]: {};
-    }
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_mesh_gpu_instancing.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
@@ -5679,7 +6781,21 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
             _babylonTexture?: BaseTexture;
             _loaded?: Promise<void>;
         }
-    /**
+
+
+
+}
+declare namespace BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the EXT_lights_image_based extension.
+         */
+        ["EXT_lights_image_based"]: {};
+    }
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
      * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Vendor/EXT_lights_image_based/README.md)
      */
     export class EXT_lights_image_based implements BABYLON.GLTF2.IGLTFLoaderExtension {
@@ -5707,16 +6823,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         loadSceneAsync(context: string, scene: BABYLON.GLTF2.Loader.IScene): Nullable<Promise<void>>;
         private _loadLightAsync;
     }
+    /**
+     * Registers the EXT_lights_image_based glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_lights_image_based(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_lights_image_based.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the EXT_lights_image_based extension.
+         * Defines options for the EXT_lights_ies extension.
          */
-        ["EXT_lights_image_based"]: {};
+        ["EXT_lights_ies"]: {};
     }
 
 }
@@ -5749,16 +6892,43 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadNodeAsync(context: string, node: BABYLON.GLTF2.Loader.INode, assign: (babylonTransformNode: TransformNode) => void): Nullable<Promise<TransformNode>>;
     }
+    /**
+     * Registers the EXT_lights_ies glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_lights_ies(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_lights_ies.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
 
 
 }
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
-         * Defines options for the EXT_lights_ies extension.
+         * Defines options for the EXT_lights_area extension.
          */
-        ["EXT_lights_ies"]: {};
+        ["EXT_lights_area"]: {};
     }
 
 }
@@ -5791,17 +6961,40 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         loadNodeAsync(context: string, node: BABYLON.GLTF2.Loader.INode, assign: (babylonTransformNode: TransformNode) => void): Nullable<Promise<TransformNode>>;
     }
+    /**
+     * Registers the EXT_lights_area glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEXT_lights_area(): void;
 
 
 
 }
 declare namespace BABYLON {
-    interface GLTFLoaderExtensionOptions {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
-         * Defines options for the EXT_lights_area extension.
-         */
-        ["EXT_lights_area"]: {};
-    }
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./EXT_lights_area.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /** Pure barrel — re-exports only side-effect-free modules */
+
+
+
+}
+declare namespace BABYLON {
+
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
@@ -6266,6 +7459,16 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
        - Receive (`event/receive`) FlowGraphBlockNames.ReceiveCustomEvent
        - Send (`event/send`) FlowGraphBlockNames.SendCustomEvent
      */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF1 {
+        /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -6954,22 +8157,14 @@ declare namespace BABYLON.GLTF1 {
 }
 declare namespace BABYLON {
 
-    export var STLFileLoaderMetadata: {
-        readonly name: "stl";
-        readonly extensions: {
-            readonly ".stl": {
-                readonly isBinary: true;
-            };
-        };
-    };
-
-
         interface SceneLoaderPluginOptions {
             /**
              * Defines options for the stl loader.
              */
             [STLFileLoaderMetadata.name]: {};
         }
+
+
     /**
      * STL file type loader.
      * This is a babylon scene loader plugin.
@@ -7033,6 +8228,30 @@ declare namespace BABYLON {
         private _parseBinary;
         private _parseASCII;
     }
+    /**
+     * Registers the STLFileLoader scene loader plugin.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterSTLFileLoader(): void;
+
+
+    export var STLFileLoaderMetadata: {
+        readonly name: "stl";
+        readonly extensions: {
+            readonly ".stl": {
+                readonly isBinary: true;
+            };
+        };
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./stlFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -7135,34 +8354,14 @@ declare namespace BABYLON {
     };
 
 
-    export var SPLATFileLoaderMetadata: {
-        readonly name: "splat";
-        readonly extensions: {
-            readonly ".splat": {
-                readonly isBinary: true;
-            };
-            readonly ".ply": {
-                readonly isBinary: true;
-            };
-            readonly ".spz": {
-                readonly isBinary: true;
-            };
-            readonly ".json": {
-                readonly isBinary: false;
-            };
-            readonly ".sog": {
-                readonly isBinary: true;
-            };
-        };
-    };
-
-
         interface SceneLoaderPluginOptions {
             /**
              * Defines options for the splat loader.
              */
             [SPLATFileLoaderMetadata.name]: Partial<SPLATLoadingOptions>;
         }
+
+
     /**
      * @experimental
      * SPLAT file type loader.
@@ -7258,6 +8457,39 @@ declare namespace BABYLON {
          */
         private static _ConvertPLYToSplat;
     }
+    /**
+     * Registers the SPLATFileLoader scene loader plugin.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterSPLATFileLoader(): void;
+
+
+    export var SPLATFileLoaderMetadata: {
+        readonly name: "splat";
+        readonly extensions: {
+            readonly ".splat": {
+                readonly isBinary: true;
+            };
+            readonly ".ply": {
+                readonly isBinary: true;
+            };
+            readonly ".spz": {
+                readonly isBinary: true;
+            };
+            readonly ".json": {
+                readonly isBinary: false;
+            };
+            readonly ".sog": {
+                readonly isBinary: true;
+            };
+        };
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./splatFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7418,9 +8650,22 @@ declare namespace BABYLON {
      * @param dataOrFiles Either the SOGRootData or a Map of filenames to Uint8Array file data (including meta.json)
      * @param rootUrl Base URL to load webp files from (if dataOrFiles is SOGRootData)
      * @param scene The Babylon.js scene
+     * @param computeCpuPositions When true (default), means_l/means_u are read back on the CPU and `pack.positions`
+     *   is decoded for the sort worker / bounding box. Pass false when the caller will instead read the decoded
+     *   centers back from the GPU work buffer — then every attribute (including means) uses the fast direct
+     *   ImageBitmap upload (no `getImageData` readback) and `pack.positions` is left empty.
+     * @param downloadManager Optional download manager that throttles and retries the per-file image downloads
+     *   (used by the LOD streamer). When omitted, files are fetched directly. Only applies when loading from a URL.
+     * @param downloadGroupId Optional group tag passed to the download manager so this file's image downloads can
+     *   be cancelled together if the streamer no longer needs them.
      * @returns Parsed splat info with `sogTextures` populated.
      */
-    export function ParseSogMetaAsTextures(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene): Promise<IParsedSplat>;
+    export function ParseSogMetaAsTextures(dataOrFiles: SOGRootData | Map<string, Uint8Array>, rootUrl: string, scene: Scene, computeCpuPositions?: boolean, downloadManager?: GaussianSplattingDownloadManager, downloadGroupId?: DownloadGroupId): Promise<IParsedSplat>;
+
+
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -7450,6 +8695,21 @@ declare namespace BABYLON {
      * Fragment shader (WGSL/WebGPU) — same decode as the GLSL variant, writing 4 MRT attachments.
      */
     export const GaussianSplattingWorkBufferFragmentShaderWGSL = "\nvar sogMeansLTexSampler : sampler;\nvar sogMeansLTex : texture_2d<f32>;\nvar sogMeansUTexSampler : sampler;\nvar sogMeansUTex : texture_2d<f32>;\nvar sogScalesTexSampler : sampler;\nvar sogScalesTex : texture_2d<f32>;\nvar sogQuatsTexSampler : sampler;\nvar sogQuatsTex : texture_2d<f32>;\nvar sogSh0TexSampler : sampler;\nvar sogSh0Tex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogMeansMin : vec3<f32>;\nuniform sogMeansMax : vec3<f32>;\nuniform sogScalesMin : vec3<f32>;\nuniform sogScalesMax : vec3<f32>;\nuniform sogSh0Min : vec4<f32>;\nuniform sogSh0Max : vec4<f32>;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let k : i32 = global - uniforms.uOffset;\n    let src : vec2<i32> = vec2<i32>(k - (k / uniforms.uSrcWidth) * uniforms.uSrcWidth, k / uniforms.uSrcWidth);\n\n    let mL : vec3<f32> = textureLoad(sogMeansLTex, src, 0).xyz;\n    let mU : vec3<f32> = textureLoad(sogMeansUTex, src, 0).xyz;\n    let sRaw : vec3<f32> = textureLoad(sogScalesTex, src, 0).xyz;\n    let qRaw : vec4<f32> = textureLoad(sogQuatsTex, src, 0);\n    let c0 : vec4<f32> = textureLoad(sogSh0Tex, src, 0);\n\n    let q16 : vec3<f32> = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    let nPos : vec3<f32> = mix(uniforms.sogMeansMin, uniforms.sogMeansMax, q16);\n    let center : vec3<f32> = sign(nPos) * (exp(abs(nPos)) - vec3<f32>(1.0));\n\n    var splatScale : vec3<f32>;\n    if (uniforms.uVersion == 2) {\n        let sIdx : vec3<f32> = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.x), 0), 0).r);\n        splatScale.y = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.y), 0), 0).r);\n        splatScale.z = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(uniforms.sogScalesMin, uniforms.sogScalesMax, sRaw));\n    }\n\n    let invSqrt2 : f32 = 0.70710678118;\n    let qabc : vec3<f32> = (qRaw.xyz - vec3<f32>(0.5)) * 2.0 * invSqrt2;\n    let qMode : i32 = i32(qRaw.w * 255.0 + 0.5) - 252;\n    let qd : f32 = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    var quat : vec4<f32>;\n    if (qMode == 0) {\n        quat = vec4<f32>(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4<f32>(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4<f32>(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4<f32>(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    let qw : f32 = quat.x;\n    let qx : f32 = quat.y;\n    let qy : f32 = quat.z;\n    let qz : f32 = quat.w;\n    let R : mat3x3<f32> = mat3x3<f32>(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    let S2 : mat3x3<f32> = mat3x3<f32>(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    let Sigma : mat3x3<f32> = R * S2 * transpose(R);\n\n    let SH_C0 : f32 = 0.28209479177387814;\n    var colRgb : vec3<f32>;\n    var colA : f32;\n    if (uniforms.uVersion == 2) {\n        var c3 : vec3<f32>;\n        c3.x = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3<f32>(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        let cLerp : vec4<f32> = mix(uniforms.sogSh0Min, uniforms.sogSh0Max, c0);\n        colRgb = vec3<f32>(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    fragmentOutputs.fragData0 = vec4<f32>(center, 1.0);\n    fragmentOutputs.fragData1 = vec4<f32>(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    fragmentOutputs.fragData2 = vec4<f32>(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    fragmentOutputs.fragData3 = vec4<f32>(colRgb, colA);\n}\n";
+    /**
+     * Shader name for the work-buffer relayout (defrag/compaction) copy pass.
+     */
+    export const GaussianSplattingWorkBufferRelayoutShaderName = "gsWorkBufferRelayout";
+    /**
+     * Relayout copy fragment shader (GLSL/WebGL2). Copies the four decoded work-buffer textures from a source
+     * layout to a destination layout, one output texel per draw. In map mode (`uUseMap == 1`) each destination
+     * texel reads its source splat index from `uMapTex` (R32F; a negative value marks a gap and is discarded so
+     * the cleared destination stays zero). In identity mode the source texel equals the destination texel.
+     */
+    export const GaussianSplattingWorkBufferRelayoutFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D uMapTex;\nuniform sampler2D uSrc0;\nuniform sampler2D uSrc1;\nuniform sampler2D uSrc2;\nuniform sampler2D uSrc3;\nuniform int uDstWidth;\nuniform int uSrcWidth;\nuniform int uUseMap;\n\nlayout(location = 0) out vec4 glFragData[4];\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int srcIdx;\n    if (uUseMap == 1) {\n        float m = texelFetch(uMapTex, p, 0).r;\n        if (m < 0.0) {\n            discard;\n        }\n        srcIdx = int(m + 0.5);\n    } else {\n        srcIdx = p.y * uDstWidth + p.x;\n    }\n    ivec2 s = ivec2(srcIdx - (srcIdx / uSrcWidth) * uSrcWidth, srcIdx / uSrcWidth);\n    glFragData[0] = texelFetch(uSrc0, s, 0);\n    glFragData[1] = texelFetch(uSrc1, s, 0);\n    glFragData[2] = texelFetch(uSrc2, s, 0);\n    glFragData[3] = texelFetch(uSrc3, s, 0);\n}\n";
+    /**
+     * Relayout copy fragment shader (WGSL/WebGPU) — same copy as the GLSL variant.
+     */
+    export const GaussianSplattingWorkBufferRelayoutFragmentShaderWGSL = "\nvar uMapTexSampler : sampler;\nvar uMapTex : texture_2d<f32>;\nvar uSrc0Sampler : sampler;\nvar uSrc0 : texture_2d<f32>;\nvar uSrc1Sampler : sampler;\nvar uSrc1 : texture_2d<f32>;\nvar uSrc2Sampler : sampler;\nvar uSrc2 : texture_2d<f32>;\nvar uSrc3Sampler : sampler;\nvar uSrc3 : texture_2d<f32>;\n\nuniform uDstWidth : i32;\nuniform uSrcWidth : i32;\nuniform uUseMap : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    var srcIdx : i32;\n    if (uniforms.uUseMap == 1) {\n        let m : f32 = textureLoad(uMapTex, p, 0).r;\n        if (m < 0.0) {\n            discard;\n        }\n        srcIdx = i32(m + 0.5);\n    } else {\n        srcIdx = p.y * uniforms.uDstWidth + p.x;\n    }\n    let s : vec2<i32> = vec2<i32>(srcIdx - (srcIdx / uniforms.uSrcWidth) * uniforms.uSrcWidth, srcIdx / uniforms.uSrcWidth);\n    fragmentOutputs.fragData0 = textureLoad(uSrc0, s, 0);\n    fragmentOutputs.fragData1 = textureLoad(uSrc1, s, 0);\n    fragmentOutputs.fragData2 = textureLoad(uSrc2, s, 0);\n    fragmentOutputs.fragData3 = textureLoad(uSrc3, s, 0);\n}\n";
 
 
     /**
@@ -7469,7 +8729,17 @@ declare namespace BABYLON {
         private readonly _shaderLanguage;
         private readonly _material;
         private readonly _quad;
+        private _copyMaterial;
+        private _relayoutMapData;
+        private _relayoutMapTexture;
         private _disposed;
+        private _readFbo;
+        /**
+         * True when the engine supports the non-blocking GPU readback used by {@link readCentersRangeAsync}:
+         * WebGL2 (PBO + fence) or WebGPU (copyTextureToBuffer + mapAsync). When false (e.g. WebGL1), callers must
+         * decode positions on the CPU instead.
+         */
+        get supportsAsyncCentersReadback(): boolean;
         /**
          * Square edge length (in pixels) of the work-buffer textures.
          */
@@ -7485,6 +8755,14 @@ declare namespace BABYLON {
          */
         constructor(scene: Scene, capacity: number);
         /**
+         * Creates a 4-attachment MRT (centers F32 / covA F32 / covB F32 / colors U8) sized to the work buffer.
+         * @param name MRT and attachment base name
+         * @param disableClear when true, clearing is suppressed so renders accumulate (the decode buffer); when
+         *   false the MRT clears to zero on each render (the temporary relayout buffer, so gaps stay zeroed)
+         * @returns the created MRT
+         */
+        private _createMrt;
+        /**
          * Decodes one SOG file into the work buffer at the given splat offset (accumulating; previously
          * decoded files are preserved). Resolves once the GPU decode has been issued. The caller may
          * dispose the source pack textures after this resolves.
@@ -7492,6 +8770,43 @@ declare namespace BABYLON {
          * @param offset first splat index (pixel offset) for this file in the work buffer
          */
         decodeAsync(pack: ISogTexturePack, offset: number): Promise<void>;
+        /**
+         * Whether the relayout copy shader is compiled and ready. Lazily creates the copy material on first call.
+         * Callers should poll this before {@link relayoutSync} (which must only run when ready).
+         * @returns true when {@link relayoutSync} can run this frame
+         */
+        isRelayoutReady(): boolean;
+        /**
+         * Relayouts the decoded work-buffer textures to a new (defragmented) splat layout, keeping the same
+         * texture instances so the consuming mesh does not need to re-bind. `srcIndexByDst[d]` is the source splat
+         * index whose decoded data should end up at destination index `d`, or a negative value for a gap (left
+         * zeroed). Uses a temporary MRT ping-pong (old -> temp via the map, then temp -> old identity) so
+         * overlapping moves stay correct. Must be called at a frame-safe point (inside `onBeforeRender`) and only
+         * when {@link isRelayoutReady} returns true.
+         * @param srcIndexByDst per-destination source splat index (negative = gap)
+         */
+        relayoutSync(srcIndexByDst: Float32Array): void;
+        /**
+         * Renders one relayout copy pass into the target MRT, sampling the given source textures.
+         * @param target destination MRT
+         * @param sources the four source work-buffer textures
+         * @param mapTexture the R32F destination-to-source index map
+         * @param useMap 1 to read source indices from the map (gaps discarded), 0 for an identity copy
+         */
+        private _renderRelayoutPass;
+        private _createCopyMaterial;
+        /**
+         * Asynchronously reads back the decoded splat centers (stride-4 xyzw, w=1) for a contiguous splat range
+         * from the work buffer's centers texture, using a non-blocking GPU readback (WebGL2 PBO + fence, or WebGPU
+         * copyTextureToBuffer + mapAsync) so it never stalls the frame the way a CPU image decode does. The centers
+         * texture already holds the GPU-decoded positions (identical to the CPU decode), so this replaces decoding
+         * positions on the CPU from the means images. Returns null when async readback is unsupported (caller should
+         * fall back to CPU decoding).
+         * @param splatOffset first splat index of the range
+         * @param splatCount number of splats in the range
+         * @returns a stride-4 Float32Array of length `splatCount * 4`, or null when unsupported/failed
+         */
+        readCentersRangeAsync(splatOffset: number, splatCount: number): Promise<Nullable<Float32Array>>;
         /**
          * Disposes the work buffer and its decode resources.
          */
@@ -7537,6 +8852,17 @@ declare namespace BABYLON {
         targetLevel?: number;
         /** Frames remaining before this node may switch LOD again (oscillation damping). */
         lodCooldown?: number;
+        /** True when the node's bounding box currently intersects the camera frustum. Drives the LOD bias that
+         * pushes off-screen nodes to the coarsest level (they stay rendered, not hidden). */
+        inFrustum?: boolean;
+        /** Cached local-space bounding info used for the per-node frustum test (created once per leaf). */
+        cullBounds?: BoundingInfo;
+        /** File index this node currently has an in-flight/queued decode request for (its not-yet-decoded target),
+         * or undefined when the node's target is already decoded. Drives pending-download reference counting. */
+        pendingFile?: number;
+        /** File index this node's current {@link activeLod} renders from, or undefined before any LOD is active.
+         * Drives the resident reference count that keeps a file in the work buffer. */
+        activeFile?: number;
     }
     /**
      * Parsed contents of a PlayCanvas-style `lod-meta.json` file.
@@ -7590,6 +8916,34 @@ declare namespace BABYLON {
          * `1` caps detail at the next-coarser level, and so on. Higher values force a coarser maximum detail.
          */
         maxDetailLod?: number;
+        /**
+         * When true (default), LOD nodes outside the camera frustum are biased to their coarsest LOD rather than
+         * rendered at full detail. They stay in the sort/render set so they appear instantly (at low detail) when
+         * the camera turns toward them, then refine. Set to `false` to render every node at its distance LOD.
+         */
+        frustumCulling?: boolean;
+        /** Maximum number of LOD file downloads allowed to run concurrently. PlayCanvas default `2`. */
+        maxConcurrentDownloads?: number;
+        /** Number of times a failed file download is retried before giving up. PlayCanvas default `2`. */
+        maxDownloadRetries?: number;
+        /**
+         * GPU memory budget (in megabytes) for resident splats. When set (and smaller than the full dataset),
+         * LOD files are streamed through a fixed-size work buffer and unreferenced files are evicted to stay
+         * within budget, allowing datasets larger than a single full-dataset buffer. Converted to a splat count
+         * at ~84 bytes/splat. Combined with {@link maxResidentSplats} by taking the smaller of the two.
+         */
+        memoryBudgetMb?: number;
+        /**
+         * Maximum number of splats kept resident in the work buffer. When set (and smaller than the full
+         * dataset), enables eviction-based streaming (see {@link memoryBudgetMb}). Default unset = size the work
+         * buffer for the whole dataset (no eviction).
+         */
+        maxResidentSplats?: number;
+        /**
+         * Frames an unreferenced (no longer rendered) LOD file stays resident before it is evicted, so a quick
+         * return to it avoids a re-download. Only used when a budget enables eviction. PlayCanvas default `100`.
+         */
+        evictionCooldownFrames?: number;
     }
     /**
      * Streams a PlayCanvas-style SOG LOD scene (`lod-meta.json`) into a single Gaussian Splatting mesh.
@@ -7620,13 +8974,28 @@ declare namespace BABYLON {
         private _lodUpdateInterval;
         private _lodUpdateDistance;
         private _maxDetailLod;
+        private _frustumCulling;
+        private readonly _frustumPlanes;
+        private readonly _cullViewProj;
         private _workBuffer;
-        private readonly _fileBaseSplat;
+        private _useGpuPositionReadback;
+        private _readbackCandidate;
+        private _readbackProbed;
+        private _residency;
         private readonly _fileCounts;
         private readonly _fileMeta;
         private readonly _decodedFiles;
         private readonly _loadingFiles;
         private readonly _decodeQueue;
+        private readonly _fileRefs;
+        private readonly _cancelledDecodes;
+        private _evictionEnabled;
+        private _residentBudget;
+        private _evictionCooldownFrames;
+        private _decodeGate;
+        private readonly _relayoutOldOffsets;
+        private _relayoutSrcIndex;
+        private readonly _downloadManager;
         private _environmentRange;
         private _environmentFiles;
         private _lodObserver;
@@ -7660,6 +9029,29 @@ declare namespace BABYLON {
         constructor(name: string, metadata: ISOGLODMetadata, rootUrl: string, scene: Scene, options?: IGaussianSplattingStreamOptions);
         getClassName(): string;
         /**
+         * Resolves once the scene is fully streamed and displayed for the current camera: a LOD re-evaluation has
+         * run for the current point of view, every reachable LOD file has finished downloading and decoding (no
+         * downloads, decodes, or queued work remain), and the depth sort for the resulting splats has been applied
+         * and rendered. Intended for deterministic automated testing and screenshot/image comparison.
+         *
+         * Streaming and settling require rendered frames. If an external render loop is already running, this waits
+         * on it passively; otherwise (e.g. when awaited inside an async `createScene` before the host starts its
+         * render loop) it drives `scene.render()` itself until settled, so it never deadlocks.
+         *
+         * Note: the promise only resolves while the camera is still — if the camera keeps moving, the target LODs
+         * (and the depth sort) keep changing and the stream never settles. Position the camera, then await this.
+         * @param stableFrames number of consecutive settled frames to require before resolving (defaults to 3), so
+         *   the final sorted frame is actually on screen
+         * @returns a promise that resolves when loading and rendering are complete for the current view
+         */
+        whenSettledAsync(stableFrames?: number): Promise<void>;
+        /**
+         * Whether the base layer is ready and there is no streaming work in flight (nothing queued for decode, no
+         * decode running, and no downloads pending).
+         * @returns true when no loading work remains
+         */
+        private _isLoadingIdle;
+        /**
          * Finest (most detailed) LOD level any node is allowed to render. `0` allows full detail (level 0);
          * `1` caps detail at the next-coarser level, and so on. Nodes already coarser than this cap (by
          * distance) are unaffected. Changes take effect in real time.
@@ -7671,6 +9063,14 @@ declare namespace BABYLON {
          * for {@link maxDetailLod}.
          */
         get maxLodLevel(): number;
+        /**
+         * When true (default), nodes whose bounding box is outside the camera frustum are biased to the coarsest
+         * LOD instead of being hidden. They stay in the sort/render set (their off-screen splats are clipped), so
+         * turning the camera toward them shows low detail immediately with no invisible frames, then refines.
+         * Changes take effect in real time.
+         */
+        get frustumCulling(): boolean;
+        set frustumCulling(value: boolean);
         /**
          * When true, renders a wireframe box per LOD node, colored by the LOD level selected by {@link debugLodSource}.
          */
@@ -7763,16 +9163,73 @@ declare namespace BABYLON {
          */
         private _pumpDecodeQueue;
         /**
+         * Writes a decoded splat range's positions into the shared buffer, expands the bounds, and incrementally
+         * patches the sort worker.
+         * @param positions stride-4 positions for the range
+         * @param base first splat index of the range in the work buffer
+         * @param count number of splats in the range
+         */
+        private _applyPositions;
+        /**
+         * One-time validation of GPU position readback: reads a sample of the just-decoded range back from the work
+         * buffer and compares it to the CPU-decoded positions. Enables {@link _useGpuPositionReadback} only on an
+         * exact (within float tolerance) match, so an unsupported or incorrect readback (e.g. a backend without the
+         * required texture usage, or an orientation mismatch) safely keeps the CPU decode path.
+         * @param base first splat index of the validated range
+         * @param count number of splats in the range
+         * @param cpuPositions the CPU-decoded stride-4 positions for the range (ground truth)
+         */
+        private _probeReadbackAsync;
+        /**
+         * Resolves the decoded positions for a splat range and applies them. Once GPU readback has been validated,
+         * positions are read back from the work buffer (non-blocking) and `pack.positions` is empty; otherwise the
+         * CPU-decoded `pack.positions` are used, and — on the first such decode — the GPU readback is validated
+         * against them so subsequent decodes can use the fast path.
+         * @param pack the parsed SOG pack (its `positions` is populated only on the CPU path)
+         * @param base first splat index of the range in the work buffer
+         * @param count number of splats in the range
+         * @returns whether positions were applied
+         */
+        private _applyDecodedPositionsAsync;
+        /**
          * Decodes the always-on environment bundle into its work-buffer block and activates its range.
          */
         private _decodeEnvironmentAsync;
         /**
          * Loads one LOD source file as GPU textures, decodes it into its fixed work-buffer block, records its
          * CPU centers for sorting, frees the source textures, then promotes any nodes that were waiting for it.
-         * Concurrent or repeat requests for the same file are ignored.
+         * Concurrent or repeat requests for the same file are ignored. If the file is cancelled mid-flight
+         * (because every node that wanted it retargeted), the decode bails cooperatively at the next checkpoint.
          * @param fileId file index to decode
          */
         private _decodeFileAsync;
+        /**
+         * Acquires the decode gate (a simple async mutex). Resolves once any prior holder releases, returning a
+         * release function the caller must invoke in a `finally`.
+         * @returns the release function
+         */
+        private _acquireDecodeGateAsync;
+        /**
+         * Defragments the work buffer to make room for a file that did not fit, then allocates its slot. Runs the
+         * compaction + GPU relayout atomically inside a single `onBeforeRender` so no inconsistent CPU/GPU layout
+         * is ever rendered. Returns the new slot offset, or null if even compaction cannot free enough contiguous
+         * space (the caller refuses the upgrade).
+         * @param fileId file to allocate after compaction
+         * @param count splats the file needs
+         * @returns the allocated offset, or null
+         */
+        private _relayoutAndAllocateAsync;
+        /**
+         * Compacts the resident set and relocates the corresponding GPU textures and CPU positions to the new
+         * layout. Must run at a frame-safe point with the work buffer's relayout shader ready.
+         */
+        private _performRelayout;
+        /**
+         * Drops a file evicted by the residency controller from the decoded set so it will be re-decoded on demand.
+         * The file had no remaining references, so no node was rendering or downloading it.
+         * @param fileId evicted file index
+         */
+        private _onFileEvicted;
         /**
          * Snaps a desired LOD level to the nearest level the node provides, while never selecting a level finer
          * than {@link maxDetailLod} (i.e. with an index below the cap). Ties prefer the finer allowed level. If
@@ -7789,19 +9246,57 @@ declare namespace BABYLON {
         private _computeTargetLevels;
         /**
          * Applies each node's {@link ISOGLODNode.targetLevel}: switches a node to its target level when that
-         * level's file is already decoded, otherwise queues the file and leaves the node on its current LOD (so
-         * nothing ever disappears). Nodes within their post-switch cooldown are left untouched to damp oscillation.
+         * level's file is already decoded, otherwise records a pending download request for the file and leaves
+         * the node on its current LOD (so nothing ever disappears). Nodes within their post-switch cooldown are
+         * left untouched to damp oscillation (and keep their existing pending request).
+         *
+         * Each node tracks the single file it currently needs but lacks ({@link ISOGLODNode.pendingFile}). When a
+         * node's target changes before that file finished downloading, the old file's reference is released; if no
+         * other node still needs it, its queued/in-flight download is cancelled (see {@link _releaseFileRef}).
          * @returns true when at least one node changed LOD (callers should refresh the active ranges)
          */
         private _applyDesiredLods;
         /**
-         * Per-frame LOD streaming loop. Ticks cooldowns and pumps the decode queue every frame, but throttles
-         * the expensive LOD re-evaluation (optimal-LOD computation, budget balancing, desired-LOD application
-         * and interval rebuild) to run at most every {@link _lodUpdateInterval} frames and only after the camera
-         * has moved far enough, so continuous camera motion no longer rebuilds the interval set every frame. A
-         * budget change forces a single immediate update regardless of the throttle.
+         * Moves a node's resident reference from its previous active file to the one it now renders, so the file
+         * count that keeps a block in the work buffer stays accurate (and cancels any pending eviction of the new
+         * file). The new file is already decoded.
+         * @param node leaf node switching its rendered file
+         * @param file the file the node now renders from
+         */
+        private _switchActiveFile;
+        /**
+         * Adds a reference to a file (active render or pending download), cancelling any scheduled eviction.
+         * @param fileId file index
+         */
+        private _acquireFileRef;
+        /**
+         * Records that a node needs a not-yet-decoded file, bumping its reference count and queueing the decode.
+         * @param fileId file index the node now targets
+         */
+        private _acquirePendingFile;
+        /**
+         * Releases a node's reference to a file. When the last reference is dropped: a decoded file is scheduled
+         * for eviction (when streaming under a budget), and a still-downloading file has its queued decode dropped
+         * and any in-flight download cancelled.
+         * @param fileId file index the node no longer references
+         */
+        private _releaseFileRef;
+        /**
+         * Per-frame LOD streaming loop. Ticks cooldowns and pumps the decode queue every frame, and runs the
+         * cheap per-node frustum test every frame so the off-screen LOD bias tracks camera rotation. The LOD
+         * re-evaluation is throttled to at most every {@link _lodUpdateInterval} frames once the camera has
+         * translated far enough, but also runs immediately whenever a node enters/leaves the frustum (so its
+         * detail upgrades/downgrades promptly) or a cap change forces it. Active ranges rebuild on any LOD change.
          */
         private _onLodFrame;
+        /**
+         * Updates each leaf node's {@link ISOGLODNode.inFrustum} flag from a per-node frustum test against the
+         * active camera. When {@link frustumCulling} is disabled (or there is no camera) every node is marked
+         * in-frustum. Bounds are static (from the LOD tree), so flags are valid for all nodes regardless of
+         * decode state. Returns true when any node's in-frustum state changed (so the LOD bias must be re-applied).
+         * @returns whether any node's in-frustum state changed
+         */
+        private _updateNodeFrustum;
         /**
          * Reads the splat count from SOG metadata.
          * @param data SOG metadata
@@ -7837,6 +9332,389 @@ declare namespace BABYLON {
          * @returns map of entry name to bytes
          */
         private _unzipAsync;
+    }
+
+
+    /**
+     * One resident block relocation produced by {@link GaussianSplattingResidencyController.compact}: the file's
+     * splat data must be moved from `oldOffset` to `newOffset` (`count` splats) in the work buffer.
+     */
+    export interface IResidencyMove {
+        /** File index whose splat data must move. */
+        file: number;
+        /** The file's previous splat offset in the work buffer. */
+        oldOffset: number;
+        /** The file's new splat offset after compaction. */
+        newOffset: number;
+        /** Number of splats in the file. */
+        count: number;
+    }
+    /**
+     * Tracks which streamed Gaussian Splatting files are resident in the GPU work buffer and where, evicting
+     * unreferenced files after a cooldown to keep the resident set within a fixed budget.
+     *
+     * Built on {@link GaussianSplattingBlockAllocator}: each resident file owns a contiguous block of the work
+     * buffer's splat-index address space. A file with no remaining references is scheduled for eviction; after
+     * `cooldownFrames` ticks (or sooner, if the space is needed by a new allocation — "evict-to-fit") its block
+     * is freed and reused. Pinned files (e.g. the always-rendered environment and the padding splat) are never
+     * evicted. The {@link onEvict} callback fires for every file the controller evicts so the owner can drop its
+     * own bookkeeping (e.g. mark it no longer decoded).
+     *
+     * This controller owns only memory/residency bookkeeping — it has no knowledge of the scene, GPU, downloads,
+     * or reference counting (the caller decides when a file's reference count reaches zero and calls
+     * {@link scheduleEviction}).
+     * @experimental
+     */
+    export class GaussianSplattingResidencyController {
+        private readonly _allocator;
+        private readonly _blocks;
+        private readonly _cooldown;
+        private readonly _pinned;
+        private readonly _cooldownFrames;
+        private readonly _onEvict;
+        /**
+         * Creates a residency controller.
+         * @param capacity total splat-index capacity of the work buffer
+         * @param cooldownFrames number of ticks an unreferenced file stays resident before being evicted
+         * @param onEvict called with the file index whenever the controller evicts a file (via tick or evict-to-fit)
+         */
+        constructor(capacity: number, cooldownFrames: number, onEvict: (file: number) => void);
+        /**
+         * Total splat-index capacity.
+         */
+        get capacity(): number;
+        /**
+         * Number of files currently resident.
+         */
+        get residentCount(): number;
+        /**
+         * Total free splat capacity (sum of all gaps, which may be fragmented). After {@link compact} an
+         * allocation of up to this size is guaranteed to fit.
+         */
+        get freeSize(): number;
+        /**
+         * Whether the given file currently has a block in the work buffer.
+         * @param file file index
+         * @returns true if resident
+         */
+        has(file: number): boolean;
+        /**
+         * The work-buffer splat offset of a resident file, or undefined if not resident.
+         * @param file file index
+         * @returns the splat offset, or undefined
+         */
+        offset(file: number): number | undefined;
+        /**
+         * Allocates a contiguous block for a file about to be decoded. If there is no room, evicts files whose
+         * eviction cooldown is pending (they are unreferenced) and retries once. Returns the splat offset, or null
+         * if it still does not fit (the caller should refuse the decode and keep the node's current LOD).
+         * @param file file index
+         * @param count number of splats the file needs
+         * @returns the allocated splat offset, or null if it cannot fit
+         */
+        allocate(file: number, count: number): Nullable<number>;
+        /**
+         * Allocates a block for a file that must never be evicted (e.g. the environment or padding splat).
+         * @param file file index (use a sentinel that cannot collide with real file indices)
+         * @param count number of splats
+         * @returns the allocated splat offset, or null if it cannot fit
+         */
+        pin(file: number, count: number): Nullable<number>;
+        /**
+         * Frees a file's block immediately (e.g. when a decode was cancelled before completing). Does not fire
+         * {@link onEvict}. No-op for pinned or non-resident files.
+         * @param file file index
+         */
+        free(file: number): void;
+        /**
+         * Compacts the resident blocks to defragment free space (capacity is unchanged), returning every block
+         * that moved so the caller can relocate the corresponding GPU/CPU splat data. Call when an allocation
+         * fails despite sufficient total free space ({@link freeSize}); afterwards that allocation will fit.
+         * @returns the relocations to apply (empty when nothing moved)
+         */
+        compact(): IResidencyMove[];
+        /**
+         * Returns the current resident blocks (file index, splat offset, splat count). Used to relocate GPU/CPU
+         * data after {@link compact}.
+         * @returns one entry per resident file
+         */
+        getResidentBlocks(): Array<{
+            file: number;
+            offset: number;
+            count: number;
+        }>;
+        /**
+         * Schedules an unreferenced resident file for eviction after the cooldown. No-op for pinned or
+         * non-resident files.
+         * @param file file index
+         */
+        scheduleEviction(file: number): void;
+        /**
+         * Cancels a pending eviction because the file was referenced again.
+         * @param file file index
+         */
+        cancelEviction(file: number): void;
+        /**
+         * Advances all eviction cooldowns by one frame, evicting any that expire. Each evicted file fires
+         * {@link onEvict}.
+         * @returns the file indices evicted this tick
+         */
+        tick(): number[];
+        /**
+         * Releases all bookkeeping. The allocator and maps are cleared.
+         */
+        dispose(): void;
+        private _evictAllCooled;
+        private _evict;
+    }
+
+
+    /**
+     * Options for {@link GaussianSplattingDownloadManager}.
+     */
+    export interface IGaussianSplattingDownloadManagerOptions {
+        /** Maximum number of downloads allowed to run at the same time. PlayCanvas default `2`. */
+        maxConcurrent?: number;
+        /** Number of times a failed download is retried before rejecting. PlayCanvas default `2` (3 attempts total). */
+        maxRetries?: number;
+    }
+    /** Identifies a group of related downloads so they can be cancelled together. */
+    export type DownloadGroupId = string | number;
+    /**
+     * Throttles the file downloads issued while streaming a Gaussian Splatting LOD scene.
+     *
+     * Mirrors the PlayCanvas gsplat asset loader: at most {@link maxConcurrent} downloads run at once, the
+     * rest wait in a FIFO queue, each failed download is retried up to {@link maxRetries} times, and requests
+     * are idempotent — concurrent (queued or in-flight) requests for the same URL share a single download.
+     *
+     * Downloads can be tagged with a group id and cancelled together via {@link cancelGroup}: when a node's
+     * target LOD changes before its file finishes loading, the streamer cancels that file's now-unneeded
+     * downloads. Cancellation aborts the underlying HTTP request (a queued download is dropped before it
+     * starts; an in-flight download is aborted and its concurrency slot freed), so no bandwidth is wasted on
+     * data that is no longer needed.
+     *
+     * Without this throttling, every on-demand LOD decode fans out into many parallel image fetches, so the
+     * browser opens dozens of simultaneous connections that compete for bandwidth and delay the splats the
+     * camera actually needs.
+     * @experimental
+     */
+    export class GaussianSplattingDownloadManager {
+        /** Maximum number of downloads allowed to run at the same time. */
+        readonly maxConcurrent: number;
+        /** Number of times a failed download is retried before rejecting. */
+        readonly maxRetries: number;
+        private _activeCount;
+        private readonly _queue;
+        private readonly _pending;
+        private readonly _groups;
+        private _disposed;
+        /**
+         * Creates a download manager.
+         * @param options concurrency and retry limits
+         */
+        constructor(options?: IGaussianSplattingDownloadManagerOptions);
+        /**
+         * Whether there are no downloads queued or in flight.
+         */
+        get isIdle(): boolean;
+        /**
+         * Downloads a file as an `ArrayBuffer`, queued behind the concurrency cap and retried on failure.
+         * Concurrent requests for the same URL resolve from a single shared download.
+         * @param url the file URL to download
+         * @param groupId optional group tag so related downloads can be cancelled together via {@link cancelGroup}
+         * @returns a promise resolving with the downloaded bytes
+         */
+        loadFileAsync(url: string, groupId?: DownloadGroupId): Promise<ArrayBuffer>;
+        /**
+         * Cancels a single pending download by URL. A queued download is dropped before it starts; an in-flight
+         * download has its underlying HTTP request aborted and its concurrency slot freed. No-op if the URL is
+         * not currently pending.
+         * @param url the URL to cancel
+         */
+        cancel(url: string): void;
+        /**
+         * Cancels every pending download tagged with the given group id.
+         * @param groupId the group whose downloads should be cancelled
+         */
+        cancelGroup(groupId: DownloadGroupId): void;
+        /**
+         * Cancels every queued download and aborts every in-flight download, preventing new downloads from
+         * starting.
+         */
+        dispose(): void;
+        /**
+         * Aborts a task: drops it from the queue (if not started), aborts its in-flight HTTP request (if started),
+         * unwinds its current attempt, settles its promise, and frees its concurrency slot.
+         * @param task the task to abort
+         * @param reason the rejection reason
+         */
+        private _abort;
+        /**
+         * Settles a task exactly once, removing it from the pending map and its group.
+         * @param task the task to settle
+         * @param settleFn resolves or rejects the task's promise
+         */
+        private _settle;
+        /**
+         * Releases a task's concurrency slot exactly once and pumps the queue.
+         * @param task the task whose slot to release
+         */
+        private _releaseSlot;
+        /**
+         * Starts as many queued downloads as the concurrency cap allows.
+         */
+        private _pump;
+        /**
+         * Runs a single download with retries, settling the task's shared promise. The idempotency entry is
+         * removed the moment the task settles so a later request for the same URL starts a fresh download.
+         * @param task the queued download to run
+         */
+        private _runTaskAsync;
+        /**
+         * Performs one download attempt, exposing the request handle (for abort) and an attempt-rejecter on the
+         * task so cancellation can both abort the HTTP request and unwind this awaited attempt.
+         * @param task the download task
+         * @returns a promise resolving with the downloaded bytes
+         */
+        private _downloadAttemptAsync;
+    }
+
+
+    /**
+     * A node in the {@link GaussianSplattingBlockAllocator}'s linked list, representing either an allocated
+     * block or a free region. Callers receive {@link GaussianSplattingMemBlock} instances as handles from
+     * {@link GaussianSplattingBlockAllocator.allocate} and must treat their {@link offset}/{@link size} as
+     * read-only.
+     *
+     * Ported from the PlayCanvas engine (`src/core/block-allocator.js`).
+     * @experimental
+     */
+    export class GaussianSplattingMemBlock {
+        /** @internal Position in the address space. */
+        _offset: number;
+        /** @internal Size of this block. */
+        _size: number;
+        /** @internal True if this is a free region, false if allocated. */
+        _free: boolean;
+        /** @internal Previous node in the main (all-nodes, offset-ordered) list. */
+        _prev: Nullable<GaussianSplattingMemBlock>;
+        /** @internal Next node in the main (all-nodes, offset-ordered) list. */
+        _next: Nullable<GaussianSplattingMemBlock>;
+        /** @internal Previous node in the bucket free-list. */
+        _prevFree: Nullable<GaussianSplattingMemBlock>;
+        /** @internal Next node in the bucket free-list. */
+        _nextFree: Nullable<GaussianSplattingMemBlock>;
+        /** @internal Index of the size bucket this free block belongs to, or -1 if not in any bucket. */
+        _bucket: number;
+        /**
+         * The offset of this block in the address space.
+         */
+        get offset(): number;
+        /**
+         * The size of this block.
+         */
+        get size(): number;
+    }
+    /**
+     * A general-purpose 1D block allocator backed by a doubly-linked list with segregated free-list buckets.
+     * Manages a linear address space where contiguous blocks can be allocated and freed.
+     *
+     * Free blocks are organized into power-of-2 size buckets for best-fit allocation, which reduces
+     * fragmentation compared to a single first-fit free list. Supports incremental defragmentation and
+     * automatic growth. Used to place streamed Gaussian Splatting LOD files into the unified GPU work buffer.
+     *
+     * Ported from the PlayCanvas engine (`src/core/block-allocator.js`).
+     * @experimental
+     */
+    export class GaussianSplattingBlockAllocator {
+        private _headAll;
+        private _tailAll;
+        private readonly _freeBucketHeads;
+        private readonly _pool;
+        private _capacity;
+        private _usedSize;
+        private _freeSize;
+        private _freeRegionCount;
+        private readonly _growMultiplier;
+        /**
+         * Creates a new block allocator.
+         * @param capacity initial address space capacity (defaults to 0)
+         * @param growMultiplier multiplicative growth factor for auto-grow in {@link updateAllocation} (defaults to 1.1)
+         */
+        constructor(capacity?: number, growMultiplier?: number);
+        /**
+         * Total address space capacity.
+         */
+        get capacity(): number;
+        /**
+         * Total size of all allocated blocks.
+         */
+        get usedSize(): number;
+        /**
+         * Total size of all free regions.
+         */
+        get freeSize(): number;
+        /**
+         * Fragmentation ratio in the range [0, 1]. Returns 0 when all free space is one contiguous block
+         * (ideal), and approaches 1 when free space is split into many pieces. Computed O(1).
+         */
+        get fragmentation(): number;
+        /**
+         * Allocates a contiguous block of the given size.
+         * @param size the number of units to allocate (must be \> 0)
+         * @returns a block handle, or null if no space is available
+         */
+        allocate(size: number): Nullable<GaussianSplattingMemBlock>;
+        /**
+         * Frees a previously allocated block. Adjacent free regions are merged automatically.
+         * @param block the block to free (must have been returned by {@link allocate})
+         */
+        free(block: GaussianSplattingMemBlock): void;
+        /**
+         * Grows the address space. Only increases capacity, never decreases.
+         * @param newCapacity the new capacity (must be \> current capacity)
+         */
+        grow(newCapacity: number): void;
+        /**
+         * Defragments the allocator by moving allocated blocks to reduce fragmentation.
+         *
+         * When maxMoves is 0, performs a full compaction in a single O(n) pass: all allocated blocks are packed
+         * contiguously from offset 0 and a single free block is placed at the end. When maxMoves \> 0, performs
+         * incremental defragmentation (relocate the last block into the first fitting gap, then slide blocks left).
+         *
+         * Moved blocks have their {@link GaussianSplattingMemBlock.offset} updated in place (handles stay valid),
+         * so callers must relocate the corresponding GPU data for every block in the returned set.
+         * @param maxMoves maximum number of block moves (0 = full compaction, the default)
+         * @param result optional set to receive the moved blocks (defaults to a new set)
+         * @returns the set of blocks that were moved
+         */
+        defrag(maxMoves?: number, result?: Set<GaussianSplattingMemBlock>): Set<GaussianSplattingMemBlock>;
+        /**
+         * Batch update: frees a set of blocks and allocates new ones. Handles growth and compaction internally
+         * when allocations cannot be satisfied. The `toAllocate` array is modified in place: each numeric size
+         * entry is replaced with the allocated block.
+         * @param toFree blocks to release
+         * @param toAllocate sizes to allocate; modified in place (numbers are replaced with block handles)
+         * @returns true if a full defrag was performed (all existing blocks have new offsets and must be re-rendered)
+         */
+        updateAllocation(toFree: GaussianSplattingMemBlock[], toAllocate: Array<number | GaussianSplattingMemBlock>): boolean;
+        /**
+         * Computes the bucket index for a given block size (= floor(log2(size))).
+         * @param size block size (must be \> 0)
+         * @returns the bucket index
+         */
+        private _bucketFor;
+        private _addToBucket;
+        private _removeFromBucket;
+        private _rebucket;
+        private _obtain;
+        private _release;
+        private _insertAfterInMainList;
+        private _removeFromMainList;
+        private _findFreeBlock;
+        private _defragFull;
+        private _defragIncremental;
+        private _moveBlock;
     }
 
 
@@ -8012,6 +9890,9 @@ declare namespace BABYLON {
     }
 
 
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
     /**
      * Options for loading OBJ/MTL files
      */
@@ -8060,18 +9941,14 @@ declare namespace BABYLON {
     };
 
 
-    export var OBJFileLoaderMetadata: {
-        readonly name: "obj";
-        readonly extensions: ".obj";
-    };
-
-
         interface SceneLoaderPluginOptions {
             /**
              * Defines options for the obj loader.
              */
             [OBJFileLoaderMetadata.name]: Partial<OBJLoadingOptions>;
         }
+
+
     /**
      * OBJ file type loader.
      * This is a babylon scene loader plugin.
@@ -8194,6 +10071,23 @@ declare namespace BABYLON {
          */
         private _parseSolidAsync;
     }
+    /**
+     * Registers the OBJFileLoader scene loader plugin.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterOBJFileLoader(): void;
+
+
+    export var OBJFileLoaderMetadata: {
+        readonly name: "obj";
+        readonly extensions: ".obj";
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./objFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -8237,19 +10131,17 @@ declare namespace BABYLON {
 
 
 
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
-    /**
-     * Defines the FBX loader plugin metadata.
-     */
-    export var FBXFileLoaderMetadata: {
-        readonly name: "fbx";
-        readonly extensions: {
-            readonly ".fbx": {
-                readonly isBinary: true;
-            };
-        };
-    };
+
+
+        interface SceneLoaderPluginOptions {
+            /**
+             * Defines options for the FBX loader.
+             */
+            [FBXFileLoaderMetadata.name]: Partial<FBXFileLoaderOptions>;
+        }
 
 
     /**
@@ -8267,12 +10159,6 @@ declare namespace BABYLON {
          */
         normalMapCoordinateSystem?: FBXNormalMapCoordinateSystem;
     }
-        interface SceneLoaderPluginOptions {
-            /**
-             * Defines options for the FBX loader.
-             */
-            [FBXFileLoaderMetadata.name]: FBXFileLoaderOptions;
-        }
     /**
      * FBX file loader plugin for Babylon.js.
      * Pure TypeScript implementation — no Autodesk FBX SDK dependency.
@@ -8440,6 +10326,30 @@ declare namespace BABYLON {
         private _buildBoneAnimations;
         private _buildNameFilter;
     }
+    /**
+     * Registers the FBXFileLoader scene loader plugin.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFBXFileLoader(): void;
+
+
+    /**
+     * Defines the FBX loader plugin metadata.
+     */
+    export var FBXFileLoaderMetadata: {
+        readonly name: "fbx";
+        readonly extensions: {
+            readonly ".fbx": {
+                readonly isBinary: true;
+            };
+        };
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./fbxFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -9205,6 +11115,9 @@ declare namespace BABYLON {
     export function sampleFBXCurveAtTime(curveData: FBXCurveData | undefined, time: number): number | null;
 
 
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
 
 
     /**
@@ -9229,22 +11142,14 @@ declare namespace BABYLON {
     export function ReadBvh(text: string, scene: Scene, assetContainer: Nullable<AssetContainer>, loadingOptions: BVHLoadingOptions): Skeleton;
 
 
-    export var BVHFileLoaderMetadata: {
-        readonly name: "bvh";
-        readonly extensions: {
-            readonly ".bvh": {
-                readonly isBinary: false;
-            };
-        };
-    };
-
-
         interface SceneLoaderPluginOptions {
             /**
              * Defines options for the bvh loader.
              */
             [BVHFileLoaderMetadata.name]: Partial<BVHLoadingOptions>;
         }
+
+
     /**
      * @experimental
      * BVH file type loader.
@@ -9276,7 +11181,17 @@ declare namespace BABYLON {
          * @returns if the data can be loaded directly
          */
         canDirectLoad(data: string): boolean;
+        /**
+         * Returns whether the provided text starts with a BVH HIERARCHY header.
+         * @param text - the text to inspect
+         * @returns true if the text is a BVH header
+         */
         isBvhHeader(text: string): boolean;
+        /**
+         * Returns whether the provided text does not start with a BVH HIERARCHY header.
+         * @param text - the text to inspect
+         * @returns true if the text is not a BVH header
+         */
         isNotBvhHeader(text: string): boolean;
         /**
          * Imports  from the loaded gaussian splatting data and adds them to the scene
@@ -9301,6 +11216,27 @@ declare namespace BABYLON {
          */
         loadAssetContainerAsync(scene: Scene, data: unknown): Promise<AssetContainer>;
     }
+    /**
+     * Registers the BVHFileLoader scene loader plugin.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterBVHFileLoader(): void;
+
+
+    export var BVHFileLoaderMetadata: {
+        readonly name: "bvh";
+        readonly extensions: {
+            readonly ".bvh": {
+                readonly isBinary: false;
+            };
+        };
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./bvhFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
 

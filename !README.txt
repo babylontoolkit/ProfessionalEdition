@@ -1,4 +1,4 @@
-Babylon Editor Toolkit 2024 - Version: 9.12.1101
+Babylon Editor Toolkit 2024 - Version: 9.14.0
 ==============================================
 Author: Mackey Kinard
 Email:  MackeyK24@gmail.com
@@ -16,7 +16,7 @@ CanvasTools Metafile Guid
 
 
 Babylon Game Framework Version
-* Build With 9.12.1101 - R1
+* Build With 9.14.0 - R1
 
 
 Cubemap Filter Tools Version

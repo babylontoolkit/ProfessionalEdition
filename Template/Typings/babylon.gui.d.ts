@@ -1,5 +1,8 @@
 
 declare namespace BABYLON.GUI {
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
 
 
     /**
@@ -17,6 +20,9 @@ declare namespace BABYLON.GUI {
         /** defines the current mouse button index */
         buttonIndex?: number);
     }
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -108,11 +114,17 @@ declare namespace BABYLON.GUI {
     }
 
 
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
 
 
     /**
      * This is here for backwards compatibility with 4.2
      */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
     /**
@@ -436,8 +448,26 @@ declare namespace BABYLON.GUI {
         clone(name: string): MRDLSliderThumbMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Parses a serialized MRDLSliderThumbMaterial and returns a new instance.
+         * @param source - the serialized object
+         * @param scene - defines the hosting scene
+         * @param rootUrl - the root URL used to load any associated textures
+         * @returns a new MRDLSliderThumbMaterial
+         */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): MRDLSliderThumbMaterial;
     }
+    /**
+     * Registers the MRDLSliderThumbMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMRDLSliderThumbMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./mrdlSliderThumbMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -761,8 +791,26 @@ declare namespace BABYLON.GUI {
         clone(name: string): MRDLSliderBarMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Parses a serialized MRDLSliderBarMaterial and returns a new instance.
+         * @param source - the serialized object
+         * @param scene - defines the hosting scene
+         * @param rootUrl - the root URL used to load any associated textures
+         * @returns a new MRDLSliderBarMaterial
+         */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): MRDLSliderBarMaterial;
     }
+    /**
+     * Registers the MRDLSliderBarMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMRDLSliderBarMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./mrdlSliderBarMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     export class MRDLInnerquadMaterial extends BABYLON.PushMaterial {
@@ -809,6 +857,17 @@ declare namespace BABYLON.GUI {
         getClassName(): string;
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): MRDLInnerquadMaterial;
     }
+    /**
+     * Registers the MRDLInnerquadMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMRDLInnerquadMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./mrdlInnerquadMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     export class MRDLFrontplateMaterial extends BABYLON.PushMaterial {
@@ -984,6 +1043,17 @@ declare namespace BABYLON.GUI {
         getClassName(): string;
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): MRDLFrontplateMaterial;
     }
+    /**
+     * Registers the MRDLFrontplateMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMRDLFrontplateMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./mrdlFrontplateMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -1119,8 +1189,26 @@ declare namespace BABYLON.GUI {
         clone(name: string): MRDLBackplateMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Parses a serialized MRDLBackplateMaterial and returns a new instance.
+         * @param source - the serialized object
+         * @param scene - defines the hosting scene
+         * @param rootUrl - the root URL used to load any associated textures
+         * @returns a new MRDLBackplateMaterial
+         */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): MRDLBackplateMaterial;
     }
+    /**
+     * Registers the MRDLBackplateMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMRDLBackplateMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./mrdlBackplateMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     export class MRDLBackglowMaterial extends BABYLON.PushMaterial {
@@ -1198,6 +1286,17 @@ declare namespace BABYLON.GUI {
         getClassName(): string;
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): MRDLBackglowMaterial;
     }
+    /**
+     * Registers the MRDLBackglowMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMRDLBackglowMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./mrdlBackglowMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
 
@@ -1286,6 +1385,9 @@ declare namespace BABYLON.GUI {
     };
 
 
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
 
 
     /**
@@ -1352,6 +1454,12 @@ declare namespace BABYLON.GUI {
     }
 
 
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./handleMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
     /** @internal */
     export var handleVertexShaderWGSL: {
         name: string;
@@ -1378,6 +1486,9 @@ declare namespace BABYLON.GUI {
         name: string;
         shader: string;
     };
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -1572,6 +1683,17 @@ declare namespace BABYLON.GUI {
          */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): FluentButtonMaterial;
     }
+    /**
+     * Registers the FluentButtonMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFluentButtonMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./fluentButtonMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** @internal */
@@ -1600,6 +1722,9 @@ declare namespace BABYLON.GUI {
         name: string;
         shader: string;
     };
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -1758,6 +1883,17 @@ declare namespace BABYLON.GUI {
          */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): FluentBackplateMaterial;
     }
+    /**
+     * Registers the FluentBackplateMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFluentBackplateMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./fluentBackplateMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** @internal */
@@ -1786,6 +1922,9 @@ declare namespace BABYLON.GUI {
         name: string;
         shader: string;
     };
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -1880,6 +2019,17 @@ declare namespace BABYLON.GUI {
          */
         static Parse(source: any, scene: BABYLON.Scene, rootUrl: string): FluentMaterial;
     }
+    /**
+     * Registers the FluentMaterial class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFluentMaterial(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./fluentMaterial.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** @internal */
@@ -1962,6 +2112,9 @@ declare namespace BABYLON.GUI {
         protected _update(): void;
         dispose(): void;
     }
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
 
@@ -2508,6 +2661,9 @@ declare namespace BABYLON.GUI {
         private _scatterMapping;
         protected _finalProcessing(): void;
     }
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
     /**
@@ -3685,6 +3841,9 @@ declare namespace BABYLON.GUI {
     }
 
 
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
     /**
      * Class used to store a point for a MultiLine object.
      * The point can be pure 2D coordinates, a mesh or a control
@@ -4626,6 +4785,17 @@ declare namespace BABYLON.GUI {
          */
         _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture): void;
     }
+    /**
+     * Registers the VirtualKeyboard class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterVirtualKeyboard(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./virtualKeyboard.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -4716,6 +4886,17 @@ declare namespace BABYLON.GUI {
          */
         _onPointerUp(target: Control, coordinates: BABYLON.Vector2, pointerId: number, buttonIndex: number, notifyClick: boolean, pi: BABYLON.PointerInfoBase): void;
     }
+    /**
+     * Registers the ToggleButton class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterToggleButton(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./toggleButton.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** @internal */
@@ -4945,6 +5126,17 @@ declare namespace BABYLON.GUI {
         computeExpectedHeight(): number;
         dispose(): void;
     }
+    /**
+     * Registers the TextBlock class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterTextBlock(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./textBlock.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -4952,6 +5144,17 @@ declare namespace BABYLON.GUI {
      * @internal
      */
     const Name = "Statics";
+    /**
+     * Registers GUI static helpers such as {@link Control.AddHeader}.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterGUIStatics(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./statics.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -5014,6 +5217,17 @@ declare namespace BABYLON.GUI {
          */
         _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture): void;
     }
+    /**
+     * Registers the StackPanel class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterStackPanel(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./stackPanel.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** Class used to create a RadioGroup
@@ -5293,6 +5507,17 @@ declare namespace BABYLON.GUI {
         private _drawRoundedRect;
         protected _clipForChildren(context: BABYLON.ICanvasRenderingContext): void;
     }
+    /**
+     * Registers the Rectangle class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterRectangle(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./rectangle.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -5338,6 +5563,20 @@ declare namespace BABYLON.GUI {
          */
         static AddRadioButtonWithHeader(title: string, group: string, isChecked: boolean, onValueChanged: (button: RadioButton, value: boolean) => void): StackPanel;
     }
+    /**
+     * Registers the RadioButton class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterRadioButton(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./radioButton.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
     /**
@@ -5411,6 +5650,17 @@ declare namespace BABYLON.GUI {
         protected _computeAlignment(): void;
         dispose(): void;
     }
+    /**
+     * Registers the MultiLine class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMultiLine(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./multiLine.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** Class used to render 2D lines */
@@ -5481,6 +5731,17 @@ declare namespace BABYLON.GUI {
          */
         _moveToProjectedPosition(projectedPosition: BABYLON.Vector3, end?: boolean): void;
     }
+    /**
+     * Registers the Line class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterLine(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./line.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -5615,6 +5876,17 @@ declare namespace BABYLON.GUI {
         selectAllText(): void;
         dispose(): void;
     }
+    /**
+     * Registers the InputTextArea class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterInputTextArea(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./inputTextArea.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -5810,6 +6082,17 @@ declare namespace BABYLON.GUI {
         private get isTextHighlightOn();
         dispose(): void;
     }
+    /**
+     * Registers the InputText class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterInputText(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./inputText.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -5819,6 +6102,17 @@ declare namespace BABYLON.GUI {
         protected _getTypeName(): string;
         protected _beforeRenderText(textWrapper: TextWrapper): TextWrapper;
     }
+    /**
+     * Registers the InputPassword class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterInputPassword(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./inputPassword.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
 
@@ -6046,6 +6340,17 @@ declare namespace BABYLON.GUI {
         /** NINE_PATCH */
         static readonly STRETCH_NINE_PATCH = 4;
     }
+    /**
+     * Registers the Image class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterImage(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./image.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -6192,6 +6497,17 @@ declare namespace BABYLON.GUI {
          */
         _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture): void;
     }
+    /**
+     * Registers the Grid class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterGrid(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./grid.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -6248,6 +6564,17 @@ declare namespace BABYLON.GUI {
          */
         _onPointerDown(target: Control, coordinates: BABYLON.Vector2, pointerId: number, buttonIndex: number, pi: BABYLON.PointerInfoBase): boolean;
     }
+    /**
+     * Registers the FocusableButton class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFocusableButton(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./focusableButton.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** Class used to create 2D ellipse containers */
@@ -6272,6 +6599,17 @@ declare namespace BABYLON.GUI {
         protected _clipForChildren(context: BABYLON.ICanvasRenderingContext): void;
         _renderHighlightSpecific(context: BABYLON.ICanvasRenderingContext): void;
     }
+    /**
+     * Registers the Ellipse class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEllipse(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./ellipse.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** Class used to render a grid  */
@@ -6325,6 +6663,17 @@ declare namespace BABYLON.GUI {
         _draw(context: BABYLON.ICanvasRenderingContext): void;
         protected _getTypeName(): string;
     }
+    /**
+     * Registers the DisplayGrid class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterDisplayGrid(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./displayGrid.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7253,6 +7602,17 @@ declare namespace BABYLON.GUI {
          */
         isReady(): boolean;
     }
+    /**
+     * Registers the Control class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterControl(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./control.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7425,6 +7785,17 @@ declare namespace BABYLON.GUI {
         _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture, urlRewriter?: (url: string) => string): void;
         isReady(): boolean;
     }
+    /**
+     * Registers the Container class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterContainer(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./container.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** Class used to create color pickers */
@@ -7520,6 +7891,17 @@ declare namespace BABYLON.GUI {
             pickedColor: string;
         }>;
     }
+    /**
+     * Registers the ColorPicker class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterColorPicker(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./colorpicker.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7569,6 +7951,17 @@ declare namespace BABYLON.GUI {
          */
         static AddCheckBoxWithHeader(title: string, onValueChanged: (value: boolean) => void): StackPanel;
     }
+    /**
+     * Registers the Checkbox class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterCheckbox(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./checkbox.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7671,6 +8064,17 @@ declare namespace BABYLON.GUI {
          */
         static CreateImageWithCenterTextButton(name: string, text: string, imageUrl: string): Button;
     }
+    /**
+     * Registers the Button class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterButton(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./button.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7714,6 +8118,17 @@ declare namespace BABYLON.GUI {
         /** @internal */
         _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture): void;
     }
+    /**
+     * Registers the Slider class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterSlider(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./slider.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -7758,6 +8173,20 @@ declare namespace BABYLON.GUI {
         serialize(serializationObject: any): void;
         _parseFromContent(serializationObject: any, host: AdvancedDynamicTexture): void;
     }
+    /**
+     * Registers the ScrollBar class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterScrollBar(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./scrollBar.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
     /**
@@ -7866,6 +8295,17 @@ declare namespace BABYLON.GUI {
          */
         _parseFromContent(serializedObject: any, host: AdvancedDynamicTexture): void;
     }
+    /**
+     * Registers the ImageBasedSlider class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterImageBasedSlider(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./imageBasedSlider.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -8163,6 +8603,23 @@ declare namespace BABYLON.GUI {
         /** Releases associated resources */
         dispose(): void;
     }
+    /**
+     * Registers the ScrollViewer class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterScrollViewer(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./scrollViewer.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
     /**
@@ -8216,6 +8673,17 @@ declare namespace BABYLON.GUI {
          */
         parse(serializationObject: any): void;
     }
+    /**
+     * Registers the RadialGradient class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterRadialGradient(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./RadialGradient.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -8261,6 +8729,17 @@ declare namespace BABYLON.GUI {
          */
         parse(serializationObject: any): void;
     }
+    /**
+     * Registers the LinearGradient class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterLinearGradient(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./LinearGradient.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
     /**
@@ -8369,6 +8848,20 @@ declare namespace BABYLON.GUI {
         get output(): BABYLON.NodeRenderGraphConnectionPoint;
         protected _buildBlock(state: BABYLON.NodeRenderGraphBuildState): void;
     }
+    /**
+     * Registers the NodeRenderGraphGUIBlock class with the type store for serialization support.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterNodeRenderGraphGUIBlock(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./renderGraphGUIBlock.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
 
 
     /**
