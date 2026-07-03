@@ -2520,6 +2520,10 @@ declare namespace ADDONS {
     export class AtmospherePBRMaterialPlugin extends BABYLON.MaterialPluginBase {
         private readonly _atmosphere;
         private readonly _isAerialPerspectiveEnabled;
+        private static readonly _ShaderIncludesRetryDelayMs;
+        private _shaderIncludesLoaded;
+        private _shaderIncludesLoadPromise;
+        private _shaderIncludesNextRetryTime;
         /**
          * Constructs the {@link AtmospherePBRMaterialPlugin}.
          * @param material - The material to apply the plugin to.
@@ -2551,6 +2555,12 @@ declare namespace ADDONS {
          * @override
          */
         isReadyForSubMesh(): boolean;
+        /**
+         * Lazily loads (and thereby registers into the ShaderStore) the shader includes referenced by
+         * this plugin's injected custom code. Loading the correct variant for the host material's shader
+         * language keeps this module free of top-level shader side effects so it can be tree-shaken.
+         */
+        private _loadShaderIncludesAsync;
         /**
          * @override
          */
