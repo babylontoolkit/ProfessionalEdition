@@ -6322,6 +6322,72 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
+         * Defines options for the KHR_gaussian_splatting extension.
+         */
+        ["KHR_gaussian_splatting"]: {};
+    }
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * [Specification](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_gaussian_splatting/README.md)
+     * Loads a mesh primitive tagged with KHR_gaussian_splatting as a {@link GaussianSplattingMesh}.
+     */
+    export class KHR_gaussian_splatting implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_gaussian_splatting";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        _loadMeshPrimitiveAsync(context: string, name: string, node: BABYLON.GLTF2.Loader.INode, mesh: BABYLON.GLTF2.Loader.IMesh, primitive: BABYLON.GLTF2.Loader.IMeshPrimitive, assign: (babylonMesh: AbstractMesh) => void): Nullable<Promise<AbstractMesh>>;
+    }
+    /**
+     * Registers the KHR_gaussian_splatting glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_gaussian_splatting(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_gaussian_splatting.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
          * Defines options for the KHR_draco_mesh_compression extension.
          */
         ["KHR_draco_mesh_compression"]: {};

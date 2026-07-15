@@ -2520,10 +2520,6 @@ declare namespace ADDONS {
     export class AtmospherePBRMaterialPlugin extends BABYLON.MaterialPluginBase {
         private readonly _atmosphere;
         private readonly _isAerialPerspectiveEnabled;
-        private static readonly _ShaderIncludesRetryDelayMs;
-        private _shaderIncludesLoaded;
-        private _shaderIncludesLoadPromise;
-        private _shaderIncludesNextRetryTime;
         /**
          * Constructs the {@link AtmospherePBRMaterialPlugin}.
          * @param material - The material to apply the plugin to.
@@ -2556,11 +2552,32 @@ declare namespace ADDONS {
          */
         isReadyForSubMesh(): boolean;
         /**
-         * Lazily loads (and thereby registers into the ShaderStore) the shader includes referenced by
-         * this plugin's injected custom code. Loading the correct variant for the host material's shader
-         * language keeps this module free of top-level shader side effects so it can be tree-shaken.
+         * Ensures the shader includes for this material's shader language are registered, kicking off a lazy
+         * load if needed. Registration from a previously created material (or an explicit preload) is detected
+         * synchronously via the ShaderStore, so only the very first atmosphere material can incur a load delay.
+         * @returns True when the includes are registered and the plugin can proceed.
          */
-        private _loadShaderIncludesAsync;
+        private _ensureShaderIncludesLoaded;
+        /**
+         * Fire-and-forget load of the shader includes used from isReadyForSubMesh. Backs off after a failure and
+         * logs so a missing registration doesn't silently stall rendering forever; a retry still recovers from
+         * transient failures such as a dropped network request.
+         * @param shaderLanguage - The shader language whose includes to load.
+         * @param state - The shared load state for that language.
+         */
+        private _tryLoadShaderIncludesAsync;
+        /**
+         * Preloads (and registers into the ShaderStore) the atmosphere shader includes for the given shader
+         * language, ahead of creating any atmosphere-enabled material. Await this before creating meshes when
+         * they must render in their creation frame with zero delay. Safe to call multiple times; concurrent
+         * calls coalesce onto a single load.
+         *
+         * As an alternative, `Material.forceCompilationAsync(mesh)` (or `Scene.whenReadyAsync`) also awaits the
+         * includes, because readiness is gated through `isReadyForSubMesh`.
+         * @param shaderLanguage - The shader language to preload includes for (defaults to GLSL). Pass `ShaderLanguage.WGSL` for WebGPU.
+         * @returns A promise that resolves once the includes are registered.
+         */
+        static PreloadShaderIncludesAsync(shaderLanguage?: BABYLON.ShaderLanguage): Promise<void>;
         /**
          * @override
          */
@@ -2991,6 +3008,22 @@ declare namespace ADDONS {
          * @param options - The options used to create the atmosphere.
          */
         constructor(name: string, scene: BABYLON.Scene, lights: BABYLON.DirectionalLight[], options?: IAtmosphereOptions);
+        /**
+         * Fire-and-forget wrapper around {@link preloadMaterialPluginShaderIncludesAsync} used during construction.
+         * Swallows failures so a rejected preload does not surface as an unhandled promise rejection; the plugin's
+         * `isReadyForSubMesh` already retries and logs on failure.
+         * @returns A promise that always resolves.
+         */
+        private _eagerlyPreloadMaterialPluginShaderIncludesAsync;
+        /**
+         * Preloads the shader includes used by the atmosphere PBR material plugin so that atmosphere-enabled
+         * materials can render in their creation frame with no delay. The plugin registers these includes lazily
+         * (to keep the module tree-shakeable), so without a preload the very first atmosphere material may skip a
+         * frame while they load. Await this before creating meshes that must render immediately. Safe to call
+         * multiple times.
+         * @returns A promise that resolves once the includes are registered.
+         */
+        preloadMaterialPluginShaderIncludesAsync(): Promise<void>;
         /**
          * @override
          */

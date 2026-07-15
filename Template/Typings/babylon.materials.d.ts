@@ -5,14 +5,14 @@ declare namespace BABYLON {
     export class WaterMaterial extends PushMaterial {
         renderTargetSize: Vector2;
         private _bumpTexture;
-        bumpTexture: BaseTexture;
+        accessor bumpTexture: BaseTexture;
         diffuseColor: Color3;
         specularColor: Color3;
         specularPower: number;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         /**
          * Defines the wind force.
          */
@@ -33,17 +33,17 @@ declare namespace BABYLON {
          * Defines wether or not: to add a smaller moving bump to less steady waves.
          */
         private _bumpSuperimpose;
-        bumpSuperimpose: boolean;
+        accessor bumpSuperimpose: boolean;
         /**
          * Defines wether or not color refraction and reflection differently with .waterColor2 and .colorBlendFactor2. Non-linear (physically correct) fresnel.
          */
         private _fresnelSeparate;
-        fresnelSeparate: boolean;
+        accessor fresnelSeparate: boolean;
         /**
          * Defines wether or not bump Wwves modify the reflection.
          */
         private _bumpAffectsReflection;
-        bumpAffectsReflection: boolean;
+        accessor bumpAffectsReflection: boolean;
         /**
          * Defines the water color blended with the refraction (near).
          */
@@ -83,7 +83,7 @@ declare namespace BABYLON {
          * You will probably need to set it to true if you are using instances or thin instances for your water objects.
          */
         private _useWorldCoordinatesForWaveDeformation;
-        useWorldCoordinatesForWaveDeformation: boolean;
+        accessor useWorldCoordinatesForWaveDeformation: boolean;
         protected _renderTargets: SmartArray<RenderTargetTexture>;
         private _mesh;
         private _refractionRTT;
@@ -181,25 +181,25 @@ declare namespace BABYLON {
     export class TriPlanarMaterial extends PushMaterial {
         mixTexture: BaseTexture;
         private _diffuseTextureX;
-        diffuseTextureX: BaseTexture;
+        accessor diffuseTextureX: BaseTexture;
         private _diffuseTextureY;
-        diffuseTextureY: BaseTexture;
+        accessor diffuseTextureY: BaseTexture;
         private _diffuseTextureZ;
-        diffuseTextureZ: BaseTexture;
+        accessor diffuseTextureZ: BaseTexture;
         private _normalTextureX;
-        normalTextureX: BaseTexture;
+        accessor normalTextureX: BaseTexture;
         private _normalTextureY;
-        normalTextureY: BaseTexture;
+        accessor normalTextureY: BaseTexture;
         private _normalTextureZ;
-        normalTextureZ: BaseTexture;
+        accessor normalTextureZ: BaseTexture;
         tileSize: number;
         diffuseColor: Color3;
         specularColor: Color3;
         specularPower: number;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _shadersLoaded;
         /**
          * Instantiates a TriPlanar Material in the given scene
@@ -242,26 +242,26 @@ declare namespace BABYLON {
 
     export class TerrainMaterial extends PushMaterial {
         private _mixTexture;
-        mixTexture: BaseTexture;
+        accessor mixTexture: BaseTexture;
         private _diffuseTexture1;
-        diffuseTexture1: Texture;
+        accessor diffuseTexture1: Texture;
         private _diffuseTexture2;
-        diffuseTexture2: Texture;
+        accessor diffuseTexture2: Texture;
         private _diffuseTexture3;
-        diffuseTexture3: Texture;
+        accessor diffuseTexture3: Texture;
         private _bumpTexture1;
-        bumpTexture1: Texture;
+        accessor bumpTexture1: Texture;
         private _bumpTexture2;
-        bumpTexture2: Texture;
+        accessor bumpTexture2: Texture;
         private _bumpTexture3;
-        bumpTexture3: Texture;
+        accessor bumpTexture3: Texture;
         diffuseColor: Color3;
         specularColor: Color3;
         specularPower: number;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _shadersLoaded;
         /**
          * Instantiates a Terrain Material in the given scene
@@ -491,12 +491,12 @@ declare namespace BABYLON {
 
     export class SimpleMaterial extends PushMaterial {
         private _diffuseTexture;
-        diffuseTexture: BaseTexture;
+        accessor diffuseTexture: BaseTexture;
         diffuseColor: Color3;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _shadersLoaded;
         /**
          * Instantiates a Simple Material in the given scene
@@ -610,12 +610,12 @@ declare namespace BABYLON {
 
     export class NormalMaterial extends PushMaterial {
         private _diffuseTexture;
-        diffuseTexture: BaseTexture;
+        accessor diffuseTexture: BaseTexture;
         diffuseColor: Color3;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _shadersLoaded;
         /**
          * Instantiates a Normal Material in the given scene
@@ -676,28 +676,28 @@ declare namespace BABYLON {
          * Mix textures
          */
         private _mixTexture1;
-        mixTexture1: BaseTexture;
+        accessor mixTexture1: BaseTexture;
         private _mixTexture2;
-        mixTexture2: BaseTexture;
+        accessor mixTexture2: BaseTexture;
         /**
          * Diffuse textures
          */
         private _diffuseTexture1;
-        diffuseTexture1: Texture;
+        accessor diffuseTexture1: Texture;
         private _diffuseTexture2;
-        diffuseTexture2: Texture;
+        accessor diffuseTexture2: Texture;
         private _diffuseTexture3;
-        diffuseTexture3: Texture;
+        accessor diffuseTexture3: Texture;
         private _diffuseTexture4;
-        diffuseTexture4: Texture;
+        accessor diffuseTexture4: Texture;
         private _diffuseTexture5;
-        diffuseTexture5: Texture;
+        accessor diffuseTexture5: Texture;
         private _diffuseTexture6;
-        diffuseTexture6: Texture;
+        accessor diffuseTexture6: Texture;
         private _diffuseTexture7;
-        diffuseTexture7: Texture;
+        accessor diffuseTexture7: Texture;
         private _diffuseTexture8;
-        diffuseTexture8: Texture;
+        accessor diffuseTexture8: Texture;
         /**
          * Uniforms
          */
@@ -705,9 +705,9 @@ declare namespace BABYLON {
         specularColor: Color3;
         specularPower: number;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _shadersLoaded;
         /**
          * Instantiates a Mix Material in the given scene
@@ -794,7 +794,7 @@ declare namespace BABYLON {
 
     export class LavaMaterial extends PushMaterial {
         private _diffuseTexture;
-        diffuseTexture: BaseTexture;
+        accessor diffuseTexture: BaseTexture;
         noiseTexture: BaseTexture;
         fogColor: Color3;
         speed: number;
@@ -804,11 +804,11 @@ declare namespace BABYLON {
         private _lastTime;
         diffuseColor: Color3;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _unlit;
-        unlit: boolean;
+        accessor unlit: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _scaledDiffuse;
         private _shadersLoaded;
         /**
@@ -955,7 +955,7 @@ declare namespace BABYLON {
         /**
          * Texture to define opacity of the grid
          */
-        opacityTexture: BaseTexture;
+        accessor opacityTexture: BaseTexture;
         private _gridControl;
         private _viewportSize;
         /**
@@ -1024,7 +1024,7 @@ declare namespace BABYLON {
 
     export class GradientMaterial extends PushMaterial {
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         topColor: Color3;
         topColorAlpha: number;
         bottomColor: Color3;
@@ -1033,7 +1033,7 @@ declare namespace BABYLON {
         scale: number;
         smoothness: number;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _shadersLoaded;
         /**
          * Instantiates a Gradient Material in the given scene
@@ -1088,9 +1088,9 @@ declare namespace BABYLON {
 
     export class FurMaterial extends PushMaterial {
         private _diffuseTexture;
-        diffuseTexture: BaseTexture;
+        accessor diffuseTexture: BaseTexture;
         private _heightTexture;
-        heightTexture: BaseTexture;
+        accessor heightTexture: BaseTexture;
         diffuseColor: Color3;
         furLength: number;
         furAngle: number;
@@ -1103,9 +1103,9 @@ declare namespace BABYLON {
         furOcclusion: number;
         furTexture: DynamicTexture;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         highLevelFur: boolean;
         _meshes: AbstractMesh[];
         private _furTime;
@@ -1170,11 +1170,11 @@ declare namespace BABYLON {
 
     export class FireMaterial extends PushMaterial {
         private _diffuseTexture;
-        diffuseTexture: Nullable<BaseTexture>;
+        accessor diffuseTexture: Nullable<BaseTexture>;
         private _distortionTexture;
-        distortionTexture: Nullable<BaseTexture>;
+        accessor distortionTexture: Nullable<BaseTexture>;
         private _opacityTexture;
-        opacityTexture: Nullable<BaseTexture>;
+        accessor opacityTexture: Nullable<BaseTexture>;
         diffuseColor: Color3;
         speed: number;
         private _scaledDiffuse;
@@ -1807,14 +1807,14 @@ declare namespace BABYLON {
 
     export class CellMaterial extends PushMaterial {
         private _diffuseTexture;
-        diffuseTexture: BaseTexture;
+        accessor diffuseTexture: BaseTexture;
         diffuseColor: Color3;
         _computeHighLevel: boolean;
-        computeHighLevel: boolean;
+        accessor computeHighLevel: boolean;
         private _disableLighting;
-        disableLighting: boolean;
+        accessor disableLighting: boolean;
         private _maxSimultaneousLights;
-        maxSimultaneousLights: number;
+        accessor maxSimultaneousLights: number;
         private _shadersLoaded;
         /**
          * Instantiates a Cell Material in the given scene

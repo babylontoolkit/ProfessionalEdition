@@ -1945,7 +1945,7 @@ declare namespace BABYLON.GUI {
         /**
          * Gets or sets inner glow intensity. A value of 0 means no glow (default is 0.5)
          */
-        innerGlowColorIntensity: number;
+        accessor innerGlowColorIntensity: number;
         /**
          * Gets or sets the inner glow color (white by default)
          */
@@ -1957,7 +1957,7 @@ declare namespace BABYLON.GUI {
         /**
          * Gets or sets a boolean indicating if borders must be rendered (default is false)
          */
-        renderBorders: boolean;
+        accessor renderBorders: boolean;
         /**
          * Gets or sets border width (default is 0.5)
          */
@@ -1973,7 +1973,7 @@ declare namespace BABYLON.GUI {
         /**
          * Gets or sets a boolean indicating if hover light must be rendered (default is false)
          */
-        renderHoverLight: boolean;
+        accessor renderHoverLight: boolean;
         /**
          * Gets or sets the radius used to render the hover light (default is 0.01)
          */
@@ -1988,7 +1988,7 @@ declare namespace BABYLON.GUI {
         hoverPosition: BABYLON.Vector3;
         private _albedoTexture;
         /** Gets or sets the texture to use for albedo color */
-        albedoTexture: BABYLON.Nullable<BABYLON.BaseTexture>;
+        accessor albedoTexture: BABYLON.Nullable<BABYLON.BaseTexture>;
         /**
          * Creates a new Fluent material
          * @param name defines the name of the material
