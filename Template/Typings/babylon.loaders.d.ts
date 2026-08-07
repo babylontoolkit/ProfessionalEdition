@@ -8364,9 +8364,9 @@ declare namespace BABYLON {
      * @param url URL to the spz WASM ES module (its default export should be a factory function)
      * @returns A promise resolving to the initialized spz WASM module
      */
-    export function GetSpzModule(url: string): Promise<SpzModule>;
+    export function GetSpzModule(url: string): Promise<any>;
     /**
-     * Converts a GaussianCloud object (from the spz WASM module) into the packed 32-byte-per-splat
+     * Converts a any object (from the spz WASM module) into the packed 32-byte-per-splat
      * ArrayBuffer and SH texture arrays expected by GaussianSplattingMeshBase.updateData.
      *
      * Packed layout per splat (32 bytes):
@@ -8378,15 +8378,15 @@ declare namespace BABYLON {
      * SH coefficients from the cloud (Float32, range ~[-1,1]) are encoded to bytes
      * using the SPZ convention (load-spz.cc unquantizeSH): byte = coeff * 128 + 128.
      *
-     * @param cloud The GaussianCloud returned by spz.loadSpzFromBuffer
+     * @param cloud The any returned by spz.loadSpzFromBuffer
      * @param scene The Babylon.js scene (used to query maxTextureSize for SH textures)
      * @param useCoroutine If true, yields periodically to avoid blocking the main thread
      * @returns A coroutine returning an IParsedSplat ready to be passed to updateData
      */
-    export function ConvertSpzToSplat(cloud: GaussianCloud, scene: Scene, useCoroutine?: boolean): Coroutine<IParsedSplat>;
+    export function ConvertSpzToSplat(cloud: any, scene: Scene, useCoroutine?: boolean): Coroutine<IParsedSplat>;
     /**
      * Async version of ConvertSpzToSplat that yields periodically to avoid blocking the main thread.
-     * @param cloud The GaussianCloud returned by spz.loadSpzFromBuffer
+     * @param cloud The any returned by spz.loadSpzFromBuffer
      * @param scene The Babylon.js scene
      * @returns A promise resolving to an IParsedSplat
      */
@@ -8522,8 +8522,19 @@ declare namespace BABYLON {
         private _unzipWithFFlateAsync;
         private _parseAsync;
         /**
-         * Applies camera limits based on parsed meta data
+         * Extracts the safe-orbit camera limits from parsed splat metadata, or null when the file
+         * carries none. Exposed on the loaded mesh (GaussianSplattingMeshBase.safeOrbitCameraLimits)
+         * so consumers can apply/track them regardless of the active camera type.
          * @param meta parsed splat meta data
+         * @returns the parsed safe-orbit limits, or null
+         */
+        private static _ExtractSafeOrbitLimits;
+        /**
+         * Applies safe-orbit camera limits parsed from the file metadata to the scene's active
+         * ArcRotateCamera. No-op when no limits are present, `disableAutoCameraLimits` is set, or the
+         * active camera is not an ArcRotateCamera — in which case consumers can still read the limits
+         * from the loaded mesh's `safeOrbitCameraLimits` and apply them themselves.
+         * @param limits parsed safe-orbit limits (see _ExtractSafeOrbitLimits)
          * @param scene
          */
         private applyAutoCameraLimits;
@@ -8850,7 +8861,11 @@ declare namespace BABYLON {
          */
         constructor(scene: Scene, capacity: number);
         /**
-         * Creates a 4-attachment MRT (centers F32 / covA F32 / covB F32 / colors U8) sized to the work buffer.
+         * Creates a 4-attachment MRT (centers F32 / covA / covB / colors U8) sized to the work buffer. covA/covB
+         * use HALF_FLOAT when the engine can render to it, matching the precision the non-streamed
+         * GaussianSplattingMesh path already uses for these same two textures (see
+         * `gaussianSplattingMeshBase.pure.ts`'s `createTextureFromDataF16` covA/covB textures); centers stays F32
+         * and colors stays U8 in both paths.
          * @param name MRT and attachment base name
          * @param disableClear when true, clearing is suppressed so renders accumulate (the decode buffer); when
          *   false the MRT clears to zero on each render (the temporary relayout buffer, so gaps stay zeroed)
@@ -9381,7 +9396,14 @@ declare namespace BABYLON {
          * cheap per-node frustum test every frame so the off-screen LOD bias tracks camera rotation. The LOD
          * re-evaluation is throttled to at most every {@link _lodUpdateInterval} frames once the camera has
          * translated far enough, but also runs immediately whenever a node enters/leaves the frustum (so its
-         * detail upgrades/downgrades promptly) or a cap change forces it. Active ranges rebuild on any LOD change.
+         * detail upgrades/downgrades promptly), a node whose cooldown just expired still needs to switch LOD,
+         * or a cap change forces it. Active ranges rebuild on any LOD change.
+         *
+         * The cooldown-expiry trigger lets a node reach its already-computed target level as soon as its
+         * cooldown clears, rather than waiting for the camera to move. This matters right from load: a
+         * node's base-layer decode is itself applied as a switch (from no active level to the base one), so
+         * it starts the same cooldown a later switch would — this trigger is what lets the node progress past
+         * that base level promptly once it expires, even at a fixed camera pose.
          */
         private _onLodFrame;
         /**
@@ -10325,6 +10347,7 @@ declare namespace BABYLON {
         private _setAssetContainer;
         private static _computeFBXAxisConversionMatrix;
         private _buildModel;
+        private _linkSkeletonsToTransformNodes;
         private static _modelSubtreeMatchesNameFilter;
         private static _applyModelMetadata;
         private _createMesh;

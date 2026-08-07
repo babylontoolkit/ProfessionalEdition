@@ -1452,6 +1452,13 @@ declare namespace BABYLON {
         /** @internal */
         _pendingData: any[];
         private _isDisposed;
+        /**
+         * @internal
+         * Set to true once scene disposal has begun (it stays true afterwards). Used so that resources released during
+         * teardown (e.g. mesh effects) are freed immediately instead of being deferred to the next frame, which may never
+         * happen once rendering stops.
+         */
+        _isDisposing: boolean;
         private _isReadyChecks;
         /**
          * Gets or sets a boolean indicating that all submeshes of active meshes must be rendered
@@ -3262,9 +3269,17 @@ declare namespace BABYLON {
          */
         set onDispose(callback: () => void);
         /**
-         * An event triggered when the enabled state of the node changes
+         * An event triggered when the enabled state of the node changes.
+         * This only reflects changes to the node's own enabled flag (as set via {@link setEnabled}), not changes inherited from an ancestor.
+         * Use {@link onEffectiveEnabledStateChangedObservable} to also be notified when an ancestor's enabled state changes the effective enabled state.
          */
         get onEnabledStateChangedObservable(): Observable<boolean>;
+        /**
+         * An event triggered when the effective enabled state of the node changes, i.e. whenever the value returned by {@link isEnabled} changes.
+         * Unlike {@link onEnabledStateChangedObservable}, this fires for changes caused by an ancestor's enabled state as well as this node's own state.
+         * The observable is created on first access, so no cost is incurred for nodes that never observe it.
+         */
+        get onEffectiveEnabledStateChangedObservable(): Observable<boolean>;
         /**
          * An event triggered when the node is cloned
          */
@@ -3365,8 +3380,17 @@ declare namespace BABYLON {
          * If the node has a parent, all ancestors will be checked and false will be returned if any are false (not enabled), otherwise will return true
          * @param checkAncestors indicates if this method should check the ancestors. The default is to check the ancestors. If set to false, the method will return the value of this node without checking ancestors
          * @returns whether this node (and its parent) is enabled
+         * @remarks
+         * To observe changes to the value returned when calling this with `checkAncestors` set to true (the default, i.e. the effective enabled state), subscribe to {@link onEffectiveEnabledStateChangedObservable}.
+         * To observe changes to the value returned when calling this with `checkAncestors` set to false (i.e. this node's own enabled state only), subscribe to {@link onEnabledStateChangedObservable}.
          */
         isEnabled(checkAncestors?: boolean): boolean;
+        /**
+         * Whether the effective enabled observable exists and has at least one observer.
+         * Used to skip the extra work of tracking effective enabled transitions when nobody is listening.
+         * @returns true if the effective enabled observable exists and has at least one observer, false otherwise
+         */
+        private _hasEffectiveEnabledStateObservers;
         /** @internal */
         protected _syncParentEnabledState(): void;
         /**
@@ -4023,11 +4047,17 @@ declare namespace BABYLON {
          * `camera.isRightCamera`, so this observer clears both eyes' targets. WebGL providers never attach it,
          * so the WebGL path is unchanged.
          *
-         * The observer mirrors the clear semantics of `Scene._clearFrameBuffer` (minus the right-eye skip): it
-         * only clears when the scene has `autoClear` enabled, clears color at most once per frame (guarded by
-         * `RenderTargetTexture._cleared`, which the scene resets per frame in `_checkCameraRenderTarget`), always
-         * clears depth+stencil, and honors `skipInitialClear`. This keeps the "clear once per RTT per frame"
-         * contract instead of clearing color on every notification.
+         * Color is cleared at most once per ENGINE FRAME, not once per `Scene.render`. The distinction matters:
+         * more than one scene can render the same XR camera within a single XR frame. `UtilityLayerRenderer`
+         * (used by controller pointer selection and near interaction) renders a second scene through the same
+         * rig cameras, and every `Scene.render` resets `RenderTargetTexture._cleared` for those cameras' targets
+         * (`Scene._checkCameraRenderTarget`), so a `_cleared`-based guard is defeated and each eye is re-cleared
+         * after it was drawn — presenting a clear-colored frame with the geometry gone. `AbstractEngine.frameId`
+         * only advances in `endFrame`, once per XR frame, so unlike `_cleared` it cannot be reset by another
+         * scene rendering the same camera.
+         *
+         * Depth and stencil are still cleared on every notification, matching the previous behavior and the
+         * expectations of overlay scenes that draw on top of the main scene.
          * @param renderTargetTexture the per-eye render target to clear each frame
          */
         private _attachPerEyeClearObserver;
@@ -4287,13 +4317,11 @@ declare namespace BABYLON {
         getRenderTargetTextureForView(view: XRView): Nullable<RenderTargetTexture>;
         /**
          * Obtains the XR graphics binding for the current session, creating it lazily.
-         * This is the API-agnostic seam a future non-WebGL backend uses to provide its own binding
-         * (XRWebGLBinding vs a future XRGPUBinding); the XR features are migrated onto it in a later
-         * phase, so it is not consumed yet.
+         * This is the API-agnostic seam used by WebGL and WebGPU XR features to share a binding.
          * @returns the XR graphics binding for the current session
          * @internal
          */
-        _getGraphicsBinding(): IWebXRGraphicsBinding;
+        _getGraphicsBinding(): WebXRGraphicsBinding;
         /**
          * Creates a WebXRRenderTarget object for the XR session
          * @param options optional options to provide when creating a new render target
@@ -4850,11 +4878,7 @@ declare namespace BABYLON {
         WebGPU = 1
     }
     /**
-     * Abstraction over the WebXR graphics binding used to interact with the XR compositor
-     * (XRWebGLBinding today, an XRGPUBinding-based binding for a future WebGPU backend).
-     *
-     * This is introduced as a seam so the XR features can be migrated off the concrete
-     * `XRWebGLBinding` in a later phase without changing behavior today.
+     * Abstraction over the native WebXR graphics binding used to interact with the XR compositor.
      * @internal
      */
     export interface IWebXRGraphicsBinding {
@@ -4869,6 +4893,10 @@ declare namespace BABYLON {
      */
     export class WebXRWebGLGraphicsBinding implements IWebXRGraphicsBinding {
         /**
+         * The WebGL rendering context used by the native binding.
+         */
+        readonly context: WebGLRenderingContext | WebGL2RenderingContext;
+        /**
          * The kind of native binding that is wrapped.
          */
         readonly bindingType = WebXRGraphicsBindingType.WebGL;
@@ -4881,7 +4909,11 @@ declare namespace BABYLON {
          * @param session the XR session the binding is created for
          * @param context the WebGL rendering context to bind to
          */
-        constructor(session: XRSession, context: WebGLRenderingContext | WebGL2RenderingContext);
+        constructor(session: XRSession, 
+        /**
+         * The WebGL rendering context used by the native binding.
+         */
+        context: WebGLRenderingContext | WebGL2RenderingContext);
         /**
          * Creates a new WebGL graphics binding from an engine, extracting its WebGL context.
          * The WebGL-specific context access is localized here so callers can stay graphics-API-agnostic.
@@ -4894,10 +4926,8 @@ declare namespace BABYLON {
     /**
      * WebGPU implementation of {@link IWebXRGraphicsBinding}, wrapping an `XRGPUBinding`.
      *
-     * This is introduced as part of the WebGPU-for-WebXR plumbing and is not consumed yet:
-     * the per-frame layer/sub-image operations are wired up by later phases. The `XRGPUBinding`
-     * requires a WebGPU-compatible XR session (created with the `webgpu` feature descriptor) and a
-     * `GPUDevice` obtained from an `xrCompatible` adapter, otherwise its constructor throws.
+     * The `XRGPUBinding` requires a WebGPU-compatible XR session (created with the `webgpu` feature
+     * descriptor) and a `GPUDevice` obtained from an `xrCompatible` adapter, otherwise its constructor throws.
      * @internal
      */
     export class WebXRWebGPUGraphicsBinding implements IWebXRGraphicsBinding {
@@ -4924,6 +4954,11 @@ declare namespace BABYLON {
          */
         static CreateFromEngine(session: XRSession, engine: AbstractEngine): WebXRWebGPUGraphicsBinding;
     }
+    /**
+     * The graphics bindings supported by the WebXR session manager.
+     * @internal
+     */
+    export type WebXRGraphicsBinding = WebXRWebGLGraphicsBinding | WebXRWebGPUGraphicsBinding;
 
 
     /**
@@ -10362,34 +10397,6 @@ declare namespace BABYLON {
         [jointName in WebXRBodyJoint]?: string;
     };
     /**
-     * Represents the XRBodySpace native interface as defined by the spec.
-     * An XRBodySpace is an XRSpace that additionally exposes a jointName.
-     * @see https://immersive-web.github.io/body-tracking/#xrjointspace-interface
-     */
-    interface XRBodySpace extends XRSpace {
-        readonly jointName: string;
-    }
-    /**
-     * Represents the native XRBody interface as defined by the spec.
-     * An XRBody is an iterable map of XRBodyJoint → XRBodySpace.
-     * @see https://immersive-web.github.io/body-tracking/#xrbody-interface
-     */
-    interface XRBody {
-        readonly size: number;
-        get(key: string): XRBodySpace | undefined;
-        forEach(callbackfn: (value: XRBodySpace, key: string, map: XRBody) => void): void;
-        [Symbol.iterator](): IterableIterator<[string, XRBodySpace]>;
-        entries(): IterableIterator<[string, XRBodySpace]>;
-        keys(): IterableIterator<string>;
-        values(): IterableIterator<XRBodySpace>;
-    }
-   }
-
-        interface XRFrame {
-            body?: XRBody;
-        }
-    declare namespace BABYLON {
-        /**
      * Configuration options for the WebXR body tracking feature.
      */
     export interface IWebXRBodyTrackingOptions {
@@ -11433,6 +11440,12 @@ declare namespace BABYLON {
          * @returns whether or not the feature is compatible in this environment
          */
         isCompatible(): boolean;
+        /**
+         * Disables future automatic attachment when a runtime capability required by the feature is unavailable.
+         * @param warning the specific warning explaining why the feature was disabled
+         * @returns false so feature attach implementations can return the result directly
+         */
+        protected _disableAutoAttach(warning: string): false;
         /**
          * This is used to register callbacks that will automatically be removed when detach is called.
          * @param observable the observable to which the observer will be attached
@@ -13126,6 +13139,27 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export var volumetricLightScatteringPassVertexShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var volumetricLightScatteringPassPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var volumetricLightScatteringPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var tonemapPixelShaderWGSL: {
         name: string;
         shader: string;
@@ -14407,6 +14441,13 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export var pbrClusteredLightingFunctionsWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var pbrBlockSubSurfaceWGSL: {
         name: string;
         shader: string;
@@ -15087,6 +15128,13 @@ declare namespace BABYLON {
 
     /** @internal */
     export var clusteredLightingFunctionsWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var clusteredLightingComputeWGSL: {
         name: string;
         shader: string;
     };
@@ -21471,10 +21519,12 @@ declare namespace BABYLON {
          */
         get voxelDirectionBias(): number;
         set voxelDirectionBias(value: number);
+        private _enabled;
         /**
          * Is the effect enabled
          */
-        enabled: boolean;
+        get enabled(): boolean;
+        set enabled(value: boolean);
         /**
          * The number of directions to sample for the voxel tracing.
          */
@@ -21718,10 +21768,12 @@ declare namespace BABYLON {
         private _outputTexture;
         private _worldScale;
         private _blurParameters;
+        private _enabled;
         /**
          * Is the effect enabled
          */
-        enabled: boolean;
+        get enabled(): boolean;
+        set enabled(value: boolean);
         /**
          * Returns the output texture of the pass.
          * @returns The output texture.
@@ -22230,10 +22282,12 @@ declare namespace BABYLON {
         private _accumulationParams;
         /** Enable the debug view for this pass */
         debugEnabled: boolean;
+        private _enabled;
         /**
          * Is the effect enabled
          */
-        enabled: boolean;
+        get enabled(): boolean;
+        set enabled(value: boolean);
         /**
          * Returns the output texture of the pass.
          * @returns The output texture.
@@ -22939,6 +22993,7 @@ declare namespace BABYLON {
          * @param scene The constructor needs a scene reference to initialize internal components. If "camera" is null a "scene" must be provided
          */
         constructor(name: string, ratio: any, camera: Nullable<Camera>, mesh?: Mesh, samples?: number, samplingMode?: number, engine?: AbstractEngine, reusable?: boolean, scene?: Scene);
+        protected _gatherImports(useWebGPU: boolean, list: Promise<any>[]): void;
         /**
          * Returns the string "VolumetricLightScatteringPostProcess"
          * @returns "VolumetricLightScatteringPostProcess"
@@ -31716,6 +31771,7 @@ declare namespace BABYLON {
         private _body;
         private _transformNode;
         private _ownShape;
+        private _shapeOptions;
         private _manifold;
         private _stepUpSavedManifold;
         private _lastDisplacement;
@@ -31854,6 +31910,22 @@ declare namespace BABYLON {
          * Set shape used for collision
          */
         set shape(value: PhysicsShape);
+        /**
+         * Get the shape options used to build the collision shape
+         */
+        get shapeOptions(): CharacterShapeOptions;
+        /**
+         * Set new shape options and rebuild the collision shape accordingly.
+         * When the options provide an explicit `shape`, it is used directly; otherwise
+         * a capsule is created from the `capsuleHeight` / `capsuleRadius` values. The
+         * resulting shape is assigned through the shape setter, which releases the
+         * previously owned shape.
+         * @param characterShapeOptions character physics shape options
+         * @param preserveFootPosition when true (default), the controller position is adapted so the
+         * world-space foot position (center - up * footOffset) is kept fixed as the height changes; when
+         * false, the position is left unchanged.
+         */
+        setShapeOptions(characterShapeOptions: CharacterShapeOptions, preserveFootPosition?: boolean): void;
         /**
          * Character position
          * @returns Character position
@@ -32515,6 +32587,12 @@ declare namespace BABYLON {
          */
         maxQueryCollectorHits?: number;
         /**
+         * Whether to disable Havok world regions when floating origin mode is enabled.
+         * Set this when the application manages physics precision through its own rebasing system.
+         * Default is false.
+         */
+        disableWorldRegions?: boolean;
+        /**
          * Radius of each floating origin world region.
          * Bodies within this radius of a world region's origin will use that world.
          * Bodies created outside existing regions will create a new region.
@@ -32571,6 +32649,11 @@ declare namespace BABYLON {
          */
         private _worldRegions;
         /**
+         * World regions that may have become empty while removing bodies.
+         * They are released after collision and trigger notifications have completed.
+         */
+        private readonly _worldRegionsPendingRelease;
+        /**
          * Stored gravity value to apply to new world regions.
          */
         private _currentGravity;
@@ -32579,6 +32662,15 @@ declare namespace BABYLON {
          * Bodies within this radius of a world region's origin will use that world.
          */
         private _floatingOriginWorldRadius;
+        /**
+         * Whether Havok world regions are disabled.
+         */
+        private _disableWorldRegions;
+        /**
+         * Whether floating origin world regions are enabled for the current scene.
+         * @returns true when the scene uses floating origin mode and world regions are not disabled
+         */
+        private _areFloatingOriginWorldRegionsEnabled;
         /**
          * Finds an existing world region that contains the given world position,
          * or creates a new world region centered at that position.
@@ -32605,6 +32697,16 @@ declare namespace BABYLON {
          * @returns null if no existing region contains it (does NOT create a new one).
          */
         private _findExistingRegion;
+        /**
+         * Releases a non-default world region when it no longer contains any bodies.
+         * @param worldRegion - The world region to release if empty
+         */
+        private _releaseWorldRegionIfEmpty;
+        /**
+         * Releases world regions that became candidates for removal while bodies were being removed.
+         * This must run after collision and trigger notifications to avoid releasing a world while its native events are being read.
+         */
+        private _releasePendingWorldRegions;
         /**
          * Observable for collision started and collision continued events
          */
@@ -49548,6 +49650,8 @@ declare namespace BABYLON {
         private _startMonitoringTime;
         private _min;
         private _max;
+        private _hasResult;
+        private _hasCurrentValue;
         private _average;
         private _current;
         private _totalValueCount;
@@ -50284,6 +50388,16 @@ declare namespace BABYLON {
          * @internal
          */
         _uploadAsync(data: ArrayBufferView, internalTexture: InternalTexture, options?: IKTX2DecoderOptions & IDecodedData): Promise<void>;
+        /**
+         * Decodes a KTX2 file and returns the decoded data, without uploading it to a texture.
+         * Kept separate from _uploadAsync so consumers that build their own texture (2D array textures, for eg)
+         * can reuse the worker pool, decoder module and url configuration handled here.
+         * @param data defines the KTX2 file content
+         * @param options defines the options to use when decoding
+         * @returns a promise resolved with the decoded data
+         * @internal
+         */
+        _decodeAsync(data: ArrayBufferView, options?: IKTX2DecoderOptions): Promise<IDecodedData>;
         protected _createTexture(data: IDecodedData, internalTexture: InternalTexture, options?: IKTX2DecoderOptions & IDecodedData): void;
         /**
          * Checks if the given data starts with a KTX2 file identifier.
@@ -51886,6 +52000,32 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export enum SerializedFieldType {
+        VALUE = 0,
+        TEXTURE = 1,
+        COLOR3 = 2,
+        FRESNEL_PARAMETERS = 3,
+        VECTOR2 = 4,
+        VECTOR3 = 5,
+        MESH = 6,
+        COLOR_CURVES = 7,
+        COLOR4 = 8,
+        IMAGE_PROCESSING = 9,
+        QUATERNION = 10,
+        CAMERA = 11,
+        MATRIX = 12,
+        VECTOR4 = 13
+    }
+    /** @internal */
+    export interface SerializedPropertyMetadata {
+        type: SerializedFieldType;
+        sourceName: string | undefined;
+    }
+    /** @internal */
+    export type SerializedPropertyMetadataMap = Record<string, SerializedPropertyMetadata>;
+
+
+    /** @internal */
     export interface ICopySourceOptions {
         cloneTexturesOnlyOnce?: boolean;
     }
@@ -51990,14 +52130,14 @@ declare namespace BABYLON {
      * Used by the TC39 decorators, which receive `context.metadata` directly.
      * @internal
      */
-    export function GetDirectStoreFromMetadata(metadata: DecoratorMetadataObject): Record<string, any>;
+    export function GetDirectStoreFromMetadata(metadata: DecoratorMetadataObject): SerializedPropertyMetadataMap;
     /** @internal */
-    export function GetDirectStore(target: any): any;
+    export function GetDirectStore(target: any): SerializedPropertyMetadataMap;
     /**
      * @returns the list of properties flagged as serializable
      * @param target host object
      */
-    export function GetMergedStore(target: any): any;
+    export function GetMergedStore(target: any): SerializedPropertyMetadataMap;
 
 
     /**
@@ -52024,6 +52164,7 @@ declare namespace BABYLON {
     export function serializeAsImageProcessingConfiguration(sourceName?: string): (_value: unknown, context: SerializableContext) => void;
     export function serializeAsQuaternion(sourceName?: string): (_value: unknown, context: SerializableContext) => void;
     export function serializeAsMatrix(sourceName?: string): (_value: unknown, context: SerializableContext) => void;
+    export function serializeAsVector4(sourceName?: string): (_value: unknown, context: SerializableContext) => void;
     /**
      * Decorator used to define property that can be serialized as reference to a camera
      * @param sourceName defines the name of the property to decorate
@@ -56319,6 +56460,7 @@ declare namespace BABYLON {
     }
 
 
+    /** This file must only contain pure code and pure imports */
     /**
      * Class containing static functions to help procedurally build meshes
      */
@@ -56353,6 +56495,8 @@ declare namespace BABYLON {
         CreateCapsule: typeof CreateCapsule;
         CreateText: typeof CreateText;
     };
+
+
 
 
     /**
@@ -68646,6 +68790,18 @@ declare namespace BABYLON {
         shCoeffCount: number;
         positions: Float32Array;
     }
+    /**
+     * Safe-orbit camera limits embedded in a Gaussian Splatting file's metadata (Adobe safe-orbit
+     * extension). Exposed on the loaded mesh via {@link GaussianSplattingMeshBase.safeOrbitCameraLimits}
+     * so consumers can read/apply the limits independently of the scene's active camera — the loader's
+     * automatic application only affects an active ArcRotateCamera at load time.
+     */
+    export interface ISafeOrbitCameraLimits {
+        /** Minimum safe orbit radius (distance from the camera to its target), if the file specifies one. */
+        radiusMin?: number;
+        /** Safe elevation range as `[minElevation, maxElevation]` in radians, if the file specifies one. */
+        elevationMinMax?: [number, number];
+    }
     interface IUpdateOptions {
         flipY?: boolean;
         /** @internal When set, skips reprocessing splats [0, previousVertexCount) and copies from cached arrays instead. */
@@ -68881,6 +69037,13 @@ declare namespace BABYLON {
          * Off by default; intended for performance investigation only.
          */
         static LogSortPerformance: boolean;
+        /**
+         * Safe-orbit camera limits parsed from the source file's metadata, or `null` when the file
+         * carries none. The loader also auto-applies these to an active ArcRotateCamera at load time
+         * (unless `disableAutoCameraLimits` is set); this field exposes the raw values so they can be
+         * applied or tracked regardless of the active camera type. See {@link ISafeOrbitCameraLimits}.
+         */
+        safeOrbitCameraLimits: Nullable<ISafeOrbitCameraLimits>;
         /** @internal */
         _vertexCount: number;
         protected _worker: Nullable<Worker>;
@@ -69648,6 +69811,19 @@ declare namespace BABYLON {
          */
         static Parse(parsedMesh: any, scene: Scene): GaussianSplattingMesh;
     }
+    /**
+     * True when `className` (from `AbstractMesh.getClassName()`) identifies a Gaussian Splatting mesh whose
+     * `position.z` vertex attribute encodes a splat index rather than world-space Z: `"GaussianSplattingMesh"`
+     * (also returned by {@link GaussianSplattingCompoundMesh}, which deliberately does not override
+     * `getClassName()`) and `"GaussianSplattingStream"` (which does override it, to remain distinguishable for
+     * other purposes). Rendering-pipeline code that must treat any Gaussian Splatting mesh differently from an
+     * ordinary mesh (geometry buffer, depth pre-pass, GPU picking, IBL voxelization, snapshot rendering, ...)
+     * should use this instead of a literal string comparison, so a future splat mesh subclass only needs to be
+     * added here once.
+     * @param className the mesh class name to test, e.g. from `AbstractMesh.getClassName()`
+     * @returns true if the class name identifies a Gaussian Splatting mesh
+     */
+    export function IsGaussianSplattingClassName(className: string): boolean;
     /**
      * Register side effects for gaussianSplattingMesh.
      * Safe to call multiple times; only the first call has an effect.
@@ -70742,6 +70918,7 @@ declare namespace BABYLON {
      */
 
 
+    /** This file must only contain pure code and pure imports */
     /**
      * Creates the VertexData for a tiled plane
      * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set/tiled_plane
@@ -70816,8 +70993,16 @@ declare namespace BABYLON {
     export var TiledPlaneBuilder: {
         CreateTiledPlane: typeof CreateTiledPlane;
     };
+    /**
+     * Register side effects for the tiled plane builder.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterTiledPlaneBuilder(): void;
 
 
+
+
+    /** This file must only contain pure code and pure imports */
     /**
      * Creates the VertexData for a tiled box
      * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/creation/set/tiled_box
@@ -70895,6 +71080,13 @@ declare namespace BABYLON {
     export var TiledBoxBuilder: {
         CreateTiledBox: typeof CreateTiledBox;
     };
+    /**
+     * Register side effects for the tiled box builder.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterTiledBoxBuilder(): void;
+
+
 
 
     /**
@@ -77127,6 +77319,16 @@ declare namespace BABYLON {
          * @returns the current updated matrix
          */
         toggleProjectionMatrixHandInPlace(): this;
+        /**
+         * Converts this projection matrix's clip-space depth range from the OpenGL/WebGL convention (NDC z in [-1, 1]) to
+         * the WebGPU/D3D convention (NDC z in [0, 1]) in place, by post-multiplying with the standard half-Z conversion
+         * matrix. This is the same conversion the perspective/orthographic builders apply internally when their
+         * `halfZRange` flag is set; it is exposed here for callers (e.g. the WebXR path) that receive a projection matrix
+         * verbatim from an external source and must range-correct it for a `isNDCHalfZRange` engine.
+         * @internal
+         * @returns the current updated matrix
+         */
+        _convertProjectionToHalfZRangeInPlace(): this;
         /**
          * Creates a matrix from an array
          * Example Playground - https://playground.babylonjs.com/#AV9X17#42
@@ -85251,6 +85453,7 @@ declare namespace BABYLON {
          * | 18 | ALPHA_MIN | Defines that alpha blending is COLOR=MIN(SRC, DEST), ALPHA=MIN(SRC_ALPHA, DEST_ALPHA) |
          * | 19 | ALPHA_MAX | Defines that alpha blending is COLOR=MAX(SRC, DEST), ALPHA=MAX(SRC_ALPHA, DEST_ALPHA) |
          * | 20 | ALPHA_DUAL_SRC0_ADD_SRC1xDST | Defines that alpha blending uses dual source blending and is COLOR=SRC + SRC1 * DEST, ALPHA=DST_ALPHA |
+         * | 21 | ALPHA_REPLACE_COLOR | Defines that alpha blending is COLOR=SRC, ALPHA=SRC_ALPHA + (1 - SRC_ALPHA) * DEST_ALPHA |
          *
          */
         set alphaMode(value: number);
@@ -90278,6 +90481,100 @@ declare namespace BABYLON {
 
 
     /**
+     * These helpers populate 2D array texture layers from decoded image sources.
+     * They rely on the AbstractEngine.updateTextureArrayLayerFromImageSource engine extension, which is
+     * an opt-in side effect. Register it before use by importing the matching module for your backend:
+     * - WebGL2:  import "core/Engines/Extensions/engine.texture2DArrayImageSource";
+     * - WebGPU:  import "core/Engines/WebGPU/Extensions/engine.texture2DArrayImageSource";
+     * (the full Engine build does not register it by default to keep it out of every engine bundle).
+     *
+     * Consuming the result: the built-in way to sample a chosen layer is Node Material's Texture block,
+     * which exposes a `layer` input (feed it a Float) and samples the array at that layer for you — no
+     * custom shader code required. If you instead write your own shader, a `sampler2DArray`
+     * (GLSL) / `texture_2d_array<f32>` (WGSL) uniform and sample it with an explicit integer layer index;
+     * the classic StandardMaterial / PBRMaterial texture slots are plain 2D and cannot read an array layer.
+     */
+    /**
+     * Options controlling how an image source is uploaded into a 2D array texture layer.
+     */
+    export interface IUploadImageToTexture2DArrayLayerOptions {
+        /** Defines if the source must be stored with the Y axis inverted (false by default) */
+        invertY?: boolean;
+        /** Defines if the source alpha must be premultiplied (false by default) */
+        premultiplyAlpha?: boolean;
+    }
+    /**
+     * Options controlling the creation of a 2D array texture from a list of image urls.
+     */
+    export interface ICreateTexture2DArrayFromImageUrlsOptions extends IUploadImageToTexture2DArrayLayerOptions {
+        /** Defines if mip levels should be generated (true by default) */
+        generateMipMaps?: boolean;
+        /** Defines the sampling mode to use (Texture.TRILINEAR_SAMPLINGMODE by default) */
+        samplingMode?: number;
+        /** Defines the texture type (Constants.TEXTURETYPE_UNSIGNED_BYTE by default) */
+        textureType?: number;
+        /** Options forwarded to createImageBitmap when decoding each url */
+        imageBitmapOptions?: ImageBitmapOptions;
+    }
+    /**
+     * Uploads a decoded image source (ImageBitmap, canvas, video, image element...) into a single layer of a 2D array texture.
+     * This is the image-source counterpart to RawTexture2DArray.update, which only accepts raw bytes.
+     * @param texture defines the 2D array texture to upload into
+     * @param source defines the image source to upload
+     * @param layer defines the array layer to upload into
+     * @param options defines optional upload settings (invertY, premultiplyAlpha)
+     */
+    export function UploadImageToTexture2DArrayLayer(texture: RawTexture2DArray, source: ImageSource, layer: number, options?: IUploadImageToTexture2DArrayLayerOptions): void;
+    /**
+     * Fetches an image from a url, decodes it and uploads it into a single layer of a 2D array texture.
+     * @param texture defines the 2D array texture to upload into
+     * @param url defines the url of the image to load
+     * @param layer defines the array layer to upload into
+     * @param options defines optional upload settings (invertY, premultiplyAlpha)
+     * @returns a promise resolved once the layer has been uploaded
+     */
+    export function LoadImageToTexture2DArrayLayerAsync(texture: RawTexture2DArray, url: string, layer: number, options?: IUploadImageToTexture2DArrayLayerOptions): Promise<void>;
+    /**
+     * Options controlling the creation of a 2D array texture from a KTX2 file.
+     */
+    export interface ICreateTexture2DArrayFromKTX2Options {
+        /** Defines if mip levels should be generated (true by default) */
+        generateMipMaps?: boolean;
+        /** Defines the sampling mode to use (Texture.TRILINEAR_SAMPLINGMODE by default) */
+        samplingMode?: number;
+        /** Defines if the texture must be stored with the Y axis inverted (false by default) */
+        invertY?: boolean;
+    }
+    /**
+     * Creates a 2D array texture from a single KTX2 file holding several array layers (layerCount greater than 1).
+     * This is the single-file counterpart to CreateTexture2DArrayFromImageUrlsAsync: rather than fetching one image
+     * per layer, the whole array travels in one container.
+     *
+     * The data is transcoded to uncompressed RGBA. Keeping the texture in its transcoded compressed form would
+     * require compressedTexImage3D support in the engine raw texture path, which does not exist yet, so the
+     * GPU cost here matches a plain RGBA array texture.
+     *
+     * Only the base mip level stored in the file is uploaded; when generateMipMaps is on, the remaining levels are
+     * regenerated by the engine. Uploading the file's own mip chain needs per-mip array uploads, which WebGL's
+     * updateRawTexture2DArray does not support today.
+     * @param scene defines the hosting scene
+     * @param data defines the url of the KTX2 file, or its already fetched content
+     * @param options defines optional creation settings
+     * @returns a promise resolved with the created RawTexture2DArray
+     */
+    export function CreateTexture2DArrayFromKTX2Async(scene: Scene, data: string | ArrayBufferView, options?: ICreateTexture2DArrayFromKTX2Options): Promise<RawTexture2DArray>;
+    /**
+     * Creates a 2D array texture and fills each layer from a list of image urls.
+     * All images must share the same dimensions.
+     * @param scene defines the hosting scene
+     * @param urls defines the url of the image for each layer (at least one)
+     * @param options defines optional creation and upload settings
+     * @returns a promise resolved with the created RawTexture2DArray
+     */
+    export function CreateTexture2DArrayFromImageUrlsAsync(scene: Scene, urls: readonly [string, ...string[]], options?: ICreateTexture2DArrayFromImageUrlsOptions): Promise<RawTexture2DArray>;
+
+
+    /**
      * Class used to store 2D array textures containing user data
      */
     export class RawTexture2DArray extends Texture {
@@ -90946,7 +91243,9 @@ declare namespace BABYLON {
 
     export enum SourceTextureFormat {
         ETC1S = 0,
-        UASTC4x4 = 1
+        UASTC4x4 = 1,
+        /** Uncompressed 8 bits per channel RGBA data, stored as-is in the container (no transcoding required) */
+        RGBA32 = 2
     }
     export enum TranscodeTarget {
         ASTC_4X4_RGBA = 0,
@@ -91041,9 +91340,9 @@ declare namespace BABYLON {
      */
     export interface IDecisionTree {
         /**
-         * textureFormat can be either UASTC or ETC1S
+         * textureFormat can be either UASTC, ETC1S or RGBA32
          */
-        [textureFormat: string]: INode;
+        [textureFormat: string]: INode | ILeaf;
     }
     /**
      * Result of the KTX2 decode function
@@ -91065,8 +91364,13 @@ declare namespace BABYLON {
         /**
          * List of mipmap levels.
          * The first element is the base level, the last element is the smallest mipmap level (if more than one mipmap level is present)
+         * For array textures (layerCount greater than 1), each level contributes layerCount consecutive entries, ordered by layer.
          */
         mipmaps: Array<IMipmap>;
+        /**
+         * Number of array layers of the texture. 1 for a regular (non array) texture
+         */
+        layerCount: number;
         /**
          * Whether the texture data is in gamma space or not
          */
@@ -91100,6 +91404,10 @@ declare namespace BABYLON {
          * The height of the mipmap level
          */
         height: number;
+        /**
+         * The array layer this mipmap level belongs to. 0 for a regular (non array) texture
+         */
+        layerIndex: number;
     }
     /**
      * The compressed texture formats supported by the browser
@@ -100223,6 +100531,13 @@ declare namespace BABYLON {
          */
         serialize(selectedBlocks?: NodeMaterialBlock[]): any;
         private _restoreConnections;
+        private static _DefaultImageProcessingConfigurationSerialized?;
+        /**
+         * Determines whether a parsed image processing configuration only holds default values.
+         * @param configuration the configuration to test
+         * @returns true if the configuration matches a freshly created default configuration
+         */
+        private static _IsDefaultImageProcessingConfiguration;
         /**
          * Clear the current graph and load a new one from a serialization object
          * @param source defines the JSON representation of the material
@@ -129214,6 +129529,18 @@ declare namespace BABYLON {
          */
         static readonly SceneCoordinators: Map<Scene, FlowGraphCoordinator[]>;
         /**
+         * Observable raised when a flow graph is added to any coordinator. Used by the inspector to keep
+         * the flow graph list in sync. The payload is the newly added flow graph.
+         */
+        static get OnFlowGraphAddedObservable(): IReadonlyObservable<FlowGraph>;
+        private static readonly _OnFlowGraphAddedObservable;
+        /**
+         * Observable raised when a flow graph is removed from any coordinator. Used by the inspector to keep
+         * the flow graph list in sync. The payload is the removed flow graph.
+         */
+        static get OnFlowGraphRemovedObservable(): IReadonlyObservable<FlowGraph>;
+        private static readonly _OnFlowGraphRemovedObservable;
+        /**
          * When set to true (default) custom events will be dispatched synchronously.
          * This means that the events will be dispatched immediately when they are triggered.
          */
@@ -129960,6 +130287,19 @@ declare namespace BABYLON {
     export function GetFlowGraphAssetWithType<T extends FlowGraphAssetType>(assetsContext: IAssetContainer, type: T, index: number, useIndexAsUniqueId?: boolean): Nullable<AssetType<T>>;
 
 
+    /**
+     * Interface used to configure the launch of the flow graph editor.
+     */
+    export interface IFlowGraphEditorLaunchOptions {
+        /** Define the URL to load the flow graph editor script from */
+        editorURL?: string;
+        /** Additional configuration forwarded to `FlowGraphEditor.Show()` (e.g. hostScene, hostElement) */
+        flowGraphEditorConfig?: {
+            hostScene?: Scene;
+            hostElement?: HTMLElement;
+            attachToLiveScene?: boolean;
+        };
+    }
     export enum FlowGraphState {
         /**
          * The graph is stopped
@@ -130035,6 +130375,13 @@ declare namespace BABYLON {
          * A unique identifier for this graph. Auto-generated if not provided.
          */
         uniqueId: string;
+        /**
+         * Define the URL to load the flow graph editor script from.
+         */
+        static EditorURL: string;
+        private _BJSFLOWGRAPHEDITOR;
+        /** @returns the flow graph editor from a UMD bundle or the BABYLON global, or undefined if not loaded */
+        private _getGlobalFlowGraphEditor;
         /**
          * An observable that is triggered when the state of the graph changes.
          */
@@ -130182,6 +130529,18 @@ declare namespace BABYLON {
          * @param valueSerializeFunction a function to serialize complex values
          */
         serialize(serializationObject?: any, valueSerializeFunction?: (key: string, value: any, serializationObject: any) => void): void;
+        /**
+         * Launches the flow graph editor for this graph.
+         * The editor is lazy-loaded from {@link FlowGraph.EditorURL} the first time it is used.
+         * @param config defines the configuration of the editor
+         * @returns a promise fulfilled when the editor is visible
+         */
+        edit(config?: IFlowGraphEditorLaunchOptions): Promise<void>;
+        /**
+         * Creates the flow graph editor window.
+         * @param additionalConfig additional configuration forwarded to `FlowGraphEditor.Show()`
+         */
+        private _createFlowGraphEditor;
     }
 
 
@@ -136265,7 +136624,10 @@ declare namespace BABYLON {
          */
         get compatibilityMode(): boolean;
         set compatibilityMode(mode: boolean);
-        /** @internal */
+        /**
+         * Gets the number of samples used by the current render target
+         * @returns the current sample count, or 1 when multisampling is disabled
+         */
         get currentSampleCount(): number;
         /**
          * Create a new instance of the gpu engine asynchronously
@@ -137331,6 +137693,7 @@ declare namespace BABYLON {
         setDepthBuffer(enable: boolean): void;
         private _encodeDepthTest;
         private _flushDepthTestState;
+        applyStates(): void;
         /**
          * Gets a boolean indicating if depth writing is enabled
          * @returns the current depth writing state
@@ -137583,7 +137946,26 @@ declare namespace BABYLON {
             depth: number;
         }, options: boolean | RenderTargetCreationOptions): RenderTargetWrapper;
         createRenderTargetCubeTexture(size: number, options?: RenderTargetCreationOptions): RenderTargetWrapper;
+        createMultipleRenderTarget(size: TextureSize, options: IMultiRenderTargetOptions, _initializeBuffers?: boolean): RenderTargetWrapper;
+        /**
+         * Creates (or recreates) the native framebuffer of a multi render target from the color attachment
+         * textures currently held by the wrapper. bgfx binds a fixed attachment set when a framebuffer is
+         * created and cannot re-point an individual attachment the way GL's framebufferTexture2D can, so the
+         * whole framebuffer has to be recreated whenever an attachment is swapped after creation (e.g. the OIT
+         * depth-peeling renderer replaces every attachment via MultiRenderTarget.setInternalTexture).
+         * @param rtWrapper The multi render target wrapper to build the framebuffer for.
+         * @internal
+         */
+        _createMultiRenderTargetFramebuffer(rtWrapper: NativeRenderTargetWrapper): void;
         generateMipMapsForCubemap(_texture: InternalTexture, _unbind?: boolean): void;
+        bindAttachments(_attachments: number[]): void;
+        buildTextureLayout(textureStatus: boolean[], _backBufferLayout?: boolean): number[];
+        restoreSingleAttachment(): void;
+        restoreSingleAttachmentForRenderTarget(): void;
+        generateMipMapsMultiFramebuffer(_texture: RenderTargetWrapper): void;
+        resolveMultiFramebuffer(_texture: RenderTargetWrapper): void;
+        unBindMultiColorAttachmentFramebuffer(_rtWrapper: RenderTargetWrapper, _disableGenerateMipMaps?: boolean, onBeforeUnbind?: () => void): void;
+        updateMultipleRenderTargetTextureSampleCount(rtWrapper: Nullable<RenderTargetWrapper>, samples: number, _initializeBuffers?: boolean): number;
         updateRenderTargetTextureSampleCount(rtWrapper: RenderTargetWrapper, samples: number): number;
         updateTextureSamplingMode(samplingMode: number, texture: InternalTexture): void;
         bindFramebuffer(texture: RenderTargetWrapper, faceIndex?: number, requiredWidth?: number, requiredHeight?: number, forceFullscreenViewport?: boolean): void;
@@ -140689,6 +141071,10 @@ declare namespace BABYLON {
          * Defines that alpha blending uses dual source blending and is COLOR=SRC + SRC1 * DEST, ALPHA=DST_ALPHA
          */
         static readonly ALPHA_DUAL_SRC0_ADD_SRC1xDST = 20;
+        /**
+         * Defines that alpha blending is COLOR=SRC, ALPHA=SRC_ALPHA + (1 - SRC_ALPHA) * DEST_ALPHA
+         */
+        static readonly ALPHA_REPLACE_COLOR = 21;
         /** Defines that alpha blending equation a SUM */
         static readonly ALPHA_EQUATION_ADD = 0;
         /** Defines that alpha blending equation a SUBSTRACTION */
@@ -144136,7 +144522,7 @@ declare namespace BABYLON {
         createGPUTextureForInternalTexture(texture: InternalTexture, width?: number, height?: number, depth?: number, creationFlags?: number): WebGPUHardwareTexture;
         createMSAATexture(gpuTexture: GPUTexture, format: GPUTextureFormat, samples: number): GPUTexture;
         resolveMSAADepthTexture(msaaTexture: GPUTexture, outputTexture: GPUTexture, commandEncoder?: GPUCommandEncoder): void;
-        updateCubeTextures(imageBitmaps: ImageBitmap[] | Uint8Array[], gpuTexture: GPUTexture, width: number, height: number, format: GPUTextureFormat, invertY?: boolean, premultiplyAlpha?: boolean, offsetX?: number, offsetY?: number): void;
+        updateCubeTextures(imageBitmaps: ImageBitmap[] | Uint8Array[], texture: GPUTexture | InternalTexture, width: number, height: number, format: GPUTextureFormat, invertY?: boolean, premultiplyAlpha?: boolean, offsetX?: number, offsetY?: number): void;
         updateTexture(imageBitmap: ImageBitmap | Uint8Array | ImageData | HTMLImageElement | HTMLVideoElement | VideoFrame | HTMLCanvasElement | OffscreenCanvas, texture: GPUTexture | InternalTexture, width: number, height: number, layers: number, format: GPUTextureFormat, faceIndex?: number, mipLevel?: number, invertY?: boolean, premultiplyAlpha?: boolean, offsetX?: number, offsetY?: number, allowGPUOptimization?: boolean): void;
         updateMipLevelCountForInternalTexture(texture: InternalTexture, mipLevelCount?: number): void;
         readPixels(texture: GPUTexture, x: number, y: number, width: number, height: number, format: GPUTextureFormat, faceIndex?: number, mipLevel?: number, buffer?: Nullable<ArrayBufferView>, noDataConversion?: boolean): Promise<ArrayBufferView>;
@@ -144472,6 +144858,16 @@ declare namespace BABYLON {
     export class WebGPURenderTargetWrapper extends RenderTargetWrapper {
         /** @internal */
         _defaultAttachments: number[];
+        /**
+         * When true, the engine skips its render-target Y-flip when drawing into this target: it binds the
+         * non-inverting internals UBO (yFactor = +1) and keeps the main-framebuffer front-face winding, exactly
+         * as if rendering to the canvas. This is set for XR projection-layer targets, whose textures are handed
+         * directly to the XR compositor (top-left origin, presented as-is, never re-sampled by Babylon) and must
+         * therefore be rendered upright. Defaults to false so every other render target keeps the standard flip
+         * that keeps a later-sampled RTT consistent with the WebGL texture-space convention.
+         * @internal
+         */
+        _disableEngineYFlip: boolean;
         /**
          * Gets the GPU time spent rendering this render target in the last frame (in nanoseconds).
          * You have to enable the "timestamp-query" extension in the engine constructor options and set engine.enableGPUTimingMeasurements = true.
@@ -145933,6 +146329,21 @@ declare namespace BABYLON {
      */
 
 
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Register side effects for enginesWebGPUExtensionsEngineTexture2DArrayImageSource.
+     * Adds AbstractEngine.updateTextureArrayLayerFromImageSource on the WebGPU engine.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEnginesWebGPUExtensionsEngineTexture2DArrayImageSource(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import engine.texture2DArrayImageSource.pure for tree-shakeable, side-effect-free usage.
+     */
+
+
         interface AbstractEngine {
             /**
              * Sets a depth stencil texture from a render target to the according uniform.
@@ -146461,6 +146872,35 @@ declare namespace BABYLON {
     /**
      * Re-exports pure implementation and applies runtime side effects.
      * Import engine.computeShader.pure for tree-shakeable, side-effect-free usage.
+     */
+
+
+        /** Adds alpha-to-coverage support to ThinWebGPUEngine. */
+        interface ThinWebGPUEngine {
+            /**
+             * Gets a boolean indicating if alpha-to-coverage is enabled.
+             * @returns true if alpha-to-coverage is enabled
+             */
+            getAlphaToCoverage(): boolean;
+            /**
+             * Enable or disable alpha-to-coverage.
+             * @param enable defines the state to set
+             */
+            setAlphaToCoverage(enable: boolean): void;
+        }
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Registers alpha-to-coverage support for WebGPU engines.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEnginesWebGPUExtensionsEngineAlphaToCoverage(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import engine.alphaToCoverage.pure for tree-shakeable, side-effect-free usage.
      */
 
 
@@ -147247,6 +147687,7 @@ declare namespace BABYLON {
         get _framebufferDepthStencil(): Nullable<NativeFramebuffer>;
         set _framebufferDepthStencil(framebufferDepthStencil: Nullable<NativeFramebuffer>);
         constructor(isMulti: boolean, isCube: boolean, size: TextureSize, engine: ThinNativeEngine);
+        setTexture(texture: InternalTexture, index?: number, disposePrevious?: boolean): void;
         dispose(disposeOnlyFramebuffers?: boolean): void;
     }
 
@@ -147609,6 +148050,7 @@ declare namespace BABYLON {
         createImageBitmap(data: ArrayBuffer | IImage): ImageBitmap;
         resizeImageBitmap(image: ImageBitmap, bufferWidth: number, bufferHeight: number): Uint8Array;
         createFrameBuffer(texture: Nullable<NativeTexture>, width: number, height: number, generateStencilBuffer: boolean, generateDepthBuffer: boolean, samples: number, layer?: number): NativeFramebuffer;
+        createMultiFrameBuffer?(textures: NativeTexture[], width: number, height: number, generateStencilBuffer: boolean, generateDepthBuffer: boolean, samples: number): NativeFramebuffer;
         getRenderWidth(): number;
         getRenderHeight(): number;
         setHardwareScalingLevel(level: number): void;
@@ -147760,10 +148202,13 @@ declare namespace BABYLON {
         readonly ALPHA_MULTIPLY: number;
         readonly ALPHA_MAXIMIZED: number;
         readonly ALPHA_ONEONE: number;
+        readonly ALPHA_ONEONE_ONEONE?: number;
+        readonly ALPHA_LAYER_ACCUMULATE?: number;
         readonly ALPHA_PREMULTIPLIED: number;
         readonly ALPHA_PREMULTIPLIED_PORTERDUFF: number;
         readonly ALPHA_INTERPOLATE: number;
         readonly ALPHA_SCREENMODE: number;
+        readonly ALPHA_REPLACE_COLOR?: number;
         readonly STENCIL_TEST_LESS: number;
         readonly STENCIL_TEST_LEQUAL: number;
         readonly STENCIL_TEST_EQUAL: number;
@@ -148219,6 +148664,40 @@ declare namespace BABYLON {
     /** This file must only contain pure code and pure imports */
 
 
+
+
+        /**
+         * Engine methods that upload decoded image sources into 2D array texture layers.
+         */
+        interface AbstractEngine {
+            /**
+             * Uploads an image source (ImageBitmap, canvas, video, image element...) into a single layer of a 2D array texture.
+             * Unlike updateRawTexture2DArray, which uploads raw bytes, this uploads a decoded image source directly.
+             * This is a side-effect engine extension: import "core/Engines/Extensions/engine.texture2DArrayImageSource"
+             * (or the WebGPU counterpart) to make it available on the tree-shakeable engine path.
+             * @param texture defines the 2D array texture to update
+             * @param source defines the image source to upload
+             * @param layer defines the array layer (z index) to upload into
+             * @param invertY defines if the source must be stored with the Y axis inverted (false by default)
+             * @param premultiplyAlpha defines if the source alpha must be premultiplied (false by default)
+             */
+            updateTextureArrayLayerFromImageSource(texture: InternalTexture, source: ImageSource, layer: number, invertY?: boolean, premultiplyAlpha?: boolean): void;
+        }
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Register side effects for enginesExtensionsEngineTexture2DArrayImageSource.
+     * Adds AbstractEngine.updateTextureArrayLayerFromImageSource on the WebGL2 engine.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEnginesExtensionsEngineTexture2DArrayImageSource(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import engine.texture2DArrayImageSource.pure for tree-shakeable, side-effect-free usage.
+     */
 
 
         interface AbstractEngine {
@@ -149030,6 +149509,40 @@ declare namespace BABYLON {
     /**
      * Re-exports pure implementation and applies runtime side effects.
      * Import engine.computeShader.pure for tree-shakeable, side-effect-free usage.
+     */
+
+
+        /** Adds alpha-to-coverage support to ThinEngine. */
+        interface ThinEngine {
+            /**
+             * Gets a boolean indicating if alpha-to-coverage is enabled.
+             * @returns true if alpha-to-coverage is enabled
+             */
+            getAlphaToCoverage(): boolean;
+            /**
+             * Enable or disable alpha-to-coverage.
+             * @param enable defines the state to set
+             */
+            setAlphaToCoverage(enable: boolean): void;
+            /**
+             * Gets the number of samples used by the current render target.
+             * @returns the current sample count, or 1 when multisampling is disabled
+             */
+            readonly currentSampleCount: int;
+        }
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Registers alpha-to-coverage support for WebGL engines.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterEnginesExtensionsEngineAlphaToCoverage(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import engine.alphaToCoverage.pure for tree-shakeable, side-effect-free usage.
      */
 
 
@@ -163847,6 +164360,8 @@ declare namespace BABYLON {
         set currentTime(value: number);
         get _outNode(): Nullable<AudioNode>;
         /** @internal */
+        set loop(value: boolean);
+        /** @internal */
         get startTime(): number;
         /** @internal */
         dispose(): void;
@@ -163958,6 +164473,8 @@ declare namespace BABYLON {
         set currentTime(value: number);
         get _outNode(): Nullable<AudioNode>;
         /** @internal */
+        set loop(value: boolean);
+        /** @internal */
         set loopStart(value: number);
         /** @internal */
         set loopEnd(value: number);
@@ -163991,12 +164508,28 @@ declare namespace BABYLON {
         private _stereo;
         protected _subGraph: _WebAudioBusAndSoundSubGraph;
         protected _webAudioNode: Nullable<AudioNode>;
+        private _mediaStreamAudioElement;
+        private _stopMediaStreamTracksOnDispose;
         /** @internal */
         _audioContext: AudioContext | OfflineAudioContext;
         /** @internal */
         readonly engine: _WebAudioEngine;
         /** @internal */
         constructor(name: string, webAudioNode: AudioNode, engine: _WebAudioEngine, options: Partial<ISoundSourceOptions>);
+        /**
+         * Keeps a `MediaStream`-backed source audible by attaching the stream to a hidden, muted audio element.
+         *
+         * Some browsers (notably Chromium) only deliver samples from a `MediaStreamAudioSourceNode` while its `MediaStream`
+         * is also being pulled by an `HTMLMediaElement`; without this, a remote WebRTC stream routed through Web Audio is
+         * silent and cannot be spatialized. The element is muted so it does not add a second, non-spatial playback.
+         * @param mediaStream - the `MediaStream` backing this sound source
+         */
+        private _attachMediaStreamSink;
+        /**
+         * Starts best-effort playback of the muted keep-alive media element.
+         * @param mediaElement - the muted media element pulling the source `MediaStream`
+         */
+        private _startMediaStreamSinkAsync;
         /** @internal */
         _initAsync(options: Partial<ISoundSourceOptions>): Promise<void>;
         /** @internal */
@@ -165271,6 +165804,32 @@ declare namespace BABYLON {
          * Whether the sound's `outBus` should default to the audio engine's main bus. Defaults to `true` for all sound sources except microphones.
          */
         outBusAutoDefault: boolean;
+        /**
+         * Whether a `MediaStream`-backed sound source (for example, a `MediaStreamAudioSourceNode` created from a remote
+         * WebRTC stream) is automatically kept audible by attaching its `MediaStream` to a hidden, muted `HTMLAudioElement`.
+         * Defaults to `true`.
+         *
+         * Some browsers (notably Chromium) only deliver audio samples from a `MediaStreamAudioSourceNode` while the
+         * underlying `MediaStream` is also being pulled by an `HTMLMediaElement`. Without this, a remote WebRTC stream routed
+         * through the Web Audio graph is silent and therefore cannot be heard or spatialized. The attached element is muted
+         * so it does not add a second, non-spatial playback of the stream.
+         *
+         * Set this to `false` if you are already routing the same `MediaStream` through your own `HTMLMediaElement`, to avoid
+         * creating a redundant one. Has no effect for sources that are not backed by a `MediaStreamAudioSourceNode`.
+         */
+        mediaStreamSinkEnabled: boolean;
+        /**
+         * Whether disposing the sound source stops the tracks of its backing `MediaStream` (via `MediaStreamTrack.stop()`).
+         * Defaults to `false`.
+         *
+         * When the `MediaStream` is owned by the caller (for example, a remote WebRTC stream), stopping its tracks on dispose
+         * would permanently end them and could not be resumed without renegotiation, so the sound source leaves the stream
+         * lifecycle to the caller by default. The microphone source enables this so it releases the capture device it owns.
+         *
+         * Set this to `true` if the sound source should own and stop the stream's tracks when disposed. Has no effect for
+         * sources that are not backed by a `MediaStreamAudioSourceNode`.
+         */
+        stopMediaStreamTracksOnDispose: boolean;
     }
     /**
      * Abstract class representing a sound in the audio engine.
@@ -165328,6 +165887,8 @@ declare namespace BABYLON {
         protected constructor(sound: AbstractSound);
         abstract currentTime: number;
         abstract readonly startTime: number;
+        /** @internal */
+        abstract set loop(value: boolean);
         /** The playback state of the sound instance */
         get state(): SoundState;
         /** @internal */
@@ -171542,9 +172103,39 @@ interface XRFrame {
      * @param referenceSpace
      */
     getViewerPose(referenceSpace: XRReferenceSpace): XRViewerPose | undefined;
+
+    /**
+     * The tracked body for this frame, when the body tracking feature is enabled.
+     * ref: https://immersive-web.github.io/body-tracking/#xrframe-interface
+     */
+    body?: XRBody;
 }
 
 declare abstract class XRFrame implements XRFrame {}
+
+/**
+ * Represents the XRBodySpace native interface as defined by the spec.
+ * An XRBodySpace is an XRSpace that additionally exposes a jointName.
+ * ref: https://immersive-web.github.io/body-tracking/#xrjointspace-interface
+ */
+interface XRBodySpace extends XRSpace {
+    readonly jointName: string;
+}
+
+/**
+ * Represents the native XRBody interface as defined by the spec.
+ * An XRBody is an iterable map of XRBodyJoint to XRBodySpace.
+ * ref: https://immersive-web.github.io/body-tracking/#xrbody-interface
+ */
+interface XRBody {
+    readonly size: number;
+    get(key: string): XRBodySpace | undefined;
+    forEach(callbackfn: (value: XRBodySpace, key: string, map: XRBody) => void): void;
+    [Symbol.iterator](): IterableIterator<[string, XRBodySpace]>;
+    entries(): IterableIterator<[string, XRBodySpace]>;
+    keys(): IterableIterator<string>;
+    values(): IterableIterator<XRBodySpace>;
+}
 
 /**
  * Type of XR events available
@@ -172586,8 +173177,7 @@ interface EXT_disjoint_timer_query {
 
 interface WebGLProgram {
     __SPECTOR_rebuildProgram?:
-        | ((vertexSourceCode: string, fragmentSourceCode: string, onCompiled: (program: WebGLProgram) => void, onError: (message: string) => void) => void)
-        | null;
+        ((vertexSourceCode: string, fragmentSourceCode: string, onCompiled: (program: WebGLProgram) => void, onError: (message: string) => void) => void) | null;
 }
 
 interface WebGLUniformLocation {

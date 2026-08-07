@@ -1422,6 +1422,14 @@ declare namespace ADDONS {
          * Default is false
          */
         ignoreDepthBuffer: boolean;
+        /**
+         * Gets or sets if the text renderer should write to the depth buffer (default is false).
+         * When enabled, transparent pixels are discarded so that separate text renderers (and other meshes)
+         * occlude each other according to their position in the 3D scene instead of their render order.
+         * On multisampled framebuffers, alpha-to-coverage is used to preserve anti-aliased edges.
+         * This has no effect when ignoreDepthBuffer is true.
+         */
+        writeToDepthBuffer: boolean;
         private constructor();
         private _resizeBuffers;
         private _setShaders;

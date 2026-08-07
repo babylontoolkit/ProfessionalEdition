@@ -5715,6 +5715,7 @@ declare namespace BABYLON.GUI {
         protected _getTypeName(): string;
         _draw(context: BABYLON.ICanvasRenderingContext): void;
         _measure(): void;
+        protected _preMeasure(parentMeasure: Measure): void;
         _layout(parentMeasure: Measure, context: BABYLON.ICanvasRenderingContext): boolean;
         protected _computeAlignment(parentMeasure: Measure): void;
         /**
