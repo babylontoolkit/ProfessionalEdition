@@ -305,7 +305,7 @@ public static class RenderPathTools
     private static List<RenderPipelineAsset> CollectConfiguredURPAssets()
     {
         var assets = new List<RenderPipelineAsset>();
-        var seen = new HashSet<int>();
+        var seen = new HashSet<RenderPipelineAsset>();
 
         AddURPAsset(GraphicsSettings.defaultRenderPipeline, assets, seen);
         AddURPAsset(QualitySettings.renderPipeline, assets, seen);
@@ -328,11 +328,13 @@ public static class RenderPathTools
         return assets;
     }
 
-    private static void AddURPAsset(RenderPipelineAsset asset, List<RenderPipelineAsset> assets, HashSet<int> seen)
+    // Deduplicate on the asset reference itself rather than GetInstanceID(), which Unity 6
+    // marks obsolete in favour of GetEntityId() - a member that does not exist on 2022.3.
+    private static void AddURPAsset(RenderPipelineAsset asset, List<RenderPipelineAsset> assets, HashSet<RenderPipelineAsset> seen)
     {
         if (asset == null) return;
         if (!HasURPRendererData(asset)) return;
-        if (!seen.Add(asset.GetInstanceID())) return;
+        if (!seen.Add(asset)) return;
         assets.Add(asset);
     }
 
@@ -477,7 +479,7 @@ public static class RenderPathTools
     private static int ApplyRendererPathChanges(List<RendererPathChange> changes)
     {
         int changed = 0;
-        var dirtyAssets = new HashSet<int>();
+        var dirtyAssets = new HashSet<RenderPipelineAsset>();
 
         foreach (var change in changes)
         {
@@ -492,7 +494,7 @@ public static class RenderPathTools
             if (!WriteRenderingMode(change.rendererData, desiredEnumName)) continue;
 
             EditorUtility.SetDirty(change.rendererData);
-            if (dirtyAssets.Add(change.owner.GetInstanceID()))
+            if (dirtyAssets.Add(change.owner))
             {
                 EditorUtility.SetDirty(change.owner);
             }
