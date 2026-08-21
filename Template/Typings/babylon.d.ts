@@ -4010,6 +4010,9 @@ declare namespace BABYLON {
      * @internal
      */
     export abstract class WebXRWebGPURenderTargetTextureProvider extends WebXRLayerRenderTargetTextureProvider {
+        protected readonly _xrSessionManager: WebXRSessionManager;
+        private readonly _transparentClearColor;
+        constructor(_xrSessionManager: WebXRSessionManager, layerWrapper: WebXRLayerWrapper);
         private get _webgpuEngine();
         private _wrapColorTexture;
         private _wrapDepthTexture;
@@ -4055,6 +4058,11 @@ declare namespace BABYLON {
          * after it was drawn — presenting a clear-colored frame with the geometry gone. `AbstractEngine.frameId`
          * only advances in `endFrame`, once per XR frame, so unlike `_cleared` it cannot be reset by another
          * scene rendering the same camera.
+         *
+         * In immersive AR, color is cleared to transparent when `WebXRExperienceHelper` disables
+         * `Scene.autoClear`. WebGL XR framebuffers are cleared to transparent by the user agent, but WebGPU render
+         * passes require the application to request that clear explicitly. Skipping it leaves pixels from prior
+         * frames in passthrough regions, producing trails behind moving objects.
          *
          * Depth and stencil are still cleared on every notification, matching the previous behavior and the
          * expectations of overlay scenes that draw on top of the main scene.
@@ -4974,6 +4982,11 @@ declare namespace BABYLON {
          */
         disableAutoAttach: boolean;
         /**
+         * The auto-attach policy in effect before the features manager starts a manual attachment.
+         * @internal
+         */
+        _autoAttachPolicyBeforeAttach?: boolean;
+        /**
          * Attach the feature to the session
          * Will usually be called by the features manager
          *
@@ -5356,6 +5369,21 @@ declare namespace BABYLON {
          */
         _extendXRSessionInitObject(xrSessionInit: XRSessionInit): Promise<XRSessionInit>;
     }
+
+
+    /**
+     * Records that a feature used the warning-emitting intentional-disable path.
+     * @param feature the feature that reported its intentional disable
+     * @internal
+     */
+    export function _MarkWebXRFeatureWithSpecificDisableWarning(feature: IWebXRFeature): void;
+    /**
+     * Clears and returns whether a feature used the warning-emitting intentional-disable path.
+     * @param feature the feature to query
+     * @returns whether the feature reported its intentional disable since the previous query
+     * @internal
+     */
+    export function _ConsumeWebXRFeatureSpecificDisableWarning(feature: IWebXRFeature): boolean;
 
 
     /**
@@ -7053,7 +7081,6 @@ declare namespace BABYLON {
          * The space warp provider
          */
         spaceWarpRTTProvider: Nullable<WebXRSpaceWarpRenderTargetTextureProvider>;
-        private _glContext;
         private _xrWebGLBinding;
         private _renderTargetTexture;
         private _onAfterRenderObserver;
@@ -7900,7 +7927,7 @@ declare namespace BABYLON {
          * Note about making it private - this function will be exposed once I decide on a proper API to support all of the XR layers' options
          * @param options an object providing configuration options for the new XRQuadLayer.
          * @param babylonTexture the texture to display in the layer
-         * @returns the quad layer
+         * @returns the quad layer, or null when the WebGPU binding lacks quad-layer support
          */
         private _createQuadLayer;
         /**
@@ -7909,20 +7936,20 @@ declare namespace BABYLON {
          * Note that no interaction will be available with the ADT when using this method
          * @param texture the texture to display in the layer
          * @param options optional parameters for the layer
-         * @returns a composition layer containing the texture
+         * @returns a composition layer containing the texture, or null when WebGPU quad layers are unavailable
          */
         addFullscreenAdvancedDynamicTexture(texture: DynamicTexture, options?: {
             distanceFromHeadset: number;
-        }): WebXRCompositionLayerWrapper;
+        }): Nullable<WebXRCompositionLayerWrapper>;
         /**
          * @experimental
          * This functions allows you to add a lens flare system to the XR scene.
          * Note - this will remove the lens flare system from the scene and add it to the XR scene.
          * This feature is experimental and might change in the future.
          * @param flareSystem the flare system to add
-         * @returns a composition layer containing the flare system
+         * @returns a composition layer containing the flare system, or null when WebGPU quad layers are unavailable
          */
-        protected _addLensFlareSystem(flareSystem: LensFlareSystem): WebXRCompositionLayerWrapper;
+        protected _addLensFlareSystem(flareSystem: LensFlareSystem): Nullable<WebXRCompositionLayerWrapper>;
         /**
          * Add a new layer to the already-existing list of layers
          * @param wrappedLayer the new layer to add to the existing ones
@@ -8958,7 +8985,12 @@ declare namespace BABYLON {
         private _cachedDepthBuffer;
         private _cachedWebGLTexture;
         private _cachedDepthImageTexture;
+        private _cachedDepthImageTextureWrapsExternalTexture;
+        private _cpuDepthViewStates;
+        private _disableAutoAttachBeforeWebGPUGPUDepth;
+        private _disabledForWebGPUGPUDepth;
         private _onCameraObserver;
+        private _onSessionEndedObserver;
         /**
          * Width of depth data. If depth data is not exist, returns null.
          */
@@ -9036,6 +9068,8 @@ declare namespace BABYLON {
         dispose(): void;
         protected _onXRFrame(_xrFrame: XRFrame): void;
         private _updateDepthInformationAndTextureCPUDepthUsage;
+        private _clearCPUDepthBinding;
+        private _bindCPUDepthView;
         private _updateDepthInformationAndTextureWebGLDepthUsage;
         /**
          * Extends the session init object if needed
@@ -11380,6 +11414,7 @@ declare namespace BABYLON {
     export abstract class WebXRAbstractFeature implements IWebXRFeature {
         protected _xrSessionManager: WebXRSessionManager;
         private _attached;
+        private _disableAutoAttachWarningEmitted;
         private _removeOnDetach;
         /**
          * Is this feature disposed?
@@ -11389,6 +11424,8 @@ declare namespace BABYLON {
          * Should auto-attach be disabled?
          */
         disableAutoAttach: boolean;
+        /** @internal */
+        _autoAttachPolicyBeforeAttach?: boolean;
         protected _xrNativeFeatureName: string;
         /**
          * The name of the native xr feature name (like anchor, hit-test, or hand-tracking)
@@ -11493,13 +11530,7 @@ declare namespace BABYLON {
      * Mirrors {@link WebXRCompositionLayerWrapper} for WebGPU.
      * @internal
      */
-    export class WebXRWebGPUCompositionLayerWrapper extends WebXRLayerWrapper {
-        getWidth: () => number;
-        getHeight: () => number;
-        readonly layer: XRCompositionLayer;
-        readonly layerType: WebXRLayerType;
-        readonly isMultiview: boolean;
-        createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider;
+    export class WebXRWebGPUCompositionLayerWrapper extends WebXRCompositionLayerWrapper {
         constructor(getWidth: () => number, getHeight: () => number, layer: XRCompositionLayer, layerType: WebXRLayerType, isMultiview: boolean, createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider);
     }
     /**
@@ -11509,7 +11540,6 @@ declare namespace BABYLON {
      * @internal
      */
     export class WebXRWebGPUCompositionLayerRenderTargetTextureProvider extends WebXRWebGPURenderTargetTextureProvider {
-        protected readonly _xrSessionManager: WebXRSessionManager;
         protected readonly _xrGPUBinding: XRGPUBinding;
         readonly layerWrapper: WebXRWebGPUCompositionLayerWrapper;
         protected readonly _depthStencilFormat?: GPUTextureFormat | undefined;
@@ -13909,6 +13939,20 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export var fsr1UpscalePixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fsr1SharpenPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var fluidRenderingStandardBlurPixelShaderWGSL: {
         name: string;
         shader: string;
@@ -15085,6 +15129,13 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export var ffxFunctionsWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var diffusionProfileWGSL: {
         name: string;
         shader: string;
@@ -16129,6 +16180,20 @@ declare namespace BABYLON {
 
     /** @internal */
     export var fxaaPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fsr1UpscalePixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var fsr1SharpenPixelShader: {
         name: string;
         shader: string;
     };
@@ -17403,6 +17468,13 @@ declare namespace BABYLON {
 
     /** @internal */
     export var fibonacci: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var ffxFunctions: {
         name: string;
         shader: string;
     };
@@ -24024,6 +24096,71 @@ declare namespace BABYLON {
 
 
     /**
+     * Edge Adaptive Spatial Upsampling (EASU) post-process used by FSR 1
+     */
+    export class ThinFSR1UpscalePostProcess extends EffectWrapper {
+        /**
+         * The fragment shader URL
+         */
+        static readonly FragmentUrl = "fsr1Upscale";
+        /**
+         * The list of uniforms used by the effect
+         */
+        static readonly Uniforms: string[];
+        /**
+         * Creates a new FSR 1 upscale post process
+         * @param name Name of the effect
+         * @param engine Engine to use to render the effect. If not provided, the last created engine will be used
+         * @param options Options to configure the effect
+         */
+        constructor(name: string, engine?: Nullable<AbstractEngine>, options?: EffectWrapperCreationOptions);
+        protected _gatherImports(useWebGPU: boolean | undefined, list: Promise<any>[]): void;
+        /**
+         * Sets the required constant values on the effect. Plain uniforms are used (rather than a uniform
+         * buffer) so this works on every backend, including Babylon Native, which disables uniform buffers.
+         * @param effect The effect to set the constants on (typically the one provided by onApplyObservable).
+         * @param viewportWidth The rendered input width being upscaled
+         * @param viewportHeight The rendered input height being upscaled
+         * @param inputWidth The width of the texture containing the input viewport
+         * @param inputHeight The height of the texture containing the input viewport
+         * @param outputWidth The display width which the input image gets upscaled to
+         * @param outputHeight The display height which the input image gets upscaled to
+         */
+        updateConstants(effect: Effect, viewportWidth: number, viewportHeight: number, inputWidth: number, inputHeight: number, outputWidth: number, outputHeight: number): void;
+    }
+
+
+    /**
+     * Robust Contrast Adaptive Sharpening (RCAS) post-process used by FSR 1
+     */
+    export class ThinFSR1SharpenPostProcess extends EffectWrapper {
+        /**
+         * The fragment shader URL
+         */
+        static readonly FragmentUrl = "fsr1Sharpen";
+        /**
+         * The list of uniforms used by the effect
+         */
+        static readonly Uniforms: string[];
+        /**
+         * Creates a new FSR 1 sharpen post process
+         * @param name Name of the effect
+         * @param engine Engine to use to render the effect. If not provided, the last created engine will be used
+         * @param options Options to configure the effect
+         */
+        constructor(name: string, engine?: Nullable<AbstractEngine>, options?: EffectWrapperCreationOptions);
+        protected _gatherImports(useWebGPU: boolean | undefined, list: Promise<any>[]): void;
+        /**
+         * Sets the required constant value on the effect. Plain uniforms are used (rather than a uniform
+         * buffer) so this works on every backend, including Babylon Native, which disables uniform buffers.
+         * @param effect The effect to set the constant on (typically the one provided by onApplyObservable).
+         * @param sharpness The number of stops (halving) of the reduction of sharpness (0 = maximum sharpness)
+         */
+        updateConstants(effect: Effect, sharpness: number): void;
+    }
+
+
+    /**
      * Post process used to extract highlights.
      */
     export class ThinExtractHighlightsPostProcess extends EffectWrapper {
@@ -28912,6 +29049,85 @@ declare namespace BABYLON {
 
 
 
+
+
+    /**
+     * FidelityFX Super Resolution (FSR) 1 render pipeline.
+     * This can be used to render the scene at a lower resolution and upscale it.
+     */
+    export class FSR1RenderingPipeline extends PostProcessRenderPipeline {
+        /**
+         * AMD's recommended `scaleFactor` for an "Ultra Quality" preset (equal to 1.3)
+         */
+        static readonly SCALE_ULTRA_QUALITY = 1.3;
+        /**
+         * AMD's recommended `scaleFactor` for a "Quality" preset (equal to 1.5)
+         */
+        static readonly SCALE_QUALITY = 1.5;
+        /**
+         * AMD's recommended `scaleFactor` for a "Balanced" preset (equal to 1.7)
+         */
+        static readonly SCALE_BALANCED = 1.7;
+        /**
+         * AMD's recommended `scaleFactor` for a "Performance" preset (equal to 2)
+         */
+        static readonly SCALE_PERFORMANCE = 2;
+        private readonly _scene;
+        /**
+         * Returns true if FSR is supported by the running hardware
+         */
+        get isSupported(): boolean;
+        private _samples;
+        /**
+         * MSAA sample count (default: 4).
+         * Disabling MSAA is not recommended since aliased edges will be exaggerated by the FSR pass.
+         * Always have at least one AA solution enabled, whether that be MSAA with this setting or a post-process effect like FXAA or TAA.
+         */
+        get samples(): number;
+        set samples(samples: number);
+        private _scaleFactor;
+        /**
+         * How much smaller to render the scene at (default: 1.5).
+         * For example, a value of 2 will render the scene at half resolution.
+         */
+        get scaleFactor(): number;
+        set scaleFactor(factor: number);
+        private _sharpnessStops;
+        /**
+         * The number of stops (halving) of the reduction of sharpness (default: 0.2).
+         * A value of 0 indicates a maximum sharpness.
+         */
+        get sharpnessStops(): number;
+        set sharpnessStops(stops: number);
+        /**
+         * The FSR upscale PostProcess ID in the pipeline
+         */
+        FSR1UpscaleEffect: string;
+        private readonly _thinUpscalePostProcess;
+        private _upscalePostProcess;
+        /**
+         * The FSR sharpen PostProcess ID in the pipeline
+         */
+        FSR1SharpenEffect: string;
+        private readonly _thinSharpenPostProcess;
+        private _sharpenPostProcess;
+        /**
+         * Creates a new FSR 1 rendering pipeline
+         * @param name The rendering pipeline name
+         * @param scene The scene linked to this pipeline
+         * @param cameras The array of cameras that the rendering pipeline will be attached to (default: scene.cameras)
+         */
+        constructor(name: string, scene: Scene, cameras?: Camera[]);
+        private _buildPipeline;
+        /**
+         * Disposes of the pipeline
+         */
+        dispose(): void;
+        private _createUpscalePostProcess;
+        private _disposeUpscalePostProcess;
+        private _createSharpenPostProcess;
+        private _disposeSharpenPostProcess;
+    }
 
 
     type DefaultRenderingPipelineParseType = typeof DefaultRenderingPipelineParse;
@@ -38145,9 +38361,45 @@ declare namespace BABYLON {
          * @returns the current particle system
          */
         addColorGradient(gradient: number, color1: Color4, color2?: Color4): GPUParticleSystem;
+        /**
+         * Resyncs the color gradient state after a change.
+         * @param reorder true to re-sort the gradient list by position
+         * @returns true when the existing lookup texture was re-baked in place (value-only change — nothing to
+         * release, the live particle pool survives), false when the change is structural (family emptied, color2 row
+         * layout flipped, or no texture yet) and the caller must release the buffers; in that case the outdated
+         * texture is disposed for lazy recreation.
+         */
         private _refreshColorGradient;
-        /** Force the system to rebuild all gradients that need to be resync */
+        /**
+         * Force the system to rebuild all gradients that need to be resync.
+         *
+         * This is the live-edit entry point both Inspectors call from their gradient onChange handlers, so a
+         * value-only edit must preserve the running simulation: every family whose lookup texture can be re-baked
+         * in place is updated without touching the particle buffers. Only a STRUCTURAL change — a family that has
+         * no texture to re-bake yet, one that was emptied, or a color2 row-layout flip — rebuilds the pool.
+         *
+         * An ABSENT family is not a structural change: it has nothing to resync, and counting it as one would
+         * reset the pool on every call (the destruction this method exists to avoid). Absence has two spellings —
+         * see _gradientFamilyNeedsResync.
+         */
         forceRefreshGradients(): void;
+        /**
+         * Whether a gradient family still has anything for a resync pass to do.
+         *
+         * Absence has TWO spellings: a family that was never initialized is `null`, but one that has been emptied
+         * stays `[]`. Only the first is falsy, so a bare truthiness test reads an emptied family as unfinished
+         * business on every later call — its refresh finds nothing to re-bake, reports "structural", and
+         * forceRefreshGradients resets the live pool forever after, which is precisely the destruction it exists
+         * to prevent.
+         *
+         * Entries always mean work (re-bake in place, or build when there is no texture yet). An EMPTY family is
+         * work only while it still owns a texture: that is the just-emptied transition, whose stale texture must
+         * be disposed. `[]` with no texture is settled absence — nothing left to resync.
+         * @param gradients the gradient family to test, or null when it was never initialized
+         * @param textureName the name of the lookup texture property backing that family
+         * @returns true when the family still has work for a resync pass, false when its absence is settled
+         */
+        private _gradientFamilyNeedsResync;
         /**
          * Remove a specific color gradient
          * @param gradient defines the gradient to remove
@@ -38182,6 +38434,14 @@ declare namespace BABYLON {
          * @returns the current particle system
          */
         removeSizeGradient(gradient: number): GPUParticleSystem;
+        /**
+         * Resyncs a factor gradient family's lookup texture after a change.
+         * @param factorGradients defines the gradient family that changed
+         * @param textureName defines the name of the property holding the family's lookup texture
+         * @returns true when the existing texture was re-baked in place (value-only change — nothing to release, the
+         * live particle pool survives), false when the caller must release the buffers (no texture to re-bake, or the
+         * family was emptied); in that case the outdated texture is disposed for lazy recreation.
+         */
         private _refreshFactorGradient;
         /**
          * Adds a new angular speed gradient
@@ -38364,6 +38624,18 @@ declare namespace BABYLON {
          * @param preWarm defines if we are in the pre-warmimg phase
          */
         animate(preWarm?: boolean): void;
+        private _bakeFactorGradientData;
+        /**
+         * Re-bakes an active factor gradient family's lookup texture pixels in place. The texture identity is
+         * preserved, so retained bindings (e.g. the WebGPU update compute shader's) stay valid and no buffer
+         * release is needed — the live particle pool survives the edit. The texture layout is independent of the
+         * number of stops (fixed _rawTextureWidth x 1), so any change within an active family can be re-baked.
+         * @param factorGradients defines the gradient family to bake
+         * @param textureName defines the name of the property holding the family's lookup texture
+         * @returns false when there is nothing to re-bake (no texture yet, or the family was emptied) — callers
+         * fall back to the dispose + release path.
+         */
+        private _rebakeFactorGradientTexture;
         private _createFactorGradientTexture;
         private _createSizeGradientTexture;
         private _createAngularSpeedGradientTexture;
@@ -38372,6 +38644,15 @@ declare namespace BABYLON {
         private _createDragGradientTexture;
         private _disposeMeshEmitterTextures;
         private _createMeshEmitterTextures;
+        private _bakeColorGradientData;
+        /**
+         * Re-bakes the color gradient lookup texture pixels in place (same texture identity, so retained bindings —
+         * e.g. the WebGPU update compute shader's — stay valid and the live particle pool survives the edit). Only
+         * valid while the row layout is unchanged: a color2 range appearing or disappearing changes the texture
+         * height and the render vertex buffer layout, which must go through the structural dispose + release path.
+         * @returns false when the re-bake cannot handle the change (no texture yet, family emptied, or row layout flip)
+         */
+        private _rebakeColorGradientTexture;
         private _createColorGradientTexture;
         private _render;
         /** @internal */
@@ -68701,6 +68982,23 @@ declare namespace BABYLON {
          */
         getClassName(): string;
         /**
+         * Returns the world-space bounding vectors spanning this part (and any descendants).
+         *
+         * A part proxy carries real bounds (set via {@link setBoundingInfo}) but owns NO geometry — the compound
+         * holds the splats. The base {@link Node.getHierarchyBoundingVectors} only folds in a mesh's own bounds
+         * when it has a `subMeshes` array (a geometry-less mesh's is `undefined`) and skips zero-vertex descendants,
+         * so for a bare proxy it returns a degenerate ±MAX_VALUE box. Callers that treat the proxy as a normal mesh
+         * (camera framing, grounding, picking) would then derive NaN / astronomically large offsets. This override
+         * folds the proxy's own world-space box into whatever the base returns for descendants.
+         * @param includeDescendants include bounding vectors from descendant meshes
+         * @param predicate optional filter applied to each descendant mesh
+         * @returns the world-space min/max spanning this part (and any descendants)
+         */
+        getHierarchyBoundingVectors(includeDescendants?: boolean, predicate?: Nullable<(abstractMesh: AbstractMesh) => boolean>): {
+            min: Vector3;
+            max: Vector3;
+        };
+        /**
          * Updates the part index for this proxy mesh.
          * This should only be called internally when parts are removed from the compound mesh.
          * @param newPartIndex the new part index
@@ -69058,9 +69356,16 @@ declare namespace BABYLON {
         protected _covariancesBTexture: Nullable<BaseTexture>;
         protected _centersTexture: Nullable<BaseTexture>;
         protected _colorsTexture: Nullable<BaseTexture>;
+        protected _mrtAtlas: Nullable<MultiRenderTarget>;
+        protected _useMrtAtlas: boolean;
+        protected _shMrtAtlas: Nullable<MultiRenderTarget[]>;
+        protected _useShMrtAtlas: boolean;
+        protected _shMrtAtlasTextureCount: number;
         protected _rotationsATexture: Nullable<BaseTexture>;
         protected _rotationsBTexture: Nullable<BaseTexture>;
         protected _rotationScaleTexture: Nullable<BaseTexture>;
+        protected _rotMrtAtlas: Nullable<MultiRenderTarget>;
+        protected _useRotMrtAtlas: boolean;
         private _rotationDataA;
         private _rotationDataB;
         private _rotationScaleData;
@@ -69096,7 +69401,7 @@ declare namespace BABYLON {
         private static _PlyConversionBatchSize;
         /** @internal */
         _shDegree: number;
-        private _maxShDegree;
+        protected _maxShDegree: number;
         private static readonly _BatchSize;
         private _cameraViewInfos;
         protected static readonly _DefaultViewUpdateThreshold = 0.0001;
@@ -69105,6 +69410,19 @@ declare namespace BABYLON {
         /** Fired after part-removal validation passes but before the mesh is rebuilt.
          *  Payload is the original (pre-removal) part index. */
         readonly onPartRemovedObservable: Observable<number>;
+        /**
+         * Fired just before an existing MRT-backed atlas is recreated to grow it (e.g. adding a part while a streaming
+         * part exists). Payload is the OLD atlas. Streaming parts subscribe to back up their GPU-only region before it
+         * is disposed. Only fires when growing an existing MRT atlas (not on first creation).
+         * @internal
+         */
+        readonly _onBeforeAtlasRebuildObservable: Observable<MultiRenderTarget>;
+        /**
+         * Fired after the new (grown) MRT-backed atlas has been created and its CPU data uploaded. Payload is the NEW
+         * atlas. Streaming parts subscribe to rebind to it and restore their backed-up region.
+         * @internal
+         */
+        readonly _onAfterAtlasRebuildObservable: Observable<MultiRenderTarget>;
         /**
          * Returns a byte-accurate view for retained splat data, preserving any non-zero byte offset.
          * @param data The retained splat source bytes.
@@ -69188,8 +69506,15 @@ declare namespace BABYLON {
          * @param colors color texture
          * @param splatPositions stride-4 CPU centers for depth sorting (length vertexCount*4)
          * @param vertexCount number of splats addressable in the work buffer
+         * @param shTextures optional baked higher-order SH textures (packed-u32) produced by the work buffer's SH decode.
+         *   When provided, the draw path lights the decoded splats with view-dependent SH (the non-SOG `shTexture0..N`
+         *   path). `shDegree` sets both the max and active SH degree.
+         * @param shDegree SH degree of the baked SH textures (0 = none). Ignored when `shTextures` is empty/omitted.
+         * @param rotationTextures optional decoded rotation/scale textures ([rotA, rotB, rotScale]) produced by the work
+         *   buffer's rotation decode. When provided, they drive the voxel-IBL rotation/scale samplers so the streamed
+         *   splats participate in voxel-based IBL shadowing.
          */
-        protected _setExternalWorkBuffer(centers: BaseTexture, covariancesA: BaseTexture, covariancesB: BaseTexture, colors: BaseTexture, splatPositions: Float32Array, vertexCount: number): void;
+        protected _setExternalWorkBuffer(centers: BaseTexture, covariancesA: BaseTexture, covariancesB: BaseTexture, colors: BaseTexture, splatPositions: Float32Array, vertexCount: number, shTextures?: Nullable<BaseTexture[]>, shDegree?: number, rotationTextures?: Nullable<BaseTexture[]>): void;
         /**
          * returns the splats data array buffer that contains in order : postions (3 floats), size (3 floats), color (4 bytes), orientation quaternion (4 bytes)
          * Only available if the mesh was created with keepInRam: true
@@ -69424,8 +69749,10 @@ declare namespace BABYLON {
          * @param maximum - accumulated bounding maximum (updated in-place)
          * @param flipY - whether to negate the Y position
          * @param srcIndex - source splat index (defaults to dstIndex when omitted)
+         * @param dstArrayIndex - index into the covA/covB/colorArray transients (defaults to dstIndex). Lets a streaming
+         * write pass count-sized transients indexed from 0 while dstIndex still addresses the atlas-sized _splatPositions.
          */
-        protected _makeSplat(dstIndex: number, fBuffer: Float32Array, uBuffer: Uint8Array, covA: Uint16Array, covB: Uint16Array, colorArray: Uint8Array, minimum: Vector3, maximum: Vector3, flipY: boolean, srcIndex?: number): void;
+        protected _makeSplat(dstIndex: number, fBuffer: Float32Array, uBuffer: Uint8Array, covA: Uint16Array, covB: Uint16Array, colorArray: Uint8Array, minimum: Vector3, maximum: Vector3, flipY: boolean, srcIndex?: number, dstArrayIndex?: number): void;
         protected _onUpdateTextures(_textureSize: Vector2): void;
         /**
          * Called when part index data is received during a data load. Override to store and manage
@@ -69451,6 +69778,34 @@ declare namespace BABYLON {
          */
         get isCompound(): boolean;
         protected _setDelayedTextureUpdate(covA: Uint16Array, covB: Uint16Array, colorArray: Uint8Array, sh?: Uint8Array[]): void;
+        /**
+         * Creates (or recreates) the MRT-backed data atlas at the given size and points the four core data
+         * textures at its attachments. The attachments use the same decoded GS layout as {@link GaussianSplattingWorkBuffer}
+         * — [centers F32, covA HALF_FLOAT, covB HALF_FLOAT, colors U8], all RGBA — so a streaming engine can render
+         * (decode/relayout) directly into the same textures the GS material samples, while static parts CPU-upload
+         * into them via {@link _updateSubTextures}. Covariance B is RGBA here (its extra channels unused), so the
+         * atlas forces {@link _useRGBACovariants}.
+         * @param textureSize atlas dimensions (width, height)
+         */
+        protected _createMrtAtlas(textureSize: Vector2): void;
+        /**
+         * Creates the shared higher-order SH atlas: `_shMrtAtlasTextureCount` single-attachment integer render targets
+         * (RGBA_INTEGER / UNSIGNED_INTEGER, packed-u32), sized to the whole atlas, so a streaming engine can GPU-decode
+         * baked SH into the reserved region and static SH parts CPU-upload into the same attachments. `_shTextures` (the
+         * draw path's `shTexture0..N` samplers) are the attachments. One MRT per attachment keeps within WebGPU's
+         * per-sample color-attachment byte budget. No-op without a real GPU backend (mirrors {@link _createMrtAtlas}).
+         * @param textureSize atlas dimensions (width, height)
+         */
+        protected _createShMrtAtlas(textureSize: Vector2): void;
+        /**
+         * Creates the shared rotation/scale atlas: one 3-attachment half-float render target ([rotA, rotB, rotScale])
+         * sized to the whole atlas, so a streaming engine can GPU-decode rotation/scale into the reserved region and
+         * static parts CPU-upload into the same attachments. `_rotationsATexture`/`_rotationsBTexture`/
+         * `_rotationScaleTexture` (the voxel-IBL samplers) become the three attachments. No-op without a real GPU
+         * backend (mirrors {@link _createMrtAtlas}).
+         * @param textureSize atlas dimensions (width, height)
+         */
+        protected _createRotMrtAtlas(textureSize: Vector2): void;
         protected _updateTextures(covA: Uint16Array, covB: Uint16Array, colorArray: Uint8Array, sh?: Uint8Array[]): void;
         /**
          * Checks whether the GPU textures can be incrementally updated for a new addPart operation,
@@ -69458,9 +69813,10 @@ declare namespace BABYLON {
          * Requires that the GPU textures already exist and the texture height won't change.
          * @param previousVertexCount - The number of splats previously committed to GPU
          * @param vertexCount - The new total number of splats
+         * @param requiredShTextureCount - SH texture count this update requires (the merged `sh.length`), 0 when no SH
          * @returns true when only the new splat region needs to be uploaded
          */
-        protected _canReuseCachedData(previousVertexCount: number, vertexCount: number): boolean;
+        protected _canReuseCachedData(previousVertexCount: number, vertexCount: number, requiredShTextureCount?: number): boolean;
         /**
          * Posts updated positions to the sort worker and marks the sort as dirty.
          * Called after processing new splats so the worker can re-sort with the complete position set.
@@ -69477,6 +69833,24 @@ declare namespace BABYLON {
          * @param splatCount number of splats in the updated range
          */
         protected _postWorkerPositionsRange(splatOffset: number, splatCount: number): void;
+        /**
+         * Decodes raw `.splat` bytes (32 bytes/splat) into a contiguous sub-range of the already-allocated atlas,
+         * uploading only the affected texels (never touching neighboring parts' texels) and patching just that
+         * range of positions in the sort worker. Used to populate a region reserved by
+         * {@link GaussianSplattingMesh.reserveStreamingPart} — the CPU path a streaming engine uses when GPU
+         * decode/readback is unavailable, and the seam that verifies reservation + interleaving before the
+         * streaming engine exists.
+         *
+         * The atlas textures and `_splatPositions` must already be sized to cover `[globalOffset, globalOffset+count)`
+         * (guaranteed after `reserveStreamingPart`). Bounds of the written centers are accumulated into `min`/`max`
+         * when provided (so the caller can grow the owning part's bounding info).
+         * @param globalOffset first atlas splat index to write
+         * @param count number of splats to write
+         * @param splatsData raw `.splat` bytes for `count` splats (stride 32)
+         * @param min optional running min accumulator for the written centers
+         * @param max optional running max accumulator for the written centers
+         */
+        protected _writeStreamingSplats(globalOffset: number, count: number, splatsData: ArrayBuffer | ArrayBufferView, min?: Vector3, max?: Vector3): void;
         private _updateData;
         /**
          * Update asynchronously the buffer
@@ -69572,6 +69946,105 @@ declare namespace BABYLON {
         getWorldMatrix(): Matrix;
         getBoundingInfo(): BoundingInfo;
         dispose(): void;
+        /**
+         * When true this is a placeholder that reserves `_vertexCount` empty (invisible) splats in the
+         * atlas instead of copying real data. Used by {@link GaussianSplattingMesh.reserveStreamingPart}
+         * so a streaming engine can later GPU-decode into the reserved region. Sources flagged this way
+         * are allowed to have a null `_splatsData`; their atlas region is left zeroed (invisible padding).
+         */
+        _isReservedEmpty?: boolean;
+    }
+    /**
+     * Handle to a region of a compound Gaussian Splatting mesh reserved for dynamic (streamed) content by
+     * {@link GaussianSplattingMesh.reserveStreamingPart}. It lets a streaming engine populate the region's
+     * splats over time and drive which of them are sorted/rendered, while the compound keeps depth-sorting
+     * and drawing every part (static + streamed) together in one pass.
+     *
+     * Ranges/offsets passed to this handle are LOCAL to the part (0-based within `[0, capacity)`); the handle
+     * translates them to the compound's global atlas coordinates.
+     */
+    export interface IGaussianSplattingStreamingPart {
+        /** The proxy mesh controlling this part's world transform and visibility. */
+        readonly proxy: GaussianSplattingPartProxyMesh;
+        /** The part index assigned to this streaming region in the compound. */
+        readonly partIndex: number;
+        /** First atlas splat index of the reserved region. */
+        readonly base: number;
+        /** Number of splats reserved for the region. */
+        readonly capacity: number;
+        /** The compound's shared centers texture (the region occupies `[base, base+capacity)` within it). */
+        readonly centersTexture: Nullable<BaseTexture>;
+        /** The compound's shared covariance A texture. */
+        readonly covariancesATexture: Nullable<BaseTexture>;
+        /** The compound's shared covariance B texture. */
+        readonly covariancesBTexture: Nullable<BaseTexture>;
+        /** The compound's shared colors texture. */
+        readonly colorsTexture: Nullable<BaseTexture>;
+        /** The compound's shared CPU centers buffer consumed by the sort worker. */
+        readonly splatPositions: Nullable<Float32Array>;
+        /** The compound's shared render-target atlas a streaming engine decodes into, or null on a non-GPU backend. */
+        readonly mrtAtlas: Nullable<MultiRenderTarget>;
+        /**
+         * The compound's shared higher-order SH render-target atlas (one single-attachment integer MRT per packed-u32
+         * SH texture) a streaming engine bakes SH into, or null when SH decode was not requested for this part.
+         */
+        readonly shMrtAtlas: Nullable<MultiRenderTarget[]>;
+        /**
+         * The compound's shared rotation/scale render-target atlas (one 3-attachment half-float MRT) a streaming engine
+         * decodes rotation/scale into for voxel-IBL shadows, or null when rotation decode was not requested for this part.
+         */
+        readonly rotMrtAtlas: Nullable<MultiRenderTarget>;
+        /** Width (in texels) of the atlas, used to address decode/readback over the wide layout. */
+        readonly atlasWidth: number;
+        /** Whether the compound's shared depth sort is settled (a streaming engine polls this to detect readiness). */
+        readonly isDepthSortSettled: boolean;
+        /**
+         * Restricts which of this part's splats are sorted/rendered, in LOCAL coordinates. `null` renders the
+         * whole reserved region. The compound merges this with every other part's ranges into the single sort.
+         * @param localRanges active local ranges, or `null` for the full region
+         */
+        setActiveRanges(localRanges: Nullable<readonly IGaussianSplattingSplatRange[]>): void;
+        /**
+         * CPU-decodes raw `.splat` bytes into the region at `localOffset`, uploading only those texels and
+         * patching the sort worker. Grows the part's bounding info to include the written centers. This is the
+         * CPU population path (used to seed the region or as a fallback when GPU decode is unavailable).
+         * @param localOffset first local splat index to write
+         * @param count number of splats to write
+         * @param splatsData raw `.splat` bytes for `count` splats (stride 32)
+         */
+        writeSplats(localOffset: number, count: number, splatsData: ArrayBuffer | ArrayBufferView): void;
+        /**
+         * Patches only `[localOffset, localOffset+count)` of the worker's position buffer (for the GPU path,
+         * where texel data is written directly to the atlas and only the CPU centers are pushed to the worker).
+         * @param localOffset first local splat index
+         * @param count number of splats
+         */
+        postPositionsRange(localOffset: number, count: number): void;
+        /**
+         * Grows the part's (and compound's) bounding info to include the given local-space centers extent.
+         * @param min minimum corner
+         * @param max maximum corner
+         */
+        expandBounds(min: Vector3, max: Vector3): void;
+        /**
+         * Re-posts the full merged position + part-index set to the compound's sort worker. Only needed after a
+         * relayout moved the region's data wholesale; per-decode updates use {@link postPositionsRange} instead.
+         */
+        notifyDataChanged(): void;
+        /**
+         * Subscribes to the "about to recreate the shared atlas to grow it" event (e.g. another part is being added).
+         * The callback receives the OLD atlas and should back up this region's GPU-only data before it is disposed.
+         * @param callback invoked with the old atlas MRT
+         * @returns an unsubscribe function (call it on dispose)
+         */
+        onBeforeAtlasRebuild(callback: (oldAtlas: MultiRenderTarget) => void): () => void;
+        /**
+         * Subscribes to the "shared atlas has been recreated" event. The callback receives the NEW atlas and should
+         * rebind to it and restore this region's backed-up data.
+         * @param callback invoked with the new atlas MRT
+         * @returns an unsubscribe function (call it on dispose)
+         */
+        onAfterAtlasRebuild(callback: (newAtlas: MultiRenderTarget) => void): () => void;
     }
     /**
      * Class used to render a Gaussian Splatting mesh. Supports both single-cloud and compound
@@ -69597,6 +70070,31 @@ declare namespace BABYLON {
          * Visibility values for each part (0.0 to 1.0), indexed by part index.
          */
         protected _partVisibility: number[];
+        /**
+         * Per-part active source-splat range overrides, indexed by part index, in GLOBAL source-splat
+         * coordinates (offsets into the merged atlas). A part with no entry (undefined) renders its full
+         * range; a part with an entry renders only those ranges. Used by streaming parts to render just
+         * their currently-active LOD splats while static parts render fully. No overrides at all means no
+         * filter (the base renders every splat, preserving the non-streaming fast path).
+         */
+        private _partSplatRanges;
+        /**
+         * True once a streaming part has been reserved. A streamed region's data lives only on the GPU (no retained CPU
+         * source), so atlas rebuilds and part add/remove take the streaming-aware paths that back up and restore each
+         * region rather than regenerating it from a CPU source.
+         * @internal
+         */
+        protected _hasStreamingPart: boolean;
+        /** Mutable bookkeeping for each reserved streaming region, so {@link compactAtlas} can relocate them. */
+        private _streamingStates;
+        /**
+         * Max SH degree contributed by the live (non-tombstoned) streaming parts. Recomputed by
+         * {@link _refreshStreamingShState} whenever parts change, so removing the last SH stream turns the shared SH
+         * atlas off instead of leaving SH_DEGREE high over texels nothing refills.
+         */
+        private _streamingShDegree;
+        /** Part indices tombstoned by {@link removePart} while streaming — excluded from render, reclaimed by {@link compactAtlas}. */
+        private _tombstonedPartIndices;
         private _partIndicesTexture;
         private _partIndices;
         /** Gets the part indices texture used for compound rendering */
@@ -69742,6 +70240,34 @@ declare namespace BABYLON {
          * @param value the visibility value (0.0 to 1.0) to set
          */
         setPartVisibility(partIndex: number, value: number): void;
+        /**
+         * Restricts which source splats of a single part are sorted and rendered, in GLOBAL source-splat
+         * coordinates (offsets into the merged atlas). Static parts render fully by default; a streaming
+         * part uses this to render only its currently-active LOD splats. The compound recomputes the union
+         * of every part's active ranges and drives the single shared depth sort / draw with it, so all
+         * parts still sort together in one pass.
+         *
+         * Passing `null` clears the override for that part (it reverts to rendering its full range). When no
+         * part has an override, the compound clears the range filter entirely (renders every splat), which
+         * preserves the non-streaming fast path.
+         * @param partIndex index of the part to constrain
+         * @param ranges active global source-splat ranges for the part, or `null` to render the whole part
+         */
+        setPartSplatRanges(partIndex: number, ranges: Nullable<readonly IGaussianSplattingSplatRange[]>): void;
+        /**
+         * Recomputes the global active-range union across all parts and pushes it to the shared sort/draw
+         * via the base {@link setSplatIndexRanges}. When no part carries an override the filter is cleared
+         * (render everything). A part without an override contributes its full `[offset, count)` derived
+         * from its proxy; a part with an override contributes exactly those ranges.
+         */
+        private _refreshPartRangeUnion;
+        /**
+         * Sorts and merges adjacent/overlapping source-splat ranges so the interval list handed to the sort
+         * worker stays compact (parts occupy disjoint regions, so this mainly coalesces contiguous parts).
+         * @param ranges raw ranges
+         * @returns coalesced ranges sorted by offset
+         */
+        private static _CoalesceSplatRanges;
         protected _copyTextures(source: GaussianSplattingMeshBase): void;
         protected _onUpdateTextures(textureSize: Vector2): void;
         protected _updateSubTextures(splatPositions: Float32Array, covA: Uint16Array, covB: Uint16Array, colorArray: Uint8Array, lineStart: number, lineCount: number, sh?: Uint8Array[], partIndices?: Uint8Array): void;
@@ -69778,14 +70304,76 @@ declare namespace BABYLON {
          */
         addPart(other: GaussianSplattingMesh, disposeOther?: boolean): GaussianSplattingPartProxyMesh;
         /**
+         * Recomputes the shared SH-atlas state ({@link _useShMrtAtlas}, {@link _shMrtAtlasTextureCount},
+         * {@link _streamingShDegree}) from the currently-live (non-tombstoned) streaming parts. Call before an atlas
+         * rebuild that follows a removal so a stale SH degree/count from a removed part can't keep the SH atlas active
+         * (and SH_DEGREE high) with nothing refilling the SH texels.
+         */
+        private _refreshStreamingShState;
+        /**
+         * Tombstones a part of a streaming compound: excludes it from the render union permanently and hides its
+         * proxy, leaving its atlas rows idle. Used instead of the compacting {@link removePart} rebuild whenever a
+         * streaming part is reserved — a streamed region has no retained CPU source and decodes at a FIXED base
+         * offset, so the rebuild can neither reconstruct it nor shift any part without desynchronizing the streaming
+         * engine. Every other part keeps its exact offset (no shift), so resident streams keep decoding at their base.
+         * The empty `[]` override survives future add-driven rebuilds, so the region stays invisible even though its
+         * texels get rebuilt; memory is only reclaimed by disposing/recreating the whole compound.
+         * @param index the part index to tombstone
+         */
+        private _tombstonePart;
+        /**
+         * Tears the compound down to an empty state so a subsequent {@link _addPartsInternal} recreates fresh GPU
+         * textures. Shared by {@link removePart} (compacting rebuild) and {@link compactAtlas}. Does NOT dispose the
+         * part proxies — callers dispose only the proxies being removed and reuse the survivors' proxy objects.
+         * @internal
+         */
+        protected _resetForRebuild(): void;
+        /**
+         * Reclaims the atlas rows of parts removed (tombstoned) while a streaming part was resident. `removePart`
+         * on a streaming compound only tombstones — it excludes the part from the render union and hides its proxy,
+         * but leaves its rows allocated, since compacting them would relocate the still-resident streaming regions.
+         * This method performs that compaction: it rebuilds the shared atlas from the LIVE parts at new, contiguous
+         * (row-aligned for streaming) offsets, physically relocating each surviving streaming region's GPU texels,
+         * CPU sort positions, and decode/render base offset, and drops the tombstoned rows — shrinking the atlas.
+         *
+         * Call it after removing one or more models to actually free the GPU/CPU memory (e.g. on idle, or once a
+         * batch of removals settles). No-op when nothing is tombstoned. Safe while streams are actively decoding:
+         * each surviving region is backed up before the old atlas is disposed and restored at its new base after.
+         */
+        compactAtlas(): void;
+        /**
          * Remove a part from this compound mesh.
          * The remaining parts are rebuilt directly from the compound mesh's retained source buffers.
          * The current mesh is reset to a plain (single-part) state and then each remaining source is
          * re-added via addParts.
+         * When a streaming part is reserved the part is tombstoned instead of compacted (see {@link _tombstonePart}).
          * @param index - The index of the part to remove
          * @deprecated Use {@link GaussianSplattingCompoundMesh.removePart} instead.
          */
         removePart(index: number): void;
+        /**
+         * Reserves a contiguous region of `capacity` splats in the compound as a new part for dynamic (streamed)
+         * content. Unlike {@link addPart}, no source data is copied: the region is created as invisible padding
+         * (zeroed) for a streaming engine to populate over time via the returned handle. The reserved part
+         * participates in the compound's single shared depth sort and draw exactly like a static part — it has a
+         * `partIndex`, a per-part world matrix (via its proxy), and a per-part visibility — so streamed splats are
+         * sorted and rendered together in one pass with the static parts.
+         *
+         * Add the streaming part LAST (after all static parts). The returned handle drives which of the region's
+         * splats render (LOD) and writes their data.
+         * @param capacity number of splats to reserve
+         * @param worldMatrix initial world matrix for the region's proxy (e.g. carrying a source's up-axis
+         *   convention); defaults to identity
+         * @param name name for the region's proxy mesh
+         * @param shTextureCount number of packed-u32 higher-order SH textures to allocate as a shared render-target SH
+         *   atlas the streaming engine bakes into (`ceil(coeffs*3/16)` for the stream's max SH degree); 0 = no SH
+         * @param shDegree SH degree of the streamed content (drives the compound's `SH_DEGREE`); ignored when
+         *   `shTextureCount` is 0. The compound keeps the MAX SH degree across its parts.
+         * @param needsRotationScale when true, converts the compound's rotation/scale textures to a shared render-target
+         *   half-float atlas the streaming engine decodes into, so the streamed splats participate in voxel-IBL shadows.
+         * @returns a handle used to populate and control the reserved region
+         */
+        reserveStreamingPart(capacity: number, worldMatrix?: Matrix, name?: string, shTextureCount?: number, shDegree?: number, needsRotationScale?: boolean): IGaussianSplattingStreamingPart;
         /**
          * Serialize current GaussianSplattingMesh
          * @param serializationObject defines the object which will receive the serialization data
@@ -84273,6 +84861,20 @@ declare namespace BABYLON {
      * @param receiveShadows Defines if the effect (mesh) we bind the light for receives shadows
      */
     export function BindLight(light: Light, lightIndex: number, scene: Scene, effect: Effect, useSpecular: boolean, receiveShadows?: boolean): void;
+    /**
+     * Returns the number of simultaneous lights the engine can actually render, which may be lower than the
+     * requested maximum.
+     *
+     * Engines that one uniform buffer per light in the vertex shader (WebGPU, through
+     * lightVxUboDeclaration) are bounded by maxUniformBuffersPerShaderStage: past that limit every pipeline
+     * creation is rejected by the WebGPU validator and nothing renders at all, with only a CreateBindGroupLayout
+     * validation error to go on. maxUniformBuffersPerShaderStage is 12 both as the WebGPU spec default and as
+     * the maximum a D3D12 adapter reports, so it cannot be raised through requiredLimits either.
+     * @param scene The scene that will be rendered
+     * @param maxSimultaneousLights The requested maximum number of simultaneous lights
+     * @returns The number of simultaneous lights supported, clamped to the engine's capabilities
+     */
+    export function GetSupportedSimultaneousLights(scene: Scene, maxSimultaneousLights: number): number;
     /**
      * Binds the lights information from the scene to the effect for the given mesh.
      * @param scene The scene the lights belongs to
@@ -100408,7 +101010,9 @@ declare namespace BABYLON {
         private _createEffectForParticles;
         private _checkInternals;
         /**
-         * Create the effect to be used as the custom effect for a particle system
+         * Create the effect to be used as the custom effect for a particle system.
+         * If the material has not been built successfully yet, the build is started when needed and the effect is only
+         * created once it completes, so the effect may not be set on the particle system when this method returns.
          * @param particleSystem Particle system to create the effect for
          * @param onCompiled defines a function to call when the effect creation is successful
          * @param onError defines a function to call when the effect creation has failed
@@ -128963,6 +129567,14 @@ declare namespace BABYLON {
      */
 
 
+    interface IPathTemplateInfo {
+        /** Template variable name (without surrounding brackets). */
+        name: string;
+        /** Bracket style used in the source path; preserved so we replace the right placeholder. */
+        style: "curly" | "square";
+        /** The connection that supplies the runtime value for substitution. */
+        connection: FlowGraphDataConnection<any>;
+    }
     /**
      * @experimental
      * A component that converts a path to an object accessor.
@@ -128971,9 +129583,12 @@ declare namespace BABYLON {
         path: string;
         ownerBlock: FlowGraphBlock;
         /**
-         * The templated inputs for the provided path.
+         * The templated inputs for the provided path. Values may be FlowGraphInteger, number, or
+         * string (an opaque reference encoded as a JSON Pointer).
          */
-        readonly templatedInputs: FlowGraphDataConnection<FlowGraphInteger>[];
+        readonly templatedInputs: FlowGraphDataConnection<any>[];
+        /** Per-template metadata (name + bracket style + input connection). */
+        readonly templateInfos: IPathTemplateInfo[];
         constructor(path: string, ownerBlock: FlowGraphBlock);
         /**
          * Get the accessor for the path.
@@ -129113,6 +129728,53 @@ declare namespace BABYLON {
      * @returns the target quaternion
      */
     export function GetQuaternionFromDirectionsToRef<T extends Vector3, ResultT extends Quaternion>(a: DeepImmutable<T>, b: DeepImmutable<T>, result: ResultT): ResultT;
+    /**
+     * Spherical linear interpolation between two 2D vectors.
+     * NaN and infinity values are propagated through the arithmetic.
+     * @param a the first vector
+     * @param b the second vector
+     * @param c the (unclamped) interpolation coefficient
+     * @returns the interpolated 2D vector
+     */
+    export function GetVector2Slerp(a: DeepImmutable<Vector2>, b: DeepImmutable<Vector2>, c: number): Vector2;
+    /**
+     * Spherical linear interpolation between two 3D vectors.
+     * NaN and infinity values are propagated through the arithmetic.
+     * @param a the first vector
+     * @param b the second vector
+     * @param c the (unclamped) interpolation coefficient
+     * @returns the interpolated 3D vector
+     */
+    export function GetVector3Slerp(a: DeepImmutable<Vector3>, b: DeepImmutable<Vector3>, c: number): Vector3;
+    /**
+     * Creates a quaternion from the specified up and forward directions, as defined by the
+     * up/forward quaternion operation. Both inputs are assumed to be unit length.
+     * @param up the up direction
+     * @param forward the forward direction
+     * @returns the rotation quaternion
+     */
+    export function GetQuaternionFromUpForward(up: DeepImmutable<Vector3>, forward: DeepImmutable<Vector3>): Quaternion;
+    /**
+     * The rotation orders accepted by the Euler-angle quaternion operation
+     * (and {@link GetQuaternionFromEulerAngles}). The default order is `yxz`.
+     */
+    export var QuaternionEulerAngleOrders: readonly ["xyz", "xzy", "yxz", "yzx", "zxy", "zyx"];
+    /**
+     * Builds a rotation quaternion from three Tait–Bryan intrinsic Euler angles applied in the
+     * specified order.
+     *
+     * Babylon only exposes the `yxz` order natively (via `Quaternion.RotationYawPitchRoll`), so the
+     * result is composed from the individual per-axis rotations to support every order. For an
+     * intrinsic order `o1o2o3` the result is the Hamilton product `q(o1) * q(o2) * q(o3)`, where each
+     * `q(axis)` is a rotation about that axis; this matches the corresponding reference intrinsic
+     * Tait–Bryan rotation matrices. NaN and infinite angle inputs propagate into the result.
+     * @param order the rotation order, one of {@link QuaternionEulerAngleOrders}; any other value uses the default `yxz`
+     * @param x rotation around the X axis, in radians
+     * @param y rotation around the Y axis, in radians
+     * @param z rotation around the Z axis, in radians
+     * @returns the composed rotation quaternion
+     */
+    export function GetQuaternionFromEulerAngles(order: string, x: number, y: number, z: number): Quaternion;
 
 
     export enum FlowGraphAction {
@@ -129174,6 +129836,77 @@ declare namespace BABYLON {
         log: IFlowGraphLogItem[];
         addLogItem(item: IFlowGraphLogItem): void;
         getItemsOfType(action: FlowGraphAction): IFlowGraphLogItem[];
+    }
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Prefix used by the default event-reference format.
+     *
+     * A host that maps behavior graphs onto its own object model (for example the glTF
+     * `KHR_interactivity` loader) supplies its own format through {@link IFlowGraphHostResolver}.
+     */
+    export const FlowGraphDefaultEventReferencePrefix = "flowgraph://events/";
+    /**
+     * Builds the default reference for an event source key.
+     * @param key the event source key (e.g. `"sceneReady"`, `"sceneTick"`, or a custom event id)
+     * @returns the event reference
+     */
+    export function GetDefaultEventReference(key: string): string;
+    /**
+     * Extracts the event source key from a default-format event reference.
+     * @param reference the value to decode
+     * @returns the event source key, or `undefined` when the value is not an event reference
+     */
+    export function GetDefaultEventReferenceKey(reference: string): string | undefined;
+    /**
+     * Lets the environment hosting a flow graph decide how runtime entities are represented as opaque
+     * reference values, so the graph engine itself stays agnostic of the host's object model.
+     *
+     * A host (e.g. a glTF loader extension) provides an implementation through
+     * {@link IFlowGraphCoordinatorConfiguration.hostResolver}. Every member is optional; the engine
+     * falls back to a neutral built-in representation for anything the host does not provide.
+     */
+    export interface IFlowGraphHostResolver {
+        /**
+         * Encodes an event source key as the opaque reference exposed by event blocks on their
+         * `event` output.
+         *
+         * References must be stable: two calls with the same key must produce equal values so that
+         * equality comparisons of two `event` outputs of the same source succeed.
+         * @param key the event source key
+         * @returns the reference representing the event source
+         */
+        encodeEventReference?(key: string): string;
+        /**
+         * Decodes an event reference produced by {@link IFlowGraphHostResolver.encodeEventReference}
+         * back into its event source key. Must return `undefined` for values that are not event
+         * references.
+         * @param reference the reference to decode
+         * @returns the event source key, or `undefined` when the value is not an event reference
+         */
+        decodeEventReference?(reference: string): string | undefined;
+        /**
+         * Decodes the array index denoted by a reference, for cases where a reference addresses an
+         * element of one of the host's collections. Must return `undefined` for values the host does
+         * not recognise as an indexed reference.
+         * @param reference the reference to decode
+         * @returns the index the reference denotes, or `undefined` when it does not denote one
+         */
+        decodeIndexReference?(reference: string): number | undefined;
+        /**
+         * Maps a runtime object to the reference the host addresses it by, for example the JSON
+         * Pointer of the resource a loaded object originates from.
+         *
+         * Used when an object value is supplied to a templated path input. Returning `undefined`
+         * means the host cannot address the object, and the value is rejected.
+         * @param object the runtime object to address
+         * @param hint optional disambiguation hint, taken from the path segment preceding the template
+         * parameter being resolved. A single object may be addressable in several ways, and the hint
+         * tells the host which kind of reference the graph is asking for.
+         * @returns the reference for the object, or `undefined` when it cannot be addressed
+         */
+        getObjectReference?(object: object, hint?: string): string | undefined;
     }
 
 
@@ -129335,6 +130068,38 @@ declare namespace BABYLON {
     }
 
 
+    /**
+     * Tracking of the delays that are currently scheduled in a flow graph context.
+     *
+     * `flow/setDelay` produces a unique integer handle for every delayed activation it schedules.
+     * This module records which of those handles are still pending — i.e. scheduled and not yet fired
+     * or cancelled — per {@link FlowGraphContext}, so that a host can answer "is this delay handle
+     * still valid?" for a reference it was handed earlier.
+     */
+    /**
+     * Marks the given delay handle as active (scheduled and pending) in the context.
+     * Called by `flow/setDelay` when it schedules a new delayed activation.
+     * @param context the flow graph context owning the delay.
+     * @param index the unique delay handle produced by `flow/setDelay`.
+     */
+    export function MarkDelayActive(context: FlowGraphContext, index: number): void;
+    /**
+     * Marks the given delay handle as no longer active. Called when a delay fires, is cancelled via
+     * the `cancel` input, or is cancelled by `flow/cancelDelay`.
+     * @param context the flow graph context owning the delay.
+     * @param index the unique delay handle to clear.
+     */
+    export function MarkDelayInactive(context: FlowGraphContext, index: number): void;
+    /**
+     * Returns whether the given delay handle is currently active, i.e. scheduled and not yet fired or
+     * cancelled.
+     * @param context the flow graph context to query.
+     * @param index the delay handle to test.
+     * @returns true if the delay is currently scheduled and has not yet fired or been cancelled.
+     */
+    export function IsDelayActive(context: FlowGraphContext, index: number): boolean;
+
+
     /** This file must only contain pure code and pure imports */
     /**
      * Represents a connection point for data.
@@ -129480,6 +130245,11 @@ declare namespace BABYLON {
          * The scene that the flow graph engine belongs to.
          */
         scene: Scene;
+        /**
+         * Optional resolver letting the environment hosting the graphs decide how runtime entities are
+         * represented as opaque reference values. When omitted, a neutral built-in representation is used.
+         */
+        hostResolver?: IFlowGraphHostResolver;
     }
     /**
      * Parameters used to parse a flow graph coordinator.
@@ -129552,6 +130322,18 @@ declare namespace BABYLON {
         private _onBeforeRenderObserver;
         private _executeOnNextFrame;
         private _eventUniqueId;
+        /**
+         * Stack of custom-event dispatches currently in progress. Each entry pairs the
+         * dispatched event id with the Observable's EventState so that
+         * `event/stopPropagation` can stop the remaining handlers of an in-flight
+         * dispatch. A stack (rather than a single value) tolerates re-entrant
+         * dispatching, e.g. an event handler synchronously sending another event.
+         * @internal
+         */
+        _eventDispatchStack: {
+            eventId: string;
+            state: EventState;
+        }[];
         constructor(
         /**
          * the configuration of the block
@@ -129599,6 +130381,45 @@ declare namespace BABYLON {
          * @param async if true, the event will be dispatched asynchronously
          */
         notifyCustomEvent(id: string, data: any, async?: boolean): void;
+        /**
+         * @internal
+         * Marks the beginning of a custom-event dispatch. Called by event receiver
+         * blocks from within their Observable callback so that the dispatch's
+         * EventState becomes reachable by `event/stopPropagation` while the receiver
+         * flow executes synchronously.
+         * @param eventId the id of the event being dispatched
+         * @param state the Observable EventState for this dispatch
+         */
+        _beginEventDispatch(eventId: string, state: EventState): void;
+        /**
+         * @internal
+         * Marks the end of the most recent custom-event dispatch started with
+         * {@link _beginEventDispatch}.
+         */
+        _endEventDispatch(): void;
+        /**
+         * Stops the propagation of an in-flight custom event, preventing any event
+         * handler nodes that have not been activated yet from running for the current
+         * dispatch.
+         *
+         * The `event` argument is the opaque event reference produced by an event block on its `event`
+         * output. If it does not reference an event that is currently being dispatched, this is a no-op.
+         *
+         * Babylon custom events have no scene-graph propagation layer, so there are
+         * no transitive activations to cancel when `stopImmediate` is false. When it
+         * is true, the remaining handlers in the Observable dispatch are skipped.
+         * @param event the event reference to stop propagation for
+         * @param stopImmediate whether to also stop remaining immediate handlers
+         */
+        stopEventPropagation(event: string, stopImmediate: boolean): void;
+        /**
+         * @internal
+         * Encodes an event source key as the opaque reference exposed on an event block's `event`
+         * output, delegating to the host resolver when one is configured.
+         * @param key the event source key
+         * @returns the event reference
+         */
+        _getEventReference(key: string): string;
     }
 
 
@@ -129818,6 +130639,29 @@ declare namespace BABYLON {
          * @returns the scene
          */
         getScene(): Scene;
+        /**
+         * Encodes an event source key as the opaque reference exposed by event blocks on their `event`
+         * output. Delegates to the {@link IFlowGraphHostResolver} configured on the coordinator, so the
+         * reference format is owned by the environment hosting the graph.
+         * @param key the event source key (e.g. `"sceneReady"`, `"sceneTick"`, or a custom event id)
+         * @returns the event reference
+         */
+        getEventReference(key: string): string;
+        /**
+         * Decodes the array index denoted by a reference. Returns `undefined` when no host resolver is
+         * configured or the host does not recognise the value as an indexed reference.
+         * @param reference the reference to decode
+         * @returns the index the reference denotes, or `undefined` when it does not denote one
+         */
+        decodeIndexReference(reference: string): number | undefined;
+        /**
+         * Maps a runtime object to the reference the host addresses it by. Returns `undefined` when no
+         * host resolver is configured or the host cannot address the object.
+         * @param object the runtime object to address
+         * @param hint optional disambiguation hint telling the host which kind of reference is wanted
+         * @returns the reference for the object, or `undefined` when it cannot be addressed
+         */
+        getObjectReference(object: object, hint?: string): string | undefined;
         private _getUniqueIdPrefixedName;
         /**
          * @internal
@@ -130551,10 +131395,18 @@ declare namespace BABYLON {
 
     /**
      * Interface representing a generic flow graph matrix.
+     *
+     * BREAKING (since the KHR_interactivity work): {@link FlowGraphMatrix2D} and {@link FlowGraphMatrix3D}
+     * now store their elements in column-major order, matching core {@link Matrix} and the
+     * glTF/KHR_interactivity convention. Previous releases stored them row-major. This changes the result
+     * of building a matrix from a flat array (`fromArray`/`set`), of `transformVector`/`transformVectorToRef`,
+     * and of `multiply`/`multiplyToRef` (which now computes `this * other` rather than `other * this`).
+     * There is no compile error — graphs that relied on the old ordering or operand order get silently
+     * different numbers, so any code constructing these from raw arrays should be re-checked.
      */
     export interface IFlowGraphMatrix<VectorType> {
         /**
-         * The matrix elements stored in a row-major order.
+         * The matrix elements stored in column-major order.
          */
         m: number[];
         /**
@@ -130688,7 +131540,10 @@ declare namespace BABYLON {
         equals(other: IFlowGraphMatrix<VectorType>, epsilon?: number): boolean;
     }
     /**
-     * A 2x2 matrix.
+     * A 2x2 matrix, stored in column-major order.
+     *
+     * BREAKING: this class was row-major in earlier releases — see {@link IFlowGraphMatrix} for the full
+     * behaviour change (flat-array construction, transform, and multiply operand order).
      */
     export class FlowGraphMatrix2D implements IFlowGraphMatrix<Vector2> {
         /**
@@ -130718,7 +131573,10 @@ declare namespace BABYLON {
         toString(): string;
     }
     /**
-     * A 3x3 matrix.
+     * A 3x3 matrix, stored in column-major order.
+     *
+     * BREAKING: this class was row-major in earlier releases — see {@link IFlowGraphMatrix} for the full
+     * behaviour change (flat-array construction, transform, and multiply operand order).
      */
     export class FlowGraphMatrix3D implements IFlowGraphMatrix<Vector3> {
         /**
@@ -130848,6 +131706,7 @@ declare namespace BABYLON {
         SceneTickEvent = "FlowGraphSceneTickEventBlock",
         SendCustomEvent = "FlowGraphSendCustomEventBlock",
         ReceiveCustomEvent = "FlowGraphReceiveCustomEventBlock",
+        StopEventPropagation = "FlowGraphStopEventPropagationBlock",
         MeshPickEvent = "FlowGraphMeshPickEventBlock",
         PointerEvent = "FlowGraphPointerEventBlock",
         PointerDownEvent = "FlowGraphPointerDownEventBlock",
@@ -130860,6 +131719,7 @@ declare namespace BABYLON {
         IsKeyPressed = "FlowGraphIsKeyPressedBlock",
         E = "FlowGraphEBlock",
         PI = "FlowGraphPIBlock",
+        Tau = "FlowGraphTauBlock",
         Inf = "FlowGraphInfBlock",
         NaN = "FlowGraphNaNBlock",
         Random = "FlowGraphRandomBlock",
@@ -130881,6 +131741,10 @@ declare namespace BABYLON {
         Clamp = "FlowGraphClampBlock",
         Saturate = "FlowGraphSaturateBlock",
         MathInterpolation = "FlowGraphMathInterpolationBlock",
+        MathSlerp = "FlowGraphMathSlerpBlock",
+        SmoothStep = "FlowGraphSmoothStepBlock",
+        RGBToOkLCh = "FlowGraphRGBToOkLChBlock",
+        RGBFromOkLCh = "FlowGraphRGBFromOkLChBlock",
         Equality = "FlowGraphEqualityBlock",
         LessThan = "FlowGraphLessThanBlock",
         LessThanOrEqual = "FlowGraphLessThanOrEqualBlock",
@@ -130972,6 +131836,9 @@ declare namespace BABYLON {
         QuaternionFromAxisAngle = "FlowGraphQuaternionFromAxisAngleBlock",
         AxisAngleFromQuaternion = "FlowGraphAxisAngleFromQuaternionBlock",
         QuaternionFromDirections = "FlowGraphQuaternionFromDirectionsBlock",
+        QuaternionFromUpForward = "FlowGraphQuaternionFromUpForwardBlock",
+        QuaternionFromAngles = "FlowGraphQuaternionFromAnglesBlock",
+        VectorSlerp = "FlowGraphVectorSlerpBlock",
         MatrixDecompose = "FlowGraphMatrixDecompose",
         MatrixCompose = "FlowGraphMatrixCompose",
         BooleanToFloat = "FlowGraphBooleanToFloat",
@@ -131858,14 +132725,23 @@ declare namespace BABYLON {
          * This is the default behavior in glTF interactivity
          */
         incrementIndexWhenLoopDone?: boolean;
+        /**
+         * Overrides {@link FlowGraphForLoopBlock.MaxLoopIterations} for this block only.
+         * Lets a single graph opt into a higher (or lower) runaway-loop guard without changing the
+         * process-wide default that every other FlowGraph relies on.
+         */
+        maxLoopIterations?: number;
     }
     /**
      * Block that executes an action in a loop.
      */
     export class FlowGraphForLoopBlock extends FlowGraphExecutionBlockWithOutSignal {
         /**
-         * The maximum number of iterations allowed for the loop.
-         * If the loop exceeds this number, it will stop. This number is configurable to avoid infinite loops.
+         * The default maximum number of iterations allowed for the loop, used as a safety net against
+         * runaway loops. Kept conservative so a runaway loop is caught before it can freeze the tab.
+         * A single graph that legitimately needs more iterations should set the per-block
+         * {@link IFlowGraphForLoopBlockConfiguration.maxLoopIterations} rather than raising this
+         * process-wide default that every other FlowGraph relies on.
          */
         static MaxLoopIterations: number;
         /**
@@ -132422,7 +133298,20 @@ declare namespace BABYLON {
          * @internal
          * @param context
          */
+        _startPendingTasks(context: FlowGraphContext): void;
+        /**
+         * @internal
+         * @param context the graph context
+         */
         _preparePendingTasks(context: FlowGraphContext): void;
+        /**
+         * Prepares and starts the animation, reporting whether it could be started. Invalid inputs
+         * activate `err` and return false, so the caller neither activates `out` nor registers the
+         * block as pending.
+         * @param context the graph context
+         * @returns whether the animation was prepared and started successfully
+         */
+        private _tryPreparePendingTasks;
         protected _reportError(context: FlowGraphContext, error: string | Error): void;
         /**
          * @internal
@@ -132653,7 +133542,10 @@ declare namespace BABYLON {
 
     /** This file must only contain pure code and pure imports */
     /**
-     * An easing block that generates a BezierCurveEase easingFunction object based on the data provided.
+     * An easing block that generates a cubic Bézier easing function based on the data provided.
+     *
+     * Follows CSS cubic-bezier semantics: for input progress `t`, solve the curve parameter where X
+     * equals `t`, then use the corresponding Y coordinate as the eased output progress.
      */
     export class FlowGraphBezierCurveEasingBlock extends FlowGraphBlock {
         /**
@@ -132706,6 +133598,47 @@ declare namespace BABYLON {
     /** Pure barrel — re-exports only side-effect-free modules */
 
 
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Stops the propagation of an in-flight custom event.
+     *
+     * When activated it asks the coordinator to skip the remaining handler nodes of
+     * the currently-dispatching event referenced by the `event` input, then activates
+     * its `out` flow. If the `event` input is not a valid, currently-dispatching event
+     * reference, activating this block only fires `out` with no other effect.
+     */
+    export class FlowGraphStopEventPropagationBlock extends FlowGraphExecutionBlockWithOutSignal {
+        /**
+         * Input: the event reference (produced by an event operation's `event` output)
+         * whose propagation should be stopped.
+         */
+        readonly event: FlowGraphDataConnection<string>;
+        /**
+         * Input: whether to also stop remaining immediate handlers. See
+         * `FlowGraphCoordinator.stopEventPropagation` for how this maps onto the
+         * Babylon single-Observable dispatch model.
+         */
+        readonly stopImmediate: FlowGraphDataConnection<boolean>;
+        constructor(config?: IFlowGraphBlockConfiguration);
+        _execute(context: FlowGraphContext): void;
+        /**
+         * @returns class name of the block.
+         */
+        getClassName(): string;
+    }
+    /**
+     * Register side effects for flowGraphStopEventPropagationBlock.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFlowGraphStopEventPropagationBlock(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import flowGraphStopEventPropagationBlock.pure for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** This file must only contain pure code and pure imports */
@@ -132839,8 +133772,15 @@ declare namespace BABYLON {
          * the time in seconds since the last frame.
          */
         readonly deltaTime: FlowGraphDataConnection<number>;
+        /**
+         * Output: the opaque reference identifying this event source.
+         * All instances of this block share the same reference, so comparing the `event` output of two
+         * of them for equality succeeds. The reference format is owned by the host environment.
+         */
+        readonly eventRef: FlowGraphDataConnection<string>;
         readonly type: FlowGraphEventType;
         constructor();
+        _updateOutputs(context: FlowGraphContext): void;
         /**
          * @internal
          */
@@ -132878,6 +133818,14 @@ declare namespace BABYLON {
     export class FlowGraphSceneReadyEventBlock extends FlowGraphEventBlock {
         initPriority: number;
         readonly type: FlowGraphEventType;
+        /**
+         * Output: the opaque reference identifying this event source.
+         * All instances of this block share the same reference, so comparing the `event` output of two
+         * of them for equality succeeds. The reference format is owned by the host environment.
+         */
+        readonly eventRef: FlowGraphDataConnection<string>;
+        constructor();
+        _updateOutputs(context: FlowGraphContext): void;
         _executeEvent(context: FlowGraphContext, _payload: any): boolean;
         _preparePendingTasks(context: FlowGraphContext): void;
         _cancelPendingTasks(context: FlowGraphContext): void;
@@ -132930,12 +133878,26 @@ declare namespace BABYLON {
          */
         config: IFlowGraphReceiveCustomEventBlockConfiguration;
         initPriority: number;
+        /**
+         * Output: the opaque reference identifying the received event source.
+         * Receivers configured with the same event id share the same reference, so comparing their
+         * `event` outputs for equality succeeds. The reference format is owned by the host environment.
+         */
+        readonly eventRef: FlowGraphDataConnection<string>;
         constructor(
         /**
          * the configuration of the block
          */
         config: IFlowGraphReceiveCustomEventBlockConfiguration);
+        _updateOutputs(context: FlowGraphContext): void;
         _preparePendingTasks(context: FlowGraphContext): void;
+        /**
+         * The value an output falls back to when the sender provides no value for it: the default
+         * declared by the payload schema, or the socket type's default when the schema declares none.
+         * @param key the payload key
+         * @returns the default value for that key
+         */
+        private _getEventDataDefault;
         _cancelPendingTasks(context: FlowGraphContext): void;
         _executeEvent(_context: FlowGraphContext, _payload: any): boolean;
         serialize(serializationObject?: any): void;
@@ -134205,6 +135167,7 @@ declare namespace BABYLON {
          * Output connection: Whether the value is valid.
          */
         readonly isValid: FlowGraphDataConnection<boolean>;
+        private readonly _outputRichType;
         constructor(outputRichType: RichType<OutputT>, config?: IFlowGraphBlockConfiguration);
         /**
          * @internal
@@ -134212,7 +135175,24 @@ declare namespace BABYLON {
          * @param context the graph context
          */
         abstract _doOperation(context: FlowGraphContext): OutputT | undefined;
+        /**
+         * The value delivered on the `value` output when the operation cannot produce a result.
+         *
+         * Defaults to the output type's default value. Override this when a block defines a different
+         * value for that case, for example a polymorphic block whose output type is only known from its
+         * inputs. Implementations must return a fresh value rather than a shared instance, because
+         * consumers may mutate the value they receive.
+         * @param _context the graph context
+         * @returns the value to deliver alongside `isValid = false`
+         */
+        protected _getInvalidOutputValue(_context: FlowGraphContext): OutputT;
         _updateOutputs(context: FlowGraphContext): void;
+        /**
+         * Reports the operation as invalid. `value` is still assigned, so it never reports a stale
+         * result from an earlier execution nor an undefined value on the first one.
+         * @param context the graph context
+         */
+        private _setInvalid;
     }
 
 
@@ -134754,9 +135734,22 @@ declare namespace BABYLON {
     /**
      * Vector normalize block.
      */
-    export class FlowGraphNormalizeBlock extends FlowGraphUnaryOperationBlock<FlowGraphVector, FlowGraphVector> {
+    export class FlowGraphNormalizeBlock extends FlowGraphCachedOperationBlock<FlowGraphVector> {
+        /**
+         * The vector to normalize.
+         */
+        readonly a: FlowGraphDataConnection<FlowGraphVector>;
         constructor(config?: IFlowGraphNormalizeBlockConfiguration);
+        _doOperation(context: FlowGraphContext): FlowGraphVector | undefined;
+        /**
+         * A vector that cannot be normalized reports a vector of the same type with every component set
+         * to zero, so the output stays type-consistent with the input instead of being left undefined.
+         * @param context the graph context
+         * @returns a zero vector matching the input's type
+         */
+        protected _getInvalidOutputValue(context: FlowGraphContext): FlowGraphVector;
         private _polymorphicNormalize;
+        getClassName(): string;
     }
     /**
      * Dot product block.
@@ -134859,6 +135852,45 @@ declare namespace BABYLON {
         constructor(config?: IFlowGraphBlockConfiguration);
     }
     /**
+     * Get a rotation quaternion from the specified up and forward directions.
+     */
+    export class FlowGraphQuaternionFromUpForwardBlock extends FlowGraphBinaryOperationBlock<Vector3, Vector3, Quaternion> {
+        constructor(config?: IFlowGraphBlockConfiguration);
+    }
+    /**
+     * Spherical linear interpolation between two vectors.
+     * Supports float2 and float3 vectors; the interpolation coefficient is a number.
+     */
+    export class FlowGraphVectorSlerpBlock extends FlowGraphTernaryOperationBlock<FlowGraphVector, FlowGraphVector, number, FlowGraphVector> {
+        constructor(config?: IFlowGraphBlockConfiguration);
+        private _polymorphicSlerp;
+    }
+    /**
+     * The configuration of the FlowGraphQuaternionFromAnglesBlock.
+     */
+    export interface IFlowGraphQuaternionFromAnglesBlockConfiguration extends IFlowGraphBlockConfiguration {
+        /**
+         * The intrinsic Tait–Bryan rotation order, one of `xyz`, `xzy`, `yxz`, `yzx`, `zxy`, `zyx`.
+         * Any other (or missing) value falls back to the spec default `yxz`.
+         */
+        order?: string;
+    }
+    /**
+     * Creates a rotation quaternion from three Tait–Bryan intrinsic Euler angles applied in a
+     * configurable order.
+     *
+     * Inputs `a`, `b`, `c` are the rotations (in radians) around the X, Y and Z axes respectively.
+     * The `order` configuration selects the intrinsic rotation order; NaN and infinite inputs
+     * propagate into the resulting quaternion components.
+     */
+    export class FlowGraphQuaternionFromAnglesBlock extends FlowGraphTernaryOperationBlock<number, number, number, Quaternion> {
+        /**
+         * The validated intrinsic rotation order used to compose the quaternion.
+         */
+        private readonly _order;
+        constructor(config?: IFlowGraphQuaternionFromAnglesBlockConfiguration);
+    }
+    /**
      * Register side effects for flowGraphVectorMathBlocks.
      * Safe to call multiple times; only the first call has an effect.
      */
@@ -134880,6 +135912,20 @@ declare namespace BABYLON {
          * The type of the matrix. Default is Matrix (which is 4x4)
          */
         matrixType: FlowGraphTypes;
+    }
+    /**
+     * Configuration for the matrix decompose block.
+     */
+    export interface IFlowGraphMatrixDecomposeBlockConfiguration extends IFlowGraphBlockConfiguration {
+        /**
+         * When a matrix cannot be decomposed, output the translation and the raw column lengths that were
+         * extracted from the matrix instead of the type-default translation and scale. `isValid` is reported
+         * as `false` either way. Defaults to `false`.
+         *
+         * A host whose specification requires those components to be preserved can turn this on; it is
+         * opt-in so that the default block behaviour stays unchanged.
+         */
+        keepDegenerateComponents?: boolean;
     }
     /**
      * Transposes a matrix.
@@ -134904,12 +135950,25 @@ declare namespace BABYLON {
     /**
      * Inverts a matrix.
      */
-    export class FlowGraphInvertMatrixBlock extends FlowGraphUnaryOperationBlock<FlowGraphMatrix, FlowGraphMatrix> {
+    export class FlowGraphInvertMatrixBlock extends FlowGraphCachedOperationBlock<FlowGraphMatrix> {
+        /**
+         * The matrix to invert.
+         */
+        readonly a: FlowGraphDataConnection<FlowGraphMatrix>;
+        private readonly _matrixType;
         /**
          * Creates a new instance of the inverse block.
          * @param config the configuration of the block
          */
         constructor(config?: IFlowGraphMatrixBlockConfiguration);
+        _doOperation(context: FlowGraphContext): FlowGraphMatrix | undefined;
+        /**
+         * A matrix with no inverse reports an all-zero matrix rather than the identity default of the
+         * matrix type, so the output is not mistaken for a meaningful transform.
+         * @returns a matrix of the block's type with every element set to zero
+         */
+        protected _getInvalidOutputValue(): FlowGraphMatrix;
+        getClassName(): string;
     }
     /**
      * Multiplies two matrices.
@@ -134946,7 +136005,7 @@ declare namespace BABYLON {
          * Is the matrix valid
          */
         readonly isValid: FlowGraphDataConnection<boolean>;
-        constructor(config?: IFlowGraphBlockConfiguration);
+        constructor(config?: IFlowGraphMatrixDecomposeBlockConfiguration);
         _updateOutputs(context: FlowGraphContext): void;
         getClassName(): string;
     }
@@ -135041,18 +136100,33 @@ declare namespace BABYLON {
     }
     /**
      * Configuration for the matrix combine blocks.
+     * @deprecated The matrix combine blocks now default to column-major input, matching Babylon's
+     * {@link Matrix} storage and the glTF/KHR_interactivity convention. This interface is retained so the
+     * `inputIsColumnMajor` option keeps being honoured; set it to `false` to feed row-major input.
+     *
+     * BREAKING: the meaning of `inputIsColumnMajor` is inverted from previous releases, not just its
+     * default. Previously `inputIsColumnMajor: true` took the transposing path and the default (unset)
+     * treated input as row-major. Now the default (unset) is column-major, `inputIsColumnMajor: false`
+     * takes the transposing path, and `inputIsColumnMajor: true` is the straight (non-transposing) path.
+     * The unset behaviour is unchanged for graphs that never set the flag, but anyone who explicitly set
+     * `true` or `false` before now gets the opposite transform and should drop the flag (or flip it).
      */
     export interface IFlowGraphCombineMatrixBlockConfiguration extends IFlowGraphBlockConfiguration {
         /**
-         * Whether the input is in column-major order. Default is false.
-         * Note - Babylon's matrix is the same as WebGL's. So unless your matrix requires transformation, you should leave this as false.
+         * Whether the input is already in column-major order. Defaults to `true`.
+         * @deprecated Provide column-major input (the default) and omit this flag. Set to `false` only to
+         * keep feeding legacy row-major input, which is transposed into the matrix's column-major storage.
+         * Note the inverted meaning versus previous releases (see the interface deprecation note): a former
+         * `inputIsColumnMajor: true` no longer transposes, and a former `false` now does.
          */
         inputIsColumnMajor?: boolean;
     }
     /**
-     * Combines 16 floats into a new Matrix
+     * Combines 16 floats into a new Matrix.
      *
-     * Note that glTF interactivity's combine4x4 uses column-major order, while Babylon.js uses row-major order.
+     * The inputs are in column-major order, matching Babylon's {@link Matrix} storage and the order used
+     * by `Matrix.FromArray`, `Matrix.FromValues` and {@link FlowGraphExtractMatrixBlock}, so combining
+     * and extracting round-trip.
      */
     export class FlowGraphCombineMatrixBlock extends FlowGraphMathCombineBlock<Matrix> {
         constructor(config?: IFlowGraphCombineMatrixBlockConfiguration);
@@ -135060,7 +136134,7 @@ declare namespace BABYLON {
         getClassName(): string;
     }
     /**
-     * Combines 4 floats into a new Matrix
+     * Combines 4 floats into a new Matrix2D, in column-major order.
      */
     export class FlowGraphCombineMatrix2DBlock extends FlowGraphMathCombineBlock<FlowGraphMatrix2D> {
         constructor(config?: IFlowGraphCombineMatrixBlockConfiguration);
@@ -135068,7 +136142,7 @@ declare namespace BABYLON {
         getClassName(): string;
     }
     /**
-     * Combines 9 floats into a new Matrix3D
+     * Combines 9 floats into a new Matrix3D, in column-major order.
      */
     export class FlowGraphCombineMatrix3DBlock extends FlowGraphMathCombineBlock<FlowGraphMatrix3D> {
         constructor(config?: IFlowGraphCombineMatrixBlockConfiguration);
@@ -135252,6 +136326,12 @@ declare namespace BABYLON {
         constructor(config?: IFlowGraphBlockConfiguration);
     }
     /**
+     * Tau constant (2 * Pi), the ratio of a circle's circumference to its radius.
+     */
+    export class FlowGraphTauBlock extends FlowGraphConstantOperationBlock<number> {
+        constructor(config?: IFlowGraphBlockConfiguration);
+    }
+    /**
      * Positive inf constant.
      */
     export class FlowGraphInfBlock extends FlowGraphConstantOperationBlock<number> {
@@ -135374,6 +136454,28 @@ declare namespace BABYLON {
     export class FlowGraphMathInterpolationBlock extends FlowGraphTernaryOperationBlock<FlowGraphMathOperationType, FlowGraphMathOperationType, FlowGraphMathOperationType, FlowGraphMathOperationType> {
         constructor(config?: IFlowGraphBlockConfiguration);
         private _polymorphicInterpolate;
+    }
+    /**
+     * Spherical linear interpolation between two unit quaternions, matching the
+     * quaternion slerp operation. The two inputs are treated as
+     * Babylon `Quaternion` values regardless of their concrete class (the spec
+     * defines them as `float4`), and the output is a `Quaternion`.
+     *
+     * The underlying implementation is `Quaternion.Slerp`, whose algorithm matches
+     * the spec step-for-step (dot product, conditional sign-flip on `b`, sin-based
+     * weighting, and a near-identity short-circuit to a linear blend).
+     */
+    export class FlowGraphMathSlerpBlock extends FlowGraphTernaryOperationBlock<Quaternion, Quaternion, number, Quaternion> {
+        constructor(config?: IFlowGraphBlockConfiguration);
+    }
+    /**
+     * Smooth-step block, returning the Hermite interpolation coefficient.
+     * Operates component-wise over floatN inputs (the two edges `a`/`b` and the
+     * value `c`).
+     */
+    export class FlowGraphMathSmoothStepBlock extends FlowGraphTernaryOperationBlock<FlowGraphMathOperationType, FlowGraphMathOperationType, FlowGraphMathOperationType, FlowGraphMathOperationType> {
+        constructor(config?: IFlowGraphBlockConfiguration);
+        private _polymorphicSmoothStep;
     }
     /**
      * Equals block.
@@ -135648,6 +136750,70 @@ declare namespace BABYLON {
      */
     export class FlowGraphOneBitsCounterBlock extends FlowGraphUnaryOperationBlock<FlowGraphInteger, FlowGraphInteger> {
         constructor(config?: IFlowGraphBlockConfiguration);
+    }
+    /**
+     * Block that converts a linear sRGB color (r, g, b) to OkLCh (l, c, h). Hue is in radians.
+     */
+    export class FlowGraphRGBToOkLChBlock extends FlowGraphBlock {
+        /**
+         * Input connection: the linear red component.
+         */
+        readonly r: FlowGraphDataConnection<number>;
+        /**
+         * Input connection: the linear green component.
+         */
+        readonly g: FlowGraphDataConnection<number>;
+        /**
+         * Input connection: the linear blue component.
+         */
+        readonly b: FlowGraphDataConnection<number>;
+        /**
+         * Output connection: the OkLCh lightness.
+         */
+        readonly l: FlowGraphDataConnection<number>;
+        /**
+         * Output connection: the OkLCh chroma.
+         */
+        readonly c: FlowGraphDataConnection<number>;
+        /**
+         * Output connection: the OkLCh hue, in radians.
+         */
+        readonly h: FlowGraphDataConnection<number>;
+        constructor(config?: IFlowGraphBlockConfiguration);
+        _updateOutputs(context: FlowGraphContext): void;
+        getClassName(): string;
+    }
+    /**
+     * Block that converts an OkLCh color (l, c, h) to linear sRGB (r, g, b). Hue is in radians.
+     */
+    export class FlowGraphRGBFromOkLChBlock extends FlowGraphBlock {
+        /**
+         * Input connection: the OkLCh lightness.
+         */
+        readonly l: FlowGraphDataConnection<number>;
+        /**
+         * Input connection: the OkLCh chroma.
+         */
+        readonly c: FlowGraphDataConnection<number>;
+        /**
+         * Input connection: the OkLCh hue, in radians.
+         */
+        readonly h: FlowGraphDataConnection<number>;
+        /**
+         * Output connection: the linear red component.
+         */
+        readonly r: FlowGraphDataConnection<number>;
+        /**
+         * Output connection: the linear green component.
+         */
+        readonly g: FlowGraphDataConnection<number>;
+        /**
+         * Output connection: the linear blue component.
+         */
+        readonly b: FlowGraphDataConnection<number>;
+        constructor(config?: IFlowGraphBlockConfiguration);
+        _updateOutputs(context: FlowGraphContext): void;
+        getClassName(): string;
     }
     /**
      * Register side effects for flowGraphMathBlocks.
@@ -136477,6 +137643,7 @@ declare namespace BABYLON {
         /** @internal */
         _cacheSampler: WebGPUCacheSampler;
         private _cacheBindGroups;
+        private _cacheTextureViews;
         private _emptyVertexBuffer;
         /** @internal */
         _mrtAttachments: number[];
@@ -137559,6 +138726,11 @@ declare namespace BABYLON {
          * @internal
          */
         protected _initializeNativeEngine(adaptToDeviceRatio: boolean): void;
+        /**
+         * Brackets a scene's render with a command scope, so the commands it encodes are submitted together.
+         * @param scene the scene whose render should be wrapped
+         */
+        private _wrapSceneRenderWithCommandScope;
         setHardwareScalingLevel(level: number): void;
         dispose(): void;
         /**
@@ -140385,6 +141557,11 @@ declare namespace BABYLON {
         maxVertexUniformVectors: number;
         /** Maximum number of uniforms per fragment shader */
         maxFragmentUniformVectors: number;
+        /**
+         * Maximum number of uniform buffers that can be bound to a single shader stage.
+         * Only reported by engines where this is a hard, enforced limit (WebGPU). Left undefined elsewhere.
+         */
+        maxUniformBuffersPerShaderStage?: number;
         /** The number of bits that can be accurately represented in shader floats */
         shaderFloatPrecision: number;
         /** Defines if standard derivatives (dx/dy) are supported */
@@ -145948,6 +147125,21 @@ declare namespace BABYLON {
 
 
 
+    /**
+     * Caches GPUTextureView objects so that render-pass attachments (color, MSAA resolve, depth/stencil)
+     * don't recreate a fresh view every time a render target is bound/cleared.
+     * Views are keyed on the live GPUTexture object via a WeakMap: once a texture is recreated (e.g. on resize)
+     * the old texture becomes unreachable and its cached views are collected along with it, so no manual
+     * invalidation is required.
+     * @internal
+     */
+    export class WebGPUCacheTextureView {
+        private _cache;
+        getView(texture: GPUTexture, descriptor: GPUTextureViewDescriptor): GPUTextureView;
+        private static _GetKey;
+    }
+
+
     /** @internal */
     export class WebGPUCacheSampler {
         private _samplers;
@@ -146153,6 +147345,7 @@ declare namespace BABYLON {
         private _createPipelineLayout;
         private _createPipelineLayoutWithTextureStage;
         private _getVertexInputDescriptor;
+        private static _CanMergeVertexBuffer;
         private _buildRenderPipelineDescriptor;
         private _createRenderPipeline;
         /**
