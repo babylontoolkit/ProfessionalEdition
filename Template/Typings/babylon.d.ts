@@ -5750,6 +5750,8 @@ declare namespace BABYLON {
         private _xrSessionManager;
         private static _ScaleReadOnly;
         private _firstFrame;
+        private _xrSessionInitObserver;
+        private _xrFrameObserver;
         private _referenceQuaternion;
         private _referencedPosition;
         private _trackingState;
@@ -17942,7 +17944,7 @@ declare namespace BABYLON {
         /**
          * The component name helpful to identify the component in the list of scene components.
          */
-        readonly name = "PrePassRenderer";
+        readonly name = "SubSurface";
         /**
          * The scene the component belongs to.
          */
@@ -42504,7 +42506,6 @@ declare namespace BABYLON {
          */
         get output(): NodeParticleConnectionPoint;
         _build(state: NodeParticleBuildState): this | undefined;
-        _deserialize(serializationObject: any): void;
     }
     /**
      * Register side effects for particleClampBlock.
@@ -69133,7 +69134,8 @@ declare namespace BABYLON {
         UINT = 2,
         DOUBLE = 3,
         UCHAR = 4,
-        UNDEFINED = 5
+        USHORT = 5,
+        UNDEFINED = 6
     }
     /**
      * Usage types of the PLY values
@@ -120903,6 +120905,7 @@ declare namespace BABYLON {
         onGamepadDisconnectedObservable: Observable<Gamepad>;
         private _onGamepadConnectedEvent;
         private _onGamepadDisconnectedEvent;
+        private _hostWindow;
         /**
          * Initializes the gamepad manager
          * @param _scene BabylonJS scene
@@ -138718,6 +138721,11 @@ declare namespace BABYLON {
         private _stencilOpStencilDepthPass;
         private _zOffset;
         private _zOffsetUnits;
+        private _cachedCulling;
+        private _cachedReverseSide;
+        private _cachedCullBackFaces;
+        private _cachedZOffset;
+        private _cachedZOffsetUnits;
         private _depthWrite;
         private _fillModeWarningDisplayed;
         constructor(options?: ThinNativeEngineOptions);
@@ -138831,7 +138839,7 @@ declare namespace BABYLON {
         getRenderWidth(useScreen?: boolean): number;
         getRenderHeight(useScreen?: boolean): number;
         setViewport(viewport: IViewportLike, requiredWidth?: number, requiredHeight?: number): void;
-        setStateCullFaceType(_cullBackFaces?: boolean, _force?: boolean): void;
+        setStateCullFaceType(cullBackFaces?: boolean, force?: boolean): void;
         setState(culling: boolean, zOffset?: number, force?: boolean, reverseSide?: boolean, cullBackFaces?: boolean, stencil?: IStencilState, zOffsetUnits?: number): void;
         /**
          * Gets the client rect of native canvas.  Needed for InputManager.
@@ -149233,7 +149241,7 @@ declare namespace BABYLON {
         loadRawTexture(texture: NativeTexture, data: ArrayBufferView, width: number, height: number, format: number, generateMips: boolean, invertY: boolean): void;
         updateTextureData?(texture: NativeTexture, data: ArrayBufferView, xOffset: number, yOffset: number, width: number, height: number, faceIndex: number, lod: number, invertY: boolean): void;
         loadRawTexture2DArray(texture: NativeTexture, data: Nullable<ArrayBufferView>, width: number, height: number, depth: number, format: number, generateMipMaps: boolean, invertY: boolean): void;
-        loadCubeTexture(texture: NativeTexture, data: Array<ArrayBufferView>, generateMips: boolean, invertY: boolean, srgb: boolean, onSuccess: () => void, onError: () => void): void;
+        loadCubeTexture(texture: NativeTexture, data: Array<ArrayBufferView>, generateMips: boolean, invertY: boolean, srgb: boolean, onSuccess: (sphericalPolynomial?: ArrayLike<number>) => void, onError: () => void): void;
         loadCubeTextureWithMips(texture: NativeTexture, data: Array<Array<ArrayBufferView>>, invertY: boolean, srgb: boolean, onSuccess: () => void, onError: () => void): void;
         getTextureWidth(texture: NativeTexture): number;
         getTextureHeight(texture: NativeTexture): number;
@@ -160892,7 +160900,22 @@ declare namespace BABYLON {
          * Log error messages if basic misconfiguration has occurred.
          */
         warningEnable: boolean;
+        /**
+         * Called on pointer POINTERMOVE event if only a single touch is active.
+         * @param pointA The current position of the pointer
+         * @param offsetX The offsetX of the pointer when the event occurred
+         * @param offsetY The offsetY of the pointer when the event occurred
+         */
         onTouch(pointA: Nullable<PointerTouch>, offsetX: number, offsetY: number): void;
+        /**
+         * Called on pointer POINTERMOVE event if multiple touches are active.
+         * @param pointA First point in the pair
+         * @param pointB Second point in the pair
+         * @param previousPinchSquaredDistance Sqr Distance between the points the last time this event was fired (by this input)
+         * @param pinchSquaredDistance Sqr Distance between the points this time
+         * @param previousMultiTouchPanPosition Previous center point between the points
+         * @param multiTouchPanPosition Current center point between the points
+         */
         onMultiTouch(pointA: Nullable<PointerTouch>, pointB: Nullable<PointerTouch>, previousPinchSquaredDistance: number, pinchSquaredDistance: number, previousMultiTouchPanPosition: Nullable<PointerTouch>, multiTouchPanPosition: Nullable<PointerTouch>): void;
         private _warningCounter;
         private _warning;
