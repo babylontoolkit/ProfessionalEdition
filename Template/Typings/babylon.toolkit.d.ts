@@ -7,7 +7,7 @@ declare namespace TOOLKIT {
     * @class SceneManager - All rights reserved (c) 2024 Mackey Kinard
     */
     class SceneManager {
-        /** Gets the toolkit framework version string (9.22.2 - R1) */
+        /** Gets the toolkit framework version string (9.22.3 - R1) */
         static get Version(): string;
         /** Gets the toolkit framework copyright notice */
         static get Copyright(): string;
@@ -449,8 +449,13 @@ declare namespace TOOLKIT {
         /** TODO: Support Instance Or Clones */
         /** Instantiate the specified prefab asset hierarchy from the specified scene. (Cloned Hierarchy) */
         static InstantiatePrefabFromScene(scene: BABYLON.Scene, prefabName: string, newName: string, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, newPosition?: BABYLON.Nullable<BABYLON.Vector3>, newRotation?: BABYLON.Nullable<BABYLON.Quaternion>, newScaling?: BABYLON.Nullable<BABYLON.Vector3>, cloneAnimations?: boolean): BABYLON.TransformNode;
-        /** Instantiate the specified prefab asset hierarchy from an asset container. (Cloned Hierarchy) */
-        static InstantiatePrefabFromContainer(container: BABYLON.AssetContainer, prefabName: string, newName: string, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, newPosition?: BABYLON.Nullable<BABYLON.Vector3>, newRotation?: BABYLON.Nullable<BABYLON.Quaternion>, newScaling?: BABYLON.Nullable<BABYLON.Vector3>, cloneAnimations?: boolean, makeNewMaterials?: boolean): BABYLON.TransformNode;
+        /** Instantiate the specified prefab asset hierarchy from an asset container. (Cloned Hierarchy)
+         * @param createInstancedMesh defines an option to override the per node metadata instance flag.
+         * When null (default) each mesh node uses its own metadata.toolkit.instance flag, normally set from
+         * the mesh details component. When true every mesh node is created as a hardware instanced mesh.
+         * When false every mesh node is created as a full geometry clone.
+         */
+        static InstantiatePrefabFromContainer(container: BABYLON.AssetContainer, prefabName: string, newName: string, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, newPosition?: BABYLON.Nullable<BABYLON.Vector3>, newRotation?: BABYLON.Nullable<BABYLON.Quaternion>, newScaling?: BABYLON.Nullable<BABYLON.Vector3>, cloneAnimations?: boolean, makeNewMaterials?: boolean, createInstancedMesh?: BABYLON.Nullable<boolean>): BABYLON.TransformNode;
         /** Instantiate all the raw models from an asset container. (Cloned Hierarchy) */
         static InstantiateModelsFromContainer(container: BABYLON.AssetContainer, nameFunction?: (sourceName: string) => string, createInstances?: boolean, cloneMaterials?: boolean, rebuildBoundingInfo?: boolean, filterPredicate?: any): BABYLON.TransformNode[];
         /** Instantiate the specified prefab asset hierarchy from an asset container. (Instanced Hierarchy) */
@@ -3212,16 +3217,26 @@ declare namespace TOOLKIT {
          * @param nameFunction defines an optional function used to get new names for clones
          * @param makeNewMaterials defines an optional boolean that defines if materials must be cloned as well (false by default)
          * @param cloneAnimations defines an option to clone any animation groups (true by default)
-         * @param disableInstance defines an option to disable the cloned instance (false by default)
+         * @param createInstancedMesh defines an option to override the per node metadata instance flag.
+         * When null (default) each mesh node uses its own metadata.toolkit.instance flag, normally set from
+         * the mesh details component. When true every mesh node is created as a hardware instanced mesh.
+         * When false every mesh node is created as a full geometry clone.
          * @returns the transform node that was duplicated
          */
-        static CloneAssetContainerItem(container: BABYLON.AssetContainer, assetName: string, nameFunction?: (sourceName: string) => string, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, makeNewMaterials?: boolean, cloneAnimations?: boolean): BABYLON.TransformNode;
+        static CloneAssetContainerItem(container: BABYLON.AssetContainer, assetName: string, nameFunction?: (sourceName: string) => string, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, makeNewMaterials?: boolean, cloneAnimations?: boolean, createInstancedMesh?: BABYLON.Nullable<boolean>): BABYLON.TransformNode;
         static AssignAnimationGroupsToInstance(root: BABYLON.TransformNode, groups: BABYLON.AnimationGroup[]): void;
         static AssignAnimationGroupsToNode(transform: BABYLON.TransformNode, groups: BABYLON.AnimationGroup[]): void;
         static UnitySlopeAngleToCosine(unitySlopeAngleDegrees: number): number;
-        static InstantiateHierarchy(node: BABYLON.TransformNode, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, onNewNodeCreated?: (source: BABYLON.TransformNode, clone: BABYLON.TransformNode) => void): BABYLON.Nullable<BABYLON.TransformNode>;
-        static InstantiateNodeHierarchy(node: BABYLON.TransformNode, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, onNewNodeCreated?: (source: BABYLON.TransformNode, clone: BABYLON.TransformNode) => void): BABYLON.Nullable<BABYLON.TransformNode>;
-        static InstantiateMeshHierarchy(mesh: BABYLON.Mesh, newParent: BABYLON.Nullable<BABYLON.TransformNode>, createInstance: boolean, onNewNodeCreated?: (source: BABYLON.TransformNode, clone: BABYLON.TransformNode) => void): BABYLON.Nullable<BABYLON.TransformNode>;
+        /**
+         * Instantiates the specified node hierarchy. (Internal Use Only)
+         * @param createInstancedMesh defines an option to override the per node metadata instance flag.
+         * When null (default) each mesh node uses its own metadata.toolkit.instance flag, normally set
+         * from the mesh details component. When true every mesh node in the hierarchy is created as a
+         * hardware instanced mesh. When false every mesh node is created as a full geometry clone.
+         */
+        static InstantiateHierarchy(node: BABYLON.TransformNode, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, onNewNodeCreated?: (source: BABYLON.TransformNode, clone: BABYLON.TransformNode) => void, createInstancedMesh?: BABYLON.Nullable<boolean>): BABYLON.Nullable<BABYLON.TransformNode>;
+        static InstantiateNodeHierarchy(node: BABYLON.TransformNode, newParent?: BABYLON.Nullable<BABYLON.TransformNode>, onNewNodeCreated?: (source: BABYLON.TransformNode, clone: BABYLON.TransformNode) => void, createInstancedMesh?: BABYLON.Nullable<boolean>): BABYLON.Nullable<BABYLON.TransformNode>;
+        static InstantiateMeshHierarchy(mesh: BABYLON.Mesh, newParent: BABYLON.Nullable<BABYLON.TransformNode>, createInstance: boolean, onNewNodeCreated?: (source: BABYLON.TransformNode, clone: BABYLON.TransformNode) => void, createInstancedMesh?: BABYLON.Nullable<boolean>): BABYLON.Nullable<BABYLON.TransformNode>;
         static PrepareSkeletonForRendering(skeleton: BABYLON.Skeleton, dontCheckFrameId?: boolean): void;
         static RetargetAnimationGroupSkeleton(animationGroup: BABYLON.AnimationGroup, targetSkeleton: BABYLON.Skeleton, targetArmatureNode?: BABYLON.TransformNode): void;
         static RetargetAnimationGroupBlendShapes(animationGroup: BABYLON.AnimationGroup, targetMesh: BABYLON.Mesh): void;
@@ -13326,6 +13341,7 @@ declare namespace TOOLKIT {
         protected m_vertexAnimationRenderers: BABYLON.Mesh[];
         protected m_vertexAnimationController: TOOLKIT.VertexAnimationController;
         protected m_vertexAnimationDefaultClip: string;
+        protected m_vertexAnimationSearchNodes: BABYLON.AbstractMesh[];
         constructor(transform: BABYLON.TransformNode, scene: BABYLON.Scene, properties?: any, alias?: string);
         protected awake(): void;
         protected update(): void;
@@ -13393,6 +13409,21 @@ declare namespace TOOLKIT {
         private updateAnimationGroups;
         private setupSourceAnimationGroups;
         private awakeStateMachine;
+        /**
+         * Resolves the scene node for a serialized vertex animation renderer entry.
+         *
+         * Design time scene nodes keep their exported guid as the node id, so a plain
+         * scene.getNodeById(vertexguid) resolves them. Runtime prefab instances created with
+         * TOOLKIT.SceneManager.InstantiatePrefabFromContainer are cloned and given brand new
+         * node ids, so the serialized vertexguid never matches anything in the scene. Cloned
+         * nodes record their design time id on metadata.toolkit.sourceid, so search THIS
+         * animator hierarchy first. Searching locally also keeps multiple instances of the
+         * same prefab from stealing each other renderer meshes, because a global lookup
+         * always returns the first matching node in the scene.
+         */
+        private resolveVertexAnimationRenderer;
+        /** Builds the transform path of a node relative to this animator transform (Unity style, root excluded) */
+        private getRelativeTransformPath;
         private updateStateMachine;
         private destroyStateMachine;
         private updateAnimationState;
@@ -16589,6 +16620,11 @@ declare namespace TOOLKIT {
         private _manifest;
         /** The mesh's current skin index (all skinned parts share it). */
         private _currentIndex;
+        /** Skin index requested via setSkinIndex BEFORE the component finished wiring (start/applySkins).
+         *  Runtime prefab instances normally call setSkinIndex right after instantiation, which happens
+         *  before start(), so the request has to survive applySkins instead of being replaced by the
+         *  authored defaultIndex. Null when no early request was made. */
+        private _pendingIndex;
         /** Configured skin targets, with the delivery mechanism resolved per material. */
         private _targets;
         /** Per-mesh cloned MultiMaterial (regular-mesh path) so submaterial swaps stay local to this mesh. */
@@ -16652,6 +16688,17 @@ declare namespace TOOLKIT {
          *  Safe to call before the array finishes loading — the value persists and takes effect once the
          *  shader is gated on. */
         private applyLayerToMaterial;
+        /**
+         * Force the skin-array shader defines onto the compiled effect.
+         *
+         * Enabling a channel calls material.markAsDirty(), but Babylon propagates a material dirty flag by
+         * walking scene.meshes ONLY. A VAT / hardware-instanced prefab renders from a SOURCE mesh that lives
+         * in the AssetContainer and is never added to the scene (only its InstancedMesh instances are), so
+         * that source mesh's submesh defines are never marked dirty: the effect keeps rendering without
+         * VAT_SKIN_ARRAY / TOOLKIT_SKIN_ARRAY and the skin index has no visible effect. Marking the submesh
+         * defines here rebuilds the effect with the skin-array code in it.
+         */
+        private refreshMaterialDefines;
         /** True when this mesh must use the per-instance buffer: it is an InstancedMesh, OR a source Mesh
          *  that has hardware instances (instances share sourceMesh.material, so a private clone + uniform
          *  layer is impossible — every instance would read the same shared value). */
