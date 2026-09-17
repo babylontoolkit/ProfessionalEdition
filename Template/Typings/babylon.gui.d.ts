@@ -1498,7 +1498,7 @@ declare namespace BABYLON.GUI {
      * @since 5.0.0
      */
     export class FluentButtonMaterial extends BABYLON.PushMaterial {
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * URL pointing to the texture used to define the coloring for the fluent blob effect.
          */
@@ -1733,7 +1733,7 @@ declare namespace BABYLON.GUI {
      * Class used to render square buttons with fluent design
      */
     export class FluentBackplateMaterial extends BABYLON.PushMaterial {
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * URL pointing to the texture used to define the coloring for the fluent blob effect.
          */
@@ -1941,7 +1941,7 @@ declare namespace BABYLON.GUI {
      * Class used to render controls with fluent design
      */
     export class FluentMaterial extends BABYLON.PushMaterial {
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Gets or sets inner glow intensity. A value of 0 means no glow (default is 0.5)
          */

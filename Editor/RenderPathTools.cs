@@ -194,7 +194,7 @@ public static class RenderPathTools
 
                 if (pathChanges.Count > 0)
                 {
-                    message.AppendLine("Forward+ / Deferred+ rendering may have compatibility issues with some Babylon Toolkit features. Forward rendering is recommended for better compatibility.");
+                    message.AppendLine("Forward+ / Deferred+ rendering may have compatibility issues with some Babylon Toolkit features. The standard forward rendering path is recommended.");
                     message.AppendLine();
                 }
                 if (drawerChanges.Count > 0)

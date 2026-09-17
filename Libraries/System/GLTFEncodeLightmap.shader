@@ -11,6 +11,12 @@ Shader "Hidden/Export/EncodeLightmap"
 
         // 1 = encode RGBD for Babylon; 0 = plain LDR output
         _Rgbd ("Encode RGBD", Int) = 0
+
+        // plan D23: SRP selects the lightmap decode at COMPILE time from UNITY_LIGHTMAP_*_ENCODING and has
+        // no unity_Lightmap_HDR uniform, so a manual Graphics.Blit can never learn the encoding. The
+        // exporter passes it in instead. exponent 0 => full-HDR/dLDR (alpha unused); exponent > 0 => RGBM.
+        _DecodeMult ("Lightmap decode multiplier", Float) = 1.0
+        _DecodeExp  ("Lightmap decode exponent",   Float) = 0.0
     }
 
     SubShader
@@ -48,6 +54,8 @@ Shader "Hidden/Export/EncodeLightmap"
             int       _Correct;
             int       _FlipY;
             int       _Rgbd;
+            float     _DecodeMult;
+            float     _DecodeExp;
 
             // ------------------------------------------------------------------
             // Babylon-compatible RGBD encode (matches helperFunctions.fx: toRGBD)
@@ -101,7 +109,12 @@ Shader "Hidden/Export/EncodeLightmap"
                 float4 src = tex2D(_MainTex, i.texcoord);
 
                 // 2. Decode to linear HDR illumination (Unity’s lighting data)
-                float3 lightLinear = DecodeLightmap(src);
+                // plan D23: the decode SRP picks at compile time, passed in as uniforms. Full HDR is
+                // (mult 1, exp 0) - a pass-through - so a High-encoding project exports byte-identical
+                // output to the historical DecodeLightmap(src) call this replaced.
+                float3 lightLinear = (_DecodeExp > 0.0)
+                    ? src.rgb * (pow(max(src.a, 1e-5), _DecodeExp) * _DecodeMult)
+                    : src.rgb * _DecodeMult;
 
                 // 3. RGBD export path for Babylon
                 if (_Rgbd == 1)

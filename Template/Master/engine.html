@@ -715,6 +715,37 @@
     // ************************************************************************ //
     // BABYLON ENGINE - Create Engine And Load Project Scene Hiearchy           //
     // ************************************************************************ //
+    // WebGPU only: load glslang/twgsl (the GLSL-to-WGSL converter every GLSL post-process needs) right after initAsync
+    // instead of lazily seconds later, and say so once when it fails or stalls. Fire-and-forget: it never throws, never
+    // rejects and never delays the scene load. Babylon caches that load and never rejects it, so a load still pending at
+    // the timeout is dropped for the next caller, and TOOLKIT.PostProcessor's watchdog retries it.
+    window.warmGlslangAndTint = (webgpu, timeoutMs) => {
+        return new Promise((resolve) => {
+            let warmDone = false;
+            let warmTimer = null;
+            const warmFinish = (loaded, message) => {
+                if (warmDone) return;
+                warmDone = true;
+                if (warmTimer != null) clearTimeout(warmTimer);
+                if (!loaded && message) console.error(message);
+                resolve(loaded);
+            };
+            try {
+                if (webgpu == null || webgpu.isDisposed || webgpu.isWebGPU !== true || typeof webgpu.prepareGlslangAndTintAsync !== "function") { warmFinish(false); return; }
+                if (webgpu._glslangAndTintAreFullyLoaded === true) { warmFinish(true); return; }
+                const waitMs = (timeoutMs > 0) ? timeoutMs : 15000;
+                warmTimer = setTimeout(() => {
+                    warmTimer = null;
+                    if (webgpu.isDisposed || webgpu._glslangAndTintAreFullyLoaded === true) { warmFinish(webgpu._glslangAndTintAreFullyLoaded === true); return; }
+                    webgpu._workingGlslangAndTintPromise = null;
+                    warmFinish(false, "WebGPU glslang/twgsl (scripts/glslang.js, glslang.wasm, twgsl.js, twgsl.wasm) did not load within " + (waitMs / 1000) + " s: GLSL post-processes (colour grading, bloom, vignette, FXAA) cannot render until it does. The stalled load is dropped so the next caller (TOOLKIT.PostProcessor retries it) starts a fresh one.");
+                }, waitMs);
+                webgpu.prepareGlslangAndTintAsync().then(() => { warmFinish(true); }, (warmError) => { warmFinish(false, "WebGPU glslang/twgsl failed to load: " + ((warmError && warmError.message) || warmError)); });
+            } catch (warmError) {
+                warmFinish(false, "WebGPU glslang/twgsl warm-up failed: " + ((warmError && warmError.message) || warmError));
+            }
+        });
+    };
     window.setupBabylonEngineHostPage = () => {
         try {
             var useStencilBuffer = stencil;
@@ -729,6 +760,7 @@
                 if (navigator.gpu) {
                     engine = new BABYLON.WebGPUEngine(divcvs, { audioEngine: legacyAudio, antialias: antialias, powerPreference: gpuPerformanceProfile, stencil: useStencilBuffer, enableAllFeatures:true, useLargeWorldRendering: useLargeWorlds, setMaximumLimits: true, doNotHandleContextLost: true });
                     engine.initAsync({ jsPath: "###SCRIPT###/glslang.js", wasmPath: "###SCRIPT###/glslang.wasm" }, { jsPath: "###SCRIPT###/twgsl.js", wasmPath: "###SCRIPT###/twgsl.wasm" }).catch((ex) => { showErrorMessage(ex.message || "Unknown WebGPU Exception"); }).then(() => {
+                        window.warmGlslangAndTint(engine);
                         window.prepareBabylonEngineProperties();
                         if (snapshot === 1) {
                             engine.snapshotRenderingMode = BABYLON.Constants.SNAPSHOTRENDERING_STANDARD;

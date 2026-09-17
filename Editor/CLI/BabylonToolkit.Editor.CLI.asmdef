@@ -1,0 +1,22 @@
+{
+    "name": "BabylonToolkit.Editor.CLI",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Pipeline"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": ["BT_UNITY_PIPELINE"],
+    "versionDefines": [
+        {
+            "name": "com.unity.pipeline",
+            "expression": "",
+            "define": "BT_UNITY_PIPELINE"
+        }
+    ],
+    "noEngineReferences": false
+}

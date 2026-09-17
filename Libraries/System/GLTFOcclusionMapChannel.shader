@@ -2,6 +2,7 @@ Shader "Hidden/Export/OcclusionMapChannel" {
 	Properties{
 		_OcclusionMap("Occlusion Map", 2D) = "black" {}
 		_FlipY("Flip texture Y", Int) = 0
+		_SourceChannel("Source channel: 0 red, 1 green", Int) = 0
 	}
 
 	SubShader {
@@ -27,6 +28,7 @@ Shader "Hidden/Export/OcclusionMapChannel" {
 
 			 sampler2D _OcclusionMap;
 			 int _FlipY;
+			 int _SourceChannel;
 
 			 vertOutput vert(vertInput input) {
 				 vertOutput o;
@@ -38,7 +40,13 @@ Shader "Hidden/Export/OcclusionMapChannel" {
 			 }
 
 			 float4 frag(vertOutput output) : COLOR {
-				return tex2D(_OcclusionMap, output.texcoord);
+				// plan D15. URP samples _OcclusionMap.g through LerpWhiteTo (LitInput.hlsl:161-169) while
+				// glTF and Babylon read R, so a URP packed map has its GREEN channel written into red here.
+				// _SourceChannel == 0 reproduces the historical red pass-through for every Built-in and
+				// terrain caller, except that the output is now explicitly grey - which the runtime reads as R.
+				float4 src = tex2D(_OcclusionMap, output.texcoord);
+				float occ = (_SourceChannel == 1) ? src.g : src.r;
+				return float4(occ, occ, occ, 1.0);
 			 }
 
 			ENDCG

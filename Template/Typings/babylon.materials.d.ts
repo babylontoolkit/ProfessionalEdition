@@ -92,7 +92,7 @@ declare namespace BABYLON {
         private _offsetMirror;
         private _tempPlane;
         private _lastTime;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         private _lastDeltaTime;
         private _waitingRenderList;
         private _imageProcessingConfiguration;
@@ -200,7 +200,7 @@ declare namespace BABYLON {
         accessor disableLighting: boolean;
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a TriPlanar Material in the given scene
          * @param name The friendly name of the material
@@ -262,7 +262,7 @@ declare namespace BABYLON {
         accessor disableLighting: boolean;
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Terrain Material in the given scene
          * @param name The friendly name of the material
@@ -380,7 +380,7 @@ declare namespace BABYLON {
         dithering: boolean;
         private _cameraPosition;
         private _skyOrientation;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a new sky material.
          * This material allows to create dynamic and texture free
@@ -497,7 +497,7 @@ declare namespace BABYLON {
         accessor disableLighting: boolean;
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Simple Material in the given scene
          * @param name The friendly name of the material
@@ -554,7 +554,7 @@ declare namespace BABYLON {
     export class ShadowOnlyMaterial extends PushMaterial {
         private _activeLight;
         private _needAlphaBlending;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a ShadowOnly Material in the given scene
          * @param name The friendly name of the material
@@ -616,7 +616,7 @@ declare namespace BABYLON {
         accessor disableLighting: boolean;
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Normal Material in the given scene
          * @param name The friendly name of the material
@@ -708,7 +708,7 @@ declare namespace BABYLON {
         accessor disableLighting: boolean;
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Mix Material in the given scene
          * @param name The friendly name of the material
@@ -810,7 +810,7 @@ declare namespace BABYLON {
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
         private _scaledDiffuse;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Lava Material in the given scene
          * @param name The friendly name of the material
@@ -965,7 +965,7 @@ declare namespace BABYLON {
          * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
          */
         constructor(name: string, scene?: Scene, forceGLSL?: boolean);
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * @returns whether or not the grid requires alpha blending.
          */
@@ -1034,7 +1034,7 @@ declare namespace BABYLON {
         smoothness: number;
         private _disableLighting;
         accessor disableLighting: boolean;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Gradient Material in the given scene
          * @param name The friendly name of the material
@@ -1109,7 +1109,7 @@ declare namespace BABYLON {
         highLevelFur: boolean;
         _meshes: AbstractMesh[];
         private _furTime;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Fur Material in the given scene
          * @param name The friendly name of the material
@@ -1179,7 +1179,7 @@ declare namespace BABYLON {
         speed: number;
         private _scaledDiffuse;
         private _lastTime;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Fire Material in the given scene
          * @param name The friendly name of the material
@@ -1815,7 +1815,7 @@ declare namespace BABYLON {
         accessor disableLighting: boolean;
         private _maxSimultaneousLights;
         accessor maxSimultaneousLights: number;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Cell Material in the given scene
          * @param name The friendly name of the material

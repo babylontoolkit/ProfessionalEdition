@@ -357,11 +357,13 @@ declare namespace BABYLON {
          */
         abstract onValidated?: (results: GLTF2.IGLTFValidationResults) => void;
         /**
-         * Function called before loading a url referenced by the asset.
-         * @param url url referenced by the asset
-         * @returns Async url to load
+         * Function called before loading a URL referenced by the asset.
+         * Setting this function allows parent-relative asset URIs and makes the callback responsible for URI safety.
+         * @param url The URL referenced by the asset
+         * @param rootUrl The root URL of the asset, if available
+         * @returns A promise that resolves to the URL to load
          */
-        preprocessUrlAsync: (url: string) => Promise<string>;
+        preprocessUrlAsync: (url: string, rootUrl?: string) => Promise<string>;
     }
     /**
      * File loader for loading glTF files into a scene.
@@ -376,6 +378,8 @@ declare namespace BABYLON {
          * @param options The options for the loader
          */
         constructor(options?: Partial<Readonly<GLTFLoaderOptions>>);
+        /** @internal */
+        get _isPreprocessUrlAsyncSet(): boolean;
         /**
          * Raised when the asset has been parsed
          */
@@ -2973,7 +2977,8 @@ declare namespace BABYLON {
 
 }
 declare namespace BABYLON.GLTF2 {
-        /** @internal */
+        /** This file must only contain pure code and pure imports */
+    /** @internal */
     export type GetValueFn = (target: any, source: Float32Array, offset: number, scale: number) => any;
     /** @internal */
     export function getVector3(_target: any, source: Float32Array, offset: number, scale: number): Vector3;
@@ -3011,7 +3016,20 @@ declare namespace BABYLON.GLTF2 {
             babylonAnimation: Animation;
         }[];
     }
+    /**
+     * Registers the core glTF animation interpolation mappings.
+     */
+    export function RegisterGLTFLoaderAnimation(): void;
 
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2 {
+    
 
 
 }
@@ -4967,6 +4985,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         dispose(): void;
     }
     /**
+     * @internal
+     * Registers KHR_node_visibility runtime dependencies without changing the extension registry.
+     */
+    export function _RegisterKHRNodeVisibilityRuntime(): void;
+    /**
      * Registers the KHR_node_visibility glTF loader extension.
      * Safe to call multiple times; only the first call has an effect.
      */
@@ -5027,6 +5050,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         onReady(): Promise<void>;
         dispose(): void;
     }
+    /**
+     * @internal
+     * Registers KHR_node_selectability runtime dependencies without changing the extension registry.
+     */
+    export function _RegisterKHRNodeSelectabilityRuntime(): void;
     /**
      * Registers the KHR_node_selectability glTF loader extension.
      * Safe to call multiple times; only the first call has an effect.
@@ -5089,6 +5117,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         onReady(): Promise<void>;
         dispose(): void;
     }
+    /**
+     * @internal
+     * Registers KHR_node_hoverability runtime dependencies without changing the extension registry.
+     */
+    export function _RegisterKHRNodeHoverabilityRuntime(): void;
     /**
      * Registers the KHR_node_hoverability glTF loader extension.
      * Safe to call multiple times; only the first call has an effect.
@@ -6646,6 +6679,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      */
     export function _AddInteractivityObjectModel(scene: Scene): void;
     /**
+     * @internal
+     * Registers KHR_interactivity runtime dependencies without changing the extension registry.
+     */
+    export function _RegisterKHRInteractivityRuntime(): void;
+    /**
      * Registers the KHR_interactivity glTF loader extension.
      * Safe to call multiple times; only the first call has an effect.
      */
@@ -6862,6 +6900,20 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * Safe to call multiple times; only the first call has an effect.
      */
     export function RegisterKHR_animation_pointer(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Registers the KHR_animation_pointer interpolation mappings.
+     * @internal
+     */
+    export function _RegisterKHRAnimationPointerData(): void;
 
 
 
@@ -8112,6 +8164,24 @@ declare namespace BABYLON.GLTF1 {
         loadMaterialAsync(gltfRuntime: BABYLON.GLTF1.IGLTFRuntime, id: string, onSuccess: (material: Material) => void, onError: (message: string) => void): boolean;
         private _loadTexture;
     }
+    /**
+     * Registers the KHR_materials_common extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterGLTFMaterialsCommonExtension(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF1 {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./glTFMaterialsCommonExtension.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
 
@@ -8745,6 +8815,24 @@ declare namespace BABYLON.GLTF1 {
         private static _CreateTextureAsync;
         private static _ApplyExtensions;
     }
+    /**
+     * Registers the glTF 1.0 loader factory.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterGLTF1Loader(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF1 {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./glTFLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
 
@@ -8766,6 +8854,24 @@ declare namespace BABYLON.GLTF1 {
         loadTextureBufferAsync(gltfRuntime: BABYLON.GLTF1.IGLTFRuntime, id: string, onSuccess: (buffer: ArrayBufferView) => void): boolean;
         loadShaderStringAsync(gltfRuntime: BABYLON.GLTF1.IGLTFRuntime, id: string, onSuccess: (shaderString: string) => void): boolean;
     }
+    /**
+     * Registers the KHR_binary_glTF extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterGLTFBinaryExtension(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF1 {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./glTFBinaryExtension.pure" for tree-shakeable, side-effect-free usage.
+     */
 
 
 
@@ -9700,6 +9806,9 @@ declare namespace BABYLON {
         activeLod?: number;
         /** Distance-based ideal LOD level for this node, recomputed per frame. */
         optimalLod?: number;
+        /** Projected screen size (pixels) of the node's AABB — the max across active cameras. Larger nodes keep finer
+         * detail under the splat budget. Only computed while the budget is enabled. */
+        pixelSize?: number;
         /** Available LOD levels for this leaf, sorted ascending (0 = finest). Set during the tree walk. */
         availableLevels?: number[];
         /** Coarsest available level (= max key), always streamed as the permanent base layer. */
@@ -9802,6 +9911,17 @@ declare namespace BABYLON {
          */
         evictionCooldownFrames?: number;
         /**
+         * Enables budget-driven LOD: caps the total rendered splats by converging a screen-space (size + distance)
+         * pixel-size threshold to the budget. Selection is view-direction-independent, so it is consistent across any
+         * number of active cameras (each node takes the finest level and largest projected size any camera demands).
+         * A number is an explicit splat cap; `"auto"` picks a device-tiered default (desktop 2.5M / iOS 1.5M /
+         * other mobile 1M; XR shares the mobile tier). **Undefined (default) disables the cap** — LOD is pure
+         * distance, identical to prior behavior. Runtime-mutable via the {@link splatBudget} accessor. When this stream
+         * is hosted in a compound, the compound's {@link GaussianSplattingMesh.splatBudget} (if set) overrides this and
+         * apportions a shared budget across all its streams.
+         */
+        splatBudget?: number | "auto";
+        /**
          * When set, the stream does not render itself; instead it reserves a region of this compound mesh and
          * decodes/sorts into it, so its splats are depth-sorted and drawn in ONE pass together with the compound's
          * other (static) parts. Used by {@link AddGaussianSplattingStreamPart}. The stream mesh becomes a hidden
@@ -9840,7 +9960,7 @@ declare namespace BABYLON {
      *
      * @experimental
      */
-    export class GaussianSplattingStream extends GaussianSplattingMesh {
+    export class GaussianSplattingStream extends GaussianSplattingMesh implements IGaussianSplattingLodBudgetParticipant {
         private readonly _metadata;
         private readonly _rootUrl;
         private readonly _streamOptions;
@@ -9855,9 +9975,12 @@ declare namespace BABYLON {
         private _lodUpdateInterval;
         private _lodUpdateDistance;
         private _maxDetailLod;
+        private _lodPixelThreshold;
+        private _hostBudgetAllocation;
         private _frustumCulling;
         private readonly _frustumPlanes;
         private readonly _cullViewProj;
+        private readonly _frustumScratch;
         private _workBuffer;
         private _decodeSh;
         private _streamShDegree;
@@ -9888,7 +10011,8 @@ declare namespace BABYLON {
         private _lodObserver;
         private _baseLayerReady;
         private _framesSinceLodUpdate;
-        private readonly _lastLodCamPos;
+        private readonly _lastLodCamPositions;
+        private _lastLodSignature;
         private _forceLodUpdate;
         private readonly _boundsMin;
         private readonly _boundsMax;
@@ -9988,6 +10112,66 @@ declare namespace BABYLON {
         get maxDetailLod(): number;
         set maxDetailLod(value: number);
         /**
+         * This stream's own budget-driven LOD cap in splats (see {@link IGaussianSplattingStreamOptions.splatBudget}).
+         * `0` disables the budget (pure distance LOD). Setting it caps the rendered splat count, taking effect on the
+         * next frame. When this stream is hosted in a compound whose own budget is set, that shared budget overrides
+         * this value — read the actual runtime cap from {@link effectiveSplatBudget}, not this getter (which always
+         * reports the configured own cap).
+         * @experimental
+         */
+        get splatBudget(): number;
+        set splatBudget(value: number);
+        /**
+         * The splat cap actually in force this frame: a hosting compound's apportioned allocation when this stream is
+         * coordinated, otherwise this stream's own {@link splatBudget}, clamped to what can be kept resident. `0` means
+         * no cap (pure distance LOD). Unlike {@link splatBudget}, this reflects the compound override, so it is the value
+         * to display or reason about at runtime.
+         * @experimental
+         */
+        get effectiveSplatBudget(): number;
+        /**
+         * Resolves the raw {@link splatBudget} option to a concrete cap: `undefined` ⇒ 0 (disabled), `"auto"` ⇒ a
+         * device-tiered default, a positive number ⇒ itself (floored).
+         * @param option the raw option value
+         * @returns the resolved splat cap (0 = disabled)
+         */
+        private _resolveSplatBudget;
+        /**
+         * Device-tiered default splat budget for {@link splatBudget} `"auto"`: desktop 2.5M, iOS 1.5M, other mobile
+         * (incl. Android/XR) 1M. XR is folded into the mobile tier (no reliable at-construction detection).
+         * @returns the default splat cap for this device
+         */
+        private _computeDefaultSplatBudget;
+        /**
+         * The splat budget this stream converges against this frame: the compound's apportioned allocation when hosted
+         * and coordinated, else this stream's own resolved budget. Clamped to the resident budget so the stream never
+         * targets more splats than can be kept resident. `0` means the budget is disabled.
+         * @returns the effective splat cap (0 = disabled)
+         */
+        private _effectiveSplatBudget;
+        /**
+         * Whether budget-driven LOD is active this frame.
+         * @returns true when a positive effective budget is in force
+         */
+        private _splatBudgetEnabled;
+        /**
+         * {@link IGaussianSplattingLodBudgetParticipant}: the splats this stream would render at full (distance-optimal)
+         * detail — its demand on a host compound's shared budget. Computed from the current per-node distance-optimal
+         * levels (no pixel threshold), so it does not depend on the allocation it is helping to compute.
+         * @returns the full-detail rendered splat count (0 before the base layer is ready)
+         */
+        getBudgetDemand(): number;
+        /**
+         * {@link IGaussianSplattingLodBudgetParticipant}: sets the compound's apportioned share of the shared budget.
+         * `null` releases coordination (revert to this stream's own {@link splatBudget}); a number (incl. 0, meaning
+         * "coordinated at the coarsest level") drives the pixel-threshold convergence. Any change to the (already integer)
+         * allocation forces a next-frame re-eval: a decrease may put the current selection over the new cap, and even a
+         * small increase can unlock a finer level that a stationary camera would otherwise never re-evaluate to. The
+         * apportioned demand is allocation-independent, so this settles in one step and does not churn frame to frame.
+         * @param splats the apportioned allocation, or null to release coordination
+         */
+        setBudgetAllocation(splats: Nullable<number>): void;
+        /**
          * Coarsest LOD level index in the scene (number of LOD levels minus one). Useful as the upper bound
          * for {@link maxDetailLod}.
          */
@@ -10030,10 +10214,17 @@ declare namespace BABYLON {
          */
         private _getEffectiveWorldMatrix;
         /**
-         * Re-evaluates the optimal LOD for every node based on the camera position. The result is stored in
-         * each node's `optimalLod`. Rendering is unaffected; this currently drives only diagnostics and the
-         * debug wireframe display.
-         * @param camera camera to evaluate against (defaults to the scene's active camera)
+         * The cameras the LOD should serve: `scene.activeCameras` when set (split-view / multi-view), else the single
+         * `scene.activeCamera`. Mirrors the sort path's multi-camera handling.
+         * @returns the non-null active cameras (may be empty)
+         */
+        private _getActiveLodCameras;
+        /**
+         * Re-evaluates the optimal LOD for every node from the active cameras. Each node takes the finest level and the
+         * largest projected pixel size any active camera demands (so every pane of a split view is served), and the
+         * frustum bias uses the union of the frusta. Selection is view-direction-independent, so single- and multi-camera
+         * rendering are consistent. The results are stored in each node's `optimalLod` / `pixelSize`.
+         * @param camera when provided, evaluate against just this camera; otherwise use the active-camera set
          */
         evaluateOptimalLods(camera?: Nullable<Camera>): void;
         /**
@@ -10217,10 +10408,61 @@ declare namespace BABYLON {
          */
         private _cappedLevelForNode;
         /**
-         * Computes each node's {@link ISOGLODNode.targetLevel}: the distance-based optimal level snapped to an
-         * available level, capped so no node renders finer (more detailed) than {@link maxDetailLod}.
+         * Computes each node's {@link ISOGLODNode.targetLevel}. With the splat budget disabled this is the
+         * distance-optimal level snapped to an available level (capped by {@link maxDetailLod}) — unchanged prior
+         * behavior. With the budget enabled it converges a global pixel-size threshold to the budget and coarsens each
+         * node from its distance-optimal ceiling by how far its projected size falls below that threshold.
          */
         private _computeTargetLevels;
+        /**
+         * Splat count of the always-rendered environment layer (0 when none), coerced to a finite non-negative integer.
+         * Counted as a fixed cost in both the budget demand and the leaf convergence so it is never over-drawn.
+         * @returns the environment's rendered splat count
+         */
+        private _environmentSplatCount;
+        /**
+         * The level a node renders at for a given pixel-size threshold `t`: its distance-optimal ceiling, coarsened by
+         * `round(log_mult(t / pixelSize))` geometric steps when its projected size is below `t`. Snapped to
+         * an available level honoring {@link maxDetailLod}.
+         * @param node leaf node
+         * @param t pixel-size threshold (pixels)
+         * @returns the chosen available LOD level
+         */
+        private _budgetedLevel;
+        /**
+         * Splat count of a node's file at a given (already snapped) available level.
+         * @param node leaf node
+         * @param level available LOD level
+         * @returns the level's splat count (0 if absent)
+         */
+        private _countAtLevel;
+        /**
+         * Sum of every leaf's rendered splat count at pixel-size threshold `t`.
+         * @param t pixel-size threshold (pixels)
+         * @returns total rendered splats
+         */
+        private _totalSplatsAtThreshold;
+        /**
+         * Converges the global pixel-size threshold {@link _lodPixelThreshold} to the largest detail whose total rendered
+         * splats is still within `budget` (the pixel-scale cut, floored at the true sub-pixel limit of 1 px). The
+         * total is monotonically non-increasing in the threshold, so a bisection on `[floorT, ceilT]` — where `ceilT`
+         * coarsens every node to its coarsest available level — gives a GUARANTEED result at or under the cap. When even
+         * that coarsest state exceeds the budget (the budget is below the pinned minimum detail), the threshold is set to
+         * `ceilT` so every node renders at minimum detail — the best achievable; the cap is then unavoidable. O(leaves)
+         * per iteration; no decode.
+         * @param budget target maximum rendered splat count
+         */
+        private _convergePixelThreshold;
+        /**
+         * The finest already-decoded level of a node that is at least as coarse as `level` (index >= level). Used to
+         * enforce the budget cap immediately without waiting for a download. Returns `null` when no such level is resident
+         * — including when eviction has freed the base layer — so the caller keeps the currently-visible (resident) file
+         * rather than switching to a non-resident one, which would render a hole.
+         * @param node leaf node
+         * @param level the minimum coarseness (level index) required
+         * @returns a resident level index >= level, or null when none is resident
+         */
+        private _residentLevelAtLeast;
         /**
          * Applies each node's {@link ISOGLODNode.targetLevel}: switches a node to its target level when that
          * level's file is already decoded, otherwise records a pending download request for the file and leaves
@@ -10274,17 +10516,28 @@ declare namespace BABYLON {
          */
         private _onLodFrame;
         /**
-         * Updates each leaf node's {@link ISOGLODNode.inFrustum} flag from a per-node frustum test against the
-         * active camera. When {@link frustumCulling} is disabled (or there is no camera) every node is marked
-         * in-frustum. Bounds are static (from the LOD tree), so flags are valid for all nodes regardless of
-         * decode state. Returns true when any node's in-frustum state changed (so the LOD bias must be re-applied).
+         * A cheap signature of the discrete inputs (besides camera translation, tracked separately) that affect projected
+         * pixel size: each camera's identity, FOV, FOV mode and viewport, plus the engine render size and the effective
+         * world matrix revision. A change invalidates the throttled budget LOD so a colocated camera swap / viewport
+         * resize / FOV change — or the stream (or its hosted proxy) being moved or scaled while still in frustum, which
+         * shifts every node's distance and projected size — can't leave it stale.
+         * @param cameras the active cameras
+         * @returns the signature string
+         */
+        private _computeLodSignature;
+        /**
+         * Updates each leaf node's {@link ISOGLODNode.inFrustum} flag: a node is in-frustum if it is inside ANY
+         * active camera's frustum (the union). When {@link frustumCulling} is disabled (or there are no cameras)
+         * every node is marked in-frustum. Bounds are static (from the LOD tree), so flags are valid for all nodes
+         * regardless of decode state. Returns true when any node's in-frustum state changed (so the LOD bias must be re-applied).
          * @returns whether any node's in-frustum state changed
          */
         private _updateNodeFrustum;
         /**
-         * Reads the splat count from SOG metadata.
+         * Reads the splat count from SOG metadata, coerced to a finite non-negative integer (metadata is untrusted, so
+         * `count` / `shape[0]` may be a string or malformed — a non-numeric value must not leak into count arithmetic).
          * @param data SOG metadata
-         * @returns the splat count
+         * @returns the splat count (0 when absent/invalid)
          */
         private static _GetSplatCount;
         /**
@@ -10929,6 +11182,12 @@ declare namespace BABYLON {
      */
     export type OBJLoadingOptions = {
         /**
+         * Defines the character encoding used to decode OBJ and MTL files.
+         * Use "auto" to detect UTF-8/UTF-16 and fall back to GB18030, or provide an encoding label supported by TextDecoder.
+         * Defaults to "auto".
+         */
+        encoding?: string;
+        /**
          * Defines if UVs are optimized by default during load.
          */
         optimizeWithUV: boolean;
@@ -10986,6 +11245,10 @@ declare namespace BABYLON {
      */
     export class OBJFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPluginFactory {
         /**
+         * Defines the character encoding used to decode OBJ and MTL files.
+         */
+        static ENCODING: string;
+        /**
          * Defines if UVs are optimized by default during load.
          */
         static OPTIMIZE_WITH_UV: boolean;
@@ -11036,7 +11299,11 @@ declare namespace BABYLON {
         /**
          * Defines the extension the plugin is able to load.
          */
-        readonly extensions: ".obj";
+        readonly extensions: {
+            readonly ".obj": {
+                readonly isBinary: true;
+            };
+        };
         private _assetContainer;
         private _loadingOptions;
         /**
@@ -11058,6 +11325,7 @@ declare namespace BABYLON {
          * @param onFailure
          */
         private _loadMTL;
+        private _decode;
         /** @internal */
         createPlugin(options: SceneLoaderPluginOptions): ISceneLoaderPluginAsync | ISceneLoaderPlugin;
         /**
@@ -11081,7 +11349,7 @@ declare namespace BABYLON {
          * @param rootUrl root url to load from
          * @returns a promise which completes when objects have been loaded to the scene
          */
-        loadAsync(scene: Scene, data: string, rootUrl: string): Promise<void>;
+        loadAsync(scene: Scene, data: string | ArrayBuffer, rootUrl: string): Promise<void>;
         /**
          * Load into an asset container.
          * @param scene The scene to load into
@@ -11089,7 +11357,7 @@ declare namespace BABYLON {
          * @param rootUrl The root url for scene and resources
          * @returns The loaded asset container
          */
-        loadAssetContainerAsync(scene: Scene, data: string, rootUrl: string): Promise<AssetContainer>;
+        loadAssetContainerAsync(scene: Scene, data: string | ArrayBuffer, rootUrl: string): Promise<AssetContainer>;
         /**
          * Read the OBJ file and create an Array of meshes.
          * Each mesh contains all information given by the OBJ and the MTL file.
@@ -11111,7 +11379,11 @@ declare namespace BABYLON {
 
     export var OBJFileLoaderMetadata: {
         readonly name: "obj";
-        readonly extensions: ".obj";
+        readonly extensions: {
+            readonly ".obj": {
+                readonly isBinary: true;
+            };
+        };
     };
 
 

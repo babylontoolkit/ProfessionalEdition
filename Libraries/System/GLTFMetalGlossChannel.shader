@@ -58,7 +58,7 @@
                     smoothness = src.a;
                 }
                 float roughness = 1.0 - (smoothness * _GlossinessScale);
-                outTex.b = saturate(metallic);
+                outTex.b = saturate(metallic); // Unity ignores the _Metallic slider when a metallic map is assigned (Built-in Standard, URP Lit) - never scale the map by it
                 outTex.g = saturate(roughness);
                 outTex.a = 1.0;
                 return outTex;

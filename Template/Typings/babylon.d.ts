@@ -1439,6 +1439,7 @@ declare namespace BABYLON {
         _cachedVisibility: Nullable<number>;
         private _renderId;
         private _frameId;
+        private _renderingMeshEvaluationDepth;
         private _executeWhenReadyTimeoutId;
         /** @internal */
         _intermediateRendering: boolean;
@@ -2574,6 +2575,8 @@ declare namespace BABYLON {
         freeRenderingGroups(): void;
         /** @internal */
         _isInIntermediateRendering(): boolean;
+        /** @internal */
+        _isInRenderingMeshEvaluation(): boolean;
         /**
          * Lambda returning the list of potentially active meshes.
          */
@@ -2658,6 +2661,7 @@ declare namespace BABYLON {
          */
         customRenderFunction?: (updateCameras: boolean, ignoreAnimations: boolean) => void;
         private _renderWithFrameGraph;
+        private _renderWithFrameGraphAfterBeforeRender;
         /**
          * @internal
          */
@@ -2669,6 +2673,7 @@ declare namespace BABYLON {
          * @param ignoreAnimations defines a boolean indicating if animations should not be executed (false by default)
          */
         render(updateCameras?: boolean, ignoreAnimations?: boolean): void;
+        private _renderFrame;
         /**
          * Freeze all materials
          * A frozen material will not be updatable but should be faster to render
@@ -4009,10 +4014,10 @@ declare namespace BABYLON {
      * WebGPU (XRGPUBinding) backend.
      * @internal
      */
-    export abstract class WebXRWebGPURenderTargetTextureProvider extends WebXRLayerRenderTargetTextureProvider {
+    export abstract class WebXRWebGPURenderTargetTextureProvider<LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> extends WebXRLayerRenderTargetTextureProvider<LayerTypeT> {
         protected readonly _xrSessionManager: WebXRSessionManager;
         private readonly _transparentClearColor;
-        constructor(_xrSessionManager: WebXRSessionManager, layerWrapper: WebXRLayerWrapper);
+        constructor(_xrSessionManager: WebXRSessionManager, layerWrapper: WebXRLayerWrapper<LayerTypeT>);
         private get _webgpuEngine();
         private _wrapColorTexture;
         private _wrapDepthTexture;
@@ -4088,7 +4093,7 @@ declare namespace BABYLON {
      * framebuffer/texture wiring so the base provider can stay graphics-API-agnostic.
      * @internal
      */
-    export abstract class WebXRWebGLRenderTargetTextureProvider extends WebXRLayerRenderTargetTextureProvider {
+    export abstract class WebXRWebGLRenderTargetTextureProvider<LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> extends WebXRLayerRenderTargetTextureProvider<LayerTypeT> {
         private _createInternalTexture;
         protected _createRenderTargetTexture(width: number, height: number, framebuffer: Nullable<WebGLFramebuffer>, colorTexture?: WebGLTexture, depthStencilTexture?: WebGLTexture, multiview?: boolean): RenderTargetTexture;
     }
@@ -4203,6 +4208,8 @@ declare namespace BABYLON {
         private _xrNavigator;
         private _sessionMode;
         private _onEngineDisposedObserver;
+        private _sessionCleanup;
+        private _referenceSpaceInitialized;
         /**
          * The base reference space from which the session started. good if you want to reset your
          * reference space
@@ -4324,6 +4331,39 @@ declare namespace BABYLON {
          */
         getRenderTargetTextureForView(view: XRView): Nullable<RenderTargetTexture>;
         /**
+         * Checks whether the current XR view exposes the dynamic viewport scaling API.
+         * API availability does not guarantee that the active XR device will change the viewport dimensions.
+         * This method must be called during an active XR frame.
+         * @param viewIndex the index of the view in the current viewer pose
+         * @returns whether dynamic viewport scaling is exposed for the view
+         * @see https://playground.babylonjs.com/#BAGIIM#0
+         */
+        isViewportScaleSupported(viewIndex: number): boolean;
+        /**
+         * Gets the runtime-recommended viewport scale for the current XR view.
+         * A number is returned when the runtime has a recommendation, `null` when the API is supported but
+         * the runtime has no recommendation, and `undefined` when the API is not supported.
+         * This method must be called during an active XR frame.
+         * @param viewIndex the index of the view in the current viewer pose
+         * @returns the recommended viewport scale, `null` when no recommendation is available, or `undefined` when unsupported
+         * @see https://playground.babylonjs.com/#BAGIIM#0
+         */
+        getRecommendedViewportScale(viewIndex: number): Nullable<number> | undefined;
+        /**
+         * Requests a viewport scale for the current XR view.
+         * The request is a hint to the runtime. Babylon uses the native viewport returned on subsequent frames
+         * and does not derive viewport dimensions from this value. Pass `1` to restore the full viewport scale;
+         * `null` follows the native no-op behavior. Native ignored-value, clamping, and exception behavior is preserved.
+         * Requests made from an application observer of `onXRFrameObservable` apply to a future frame because
+         * Babylon's camera acquires the current frame's viewport before notifying application observers.
+         * This method must be called during an active XR frame.
+         * @param viewIndex the index of the view in the current viewer pose
+         * @param scale the viewport scale requested from the runtime
+         * @see https://playground.babylonjs.com/#BAGIIM#0
+         */
+        requestViewportScale(viewIndex: number, scale: Nullable<number>): void;
+        private _getCurrentXRView;
+        /**
          * Obtains the XR graphics binding for the current session, creating it lazily.
          * This is the API-agnostic seam used by WebGL and WebGPU XR features to share a binding.
          * @returns the XR graphics binding for the current session
@@ -4396,6 +4436,16 @@ declare namespace BABYLON {
          * @returns a promise with boolean as final value
          */
         static IsSessionSupportedAsync(sessionMode: XRSessionMode): Promise<boolean>;
+        /**
+         * Returns whether the runtime exposes the WebGPU-XR binding APIs required by Babylon.js.
+         *
+         * This is an advisory check only. XR session negotiation can still fail for the active device,
+         * permissions, or adapter. A WebGPU engine intended for XR must also be created with
+         * `xrCompatible: true`.
+         * @returns whether the required XRGPUBinding projection APIs are exposed
+         * @experimental WebGPU-XR support is experimental and may change.
+         */
+        static get IsWebGPUXRSupported(): boolean;
         /**
          * Returns true if Babylon.js is using the BabylonNative backend, otherwise false
          */
@@ -4472,9 +4522,9 @@ declare namespace BABYLON {
      * Provides render target textures and other important rendering information for a given XRLayer.
      * @internal
      */
-    export abstract class WebXRLayerRenderTargetTextureProvider implements IWebXRRenderTargetTextureProvider {
+    export abstract class WebXRLayerRenderTargetTextureProvider<LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> implements IWebXRRenderTargetTextureProvider {
         protected readonly _scene: Scene;
-        readonly layerWrapper: WebXRLayerWrapper;
+        readonly layerWrapper: WebXRLayerWrapper<LayerTypeT>;
         abstract trySetViewportForView(viewport: Viewport, view: XRView): boolean;
         abstract getRenderTargetTextureForEye(eye: XREye): Nullable<RenderTargetTexture>;
         abstract getRenderTargetTextureForView(view: XRView): Nullable<RenderTargetTexture>;
@@ -4484,7 +4534,7 @@ declare namespace BABYLON {
             framebufferHeight: number;
         }>;
         protected _engine: AbstractEngine;
-        constructor(_scene: Scene, layerWrapper: WebXRLayerWrapper);
+        constructor(_scene: Scene, layerWrapper: WebXRLayerWrapper<LayerTypeT>);
         /**
          * Creates the render target texture "shell" (with the correct multiview type and MSAA sample count)
          * without attaching any graphics-API-specific resource. Subclasses attach their own textures.
@@ -4601,14 +4651,21 @@ declare namespace BABYLON {
 
     /** Covers all supported subclasses of WebXR's XRCompositionLayer */
     export type WebXRCompositionLayerType = "XRProjectionLayer";
+    /**
+     * The quad-layer type name.
+     */
     export type WebXRQuadLayerType = "XRQuadLayer";
     /** Covers all supported subclasses of WebXR's XRLayer */
     export type WebXRLayerType = "XRWebGLLayer" | WebXRCompositionLayerType | WebXRQuadLayerType;
+    /** Covers the spatial composition-layer types supported by WebXRLayers. */
+    export type WebXRSpatialLayerType = WebXRQuadLayerType | "XRCylinderLayer" | "XREquirectLayer" | "XRCubeLayer";
+    /** Covers every native layer type supported by Babylon.js. */
+    export type WebXRSupportedLayerType = WebXRLayerType | WebXRSpatialLayerType;
     /**
      * Wrapper over subclasses of XRLayer.
      * @internal
      */
-    export class WebXRLayerWrapper {
+    export class WebXRLayerWrapper<LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> {
         /** The width of the layer's framebuffer. */
         getWidth: () => number;
         /** The height of the layer's framebuffer. */
@@ -4616,22 +4673,28 @@ declare namespace BABYLON {
         /** The XR layer that this WebXRLayerWrapper wraps. */
         readonly layer: XRLayer;
         /** The type of XR layer that is being wrapped. */
-        readonly layerType: WebXRLayerType;
+        readonly layerType: LayerTypeT;
         /** Create a render target provider for the wrapped layer. */
         private _createRenderTargetTextureProvider;
         private _rttWrapper;
         /**
-         * Check if fixed foveation is supported on this device
+         * The render target provider created for this layer, or `null` until one is created.
+         */
+        get renderTargetTextureProvider(): Nullable<WebXRLayerRenderTargetTextureProvider<LayerTypeT>>;
+        /**
+         * Check if fixed foveation is supported by the wrapped XRWebGLLayer or XRProjectionLayer.
          */
         get isFixedFoveationSupported(): boolean;
         /**
-         * Get the fixed foveation currently set, as specified by the webxr specs
-         * If this returns null, then fixed foveation is not supported
+         * Gets the fixed foveation currently set, as specified by the WebXR specs.
+         * @returns The fixed foveation level, or `null` when fixed foveation is not supported.
          */
         get fixedFoveation(): Nullable<number>;
         /**
-         * Set the fixed foveation to the specified value, as specified by the webxr specs
-         * This value will be normalized to be between 0 and 1, 1 being max foveation, 0 being no foveation
+         * Sets the fixed foveation level, as specified by the WebXR specs.
+         * The value is normalized between 0 and 1, where 1 is maximum foveation and 0 is no foveation.
+         * Unsupported native layers ignore the assignment, matching the WebXR fixed-foveation contract.
+         * @param value The fixed foveation level, or `null` to use no foveation.
          */
         set fixedFoveation(value: Nullable<number>);
         /**
@@ -4639,7 +4702,10 @@ declare namespace BABYLON {
          * @param xrSessionManager The XR Session Manager
          * @returns A new render target texture provider for the wrapped layer.
          */
-        createRenderTargetTextureProvider(xrSessionManager: WebXRSessionManager): WebXRLayerRenderTargetTextureProvider;
+        createRenderTargetTextureProvider(xrSessionManager: WebXRSessionManager): WebXRLayerRenderTargetTextureProvider<LayerTypeT>;
+        /**
+         * Disposes the render target provider created for this layer.
+         */
         dispose(): void;
         protected constructor(
         /** The width of the layer's framebuffer. */
@@ -4649,9 +4715,9 @@ declare namespace BABYLON {
         /** The XR layer that this WebXRLayerWrapper wraps. */
         layer: XRLayer, 
         /** The type of XR layer that is being wrapped. */
-        layerType: WebXRLayerType, 
+        layerType: LayerTypeT, 
         /** Create a render target provider for the wrapped layer. */
-        _createRenderTargetTextureProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider);
+        _createRenderTargetTextureProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider<LayerTypeT>);
     }
 
 
@@ -4871,6 +4937,35 @@ declare namespace BABYLON {
     }
 
 
+    /**
+     * The error shown when the active WebGPU engine cannot start an XR session.
+     * @internal
+     */
+    export const WebGPUXRNotSupportedErrorMessage = "WebGPU XR is unavailable in this browser or device. This experimental path requires XRGPUBinding with projection-layer support. To fall back, create a WebGL engine before creating the scene; Babylon.js cannot switch an existing scene's rendering backend.";
+    /**
+     * The error shown when a WebGPU XR session request is rejected as unsupported.
+     * @internal
+     */
+    export const WebGPUXRSessionNotSupportedErrorMessage = "The WebGPU XR session request was rejected as unsupported. The session mode, WebGPU or Layers requirements, or another required feature may be unavailable. If WebGPU XR is unavailable, create a WebGL engine before creating the scene.";
+    /**
+     * The error shown when the active WebGPU engine was not created with XR compatibility enabled.
+     * @internal
+     */
+    export const WebGPUXREngineNotCompatibleErrorMessage = "WebGPU XR requires a WebGPUEngine created with { xrCompatible: true }. Select an XR-capable WebGPU engine or WebGL before creating scene resources.";
+    /**
+     * Checks whether the runtime exposes the XRGPUBinding projection path required by Babylon.js.
+     * This is an advisory shape check; session negotiation can still reject for the active device.
+     * @returns whether the required WebGPU-XR binding APIs are exposed
+     * @internal
+     */
+    export function IsWebGPUXRSupported(): boolean;
+    /**
+     * Checks whether an engine was initialized with the adapter option required for WebGPU XR.
+     * @param engine the engine to test
+     * @returns true for non-WebGPU engines or WebGPU engines created with xrCompatible enabled
+     * @internal
+     */
+    export function IsWebGPUXREngineCompatible(engine: AbstractEngine): boolean;
     /**
      * The kind of underlying native binding an {@link IWebXRGraphicsBinding} wraps.
      * @internal
@@ -5125,6 +5220,10 @@ declare namespace BABYLON {
          * The name of the body tracking feature
          */
         static readonly BODY_TRACKING: "xr-body-tracking";
+        /**
+         * The name of the tracked sources feature
+         */
+        static readonly TRACKED_SOURCES: "xr-tracked-sources";
     }
     export type WebXRFeatureNameType = (typeof WebXRFeatureName)[Exclude<keyof typeof WebXRFeatureName, "prototype">];
     /**
@@ -5175,6 +5274,8 @@ declare namespace BABYLON {
         [WebXRFeatureName.WALKING_LOCOMOTION]: WebXRWalkingLocomotion;
         /** Body tracking feature implementation. */
         [WebXRFeatureName.BODY_TRACKING]: WebXRBodyTracking;
+        /** Tracked sources feature implementation. */
+        [WebXRFeatureName.TRACKED_SOURCES]: WebXRTrackedSources;
     }
     /**
      * Maps feature names to their corresponding options interfaces.
@@ -5224,6 +5325,8 @@ declare namespace BABYLON {
         [WebXRFeatureName.WALKING_LOCOMOTION]: IWebXRWalkingLocomotionOptions;
         /** Body tracking feature options. */
         [WebXRFeatureName.BODY_TRACKING]: IWebXRBodyTrackingOptions;
+        /** Tracked sources feature options. */
+        [WebXRFeatureName.TRACKED_SOURCES]: undefined;
     }
     /**
      * Helper type that expands/flattens a type to show its properties inline in IntelliSense
@@ -6521,6 +6624,23 @@ declare namespace BABYLON {
      */
     export type MotionControllerComponentStateType = "default" | "touched" | "pressed";
     /**
+     * The haptic capabilities exposed by a WebXR motion controller actuator.
+     */
+    export interface IWebXRControllerHapticActuator {
+        /**
+         * The haptic effects reported as supported by this actuator.
+         */
+        readonly effects?: ReadonlyArray<GamepadHapticEffectType>;
+        /**
+         * Plays a haptic effect, when advanced haptic playback is supported.
+         */
+        playEffect?: GamepadHapticActuator["playEffect"];
+        /**
+         * Stops the active haptic effect, when reset is supported.
+         */
+        reset?: GamepadHapticActuator["reset"];
+    }
+    /**
      * The schema of motion controller layout.
      * No object will be initialized using this interface
      * This is used just to define the profile.
@@ -6709,9 +6829,16 @@ declare namespace BABYLON {
         /**
          * EXPERIMENTAL haptic support.
          */
-        hapticActuators?: Array<{
+        hapticActuators?: Array<IWebXRControllerHapticActuator & {
+            /**
+             * Plays a legacy haptic pulse.
+             */
             pulse: (value: number, duration: number) => Promise<boolean>;
         }>;
+        /**
+         * The primary Gamepad vibration actuator used for advanced haptic effects.
+         */
+        vibrationActuator?: IWebXRControllerHapticActuator;
     }
     /**
      * An Abstract Motion controller
@@ -6835,6 +6962,33 @@ declare namespace BABYLON {
          */
         get handness(): MotionControllerHandedness;
         /**
+         * Gets the haptic effects reported as supported by an actuator.
+         * See https://playground.babylonjs.com/#ULVR1X#0 for an interactive example.
+         *
+         * @param hapticActuatorIndex index of the actuator (usually 0)
+         * @returns the effects reported by the actuator, or an empty array when effect discovery is unavailable
+         * @throws a RangeError when the actuator index is invalid
+         */
+        getHapticEffects(hapticActuatorIndex?: number): ReadonlyArray<GamepadHapticEffectType>;
+        /**
+         * Plays an advanced haptic effect on this controller.
+         *
+         * @param effectType the standard Gamepad haptic effect to play
+         * @param parameters effect duration, delay, and motor magnitudes
+         * @param hapticActuatorIndex index of the actuator (usually 0)
+         * @returns the native completion result from the actuator
+         * @throws an Error when the actuator or requested effect is unsupported, or a RangeError when the actuator index is invalid
+         */
+        playHapticEffectAsync(effectType: GamepadHapticEffectType, parameters?: GamepadEffectParameters, hapticActuatorIndex?: number): Promise<GamepadHapticsResult>;
+        /**
+         * Stops the active haptic effect on an actuator.
+         *
+         * @param hapticActuatorIndex index of the actuator (usually 0)
+         * @returns the native completion result from the actuator
+         * @throws an Error when reset is unsupported, or a RangeError when the actuator index is invalid
+         */
+        resetHapticActuatorAsync(hapticActuatorIndex?: number): Promise<GamepadHapticsResult>;
+        /**
          * Pulse (vibrate) this controller
          * If the controller does not support pulses, this function will fail silently and return Promise<false> directly after called
          * Consecutive calls to this function will cancel the last pulse call
@@ -6845,6 +6999,7 @@ declare namespace BABYLON {
          * @returns a promise that will send true when the pulse has ended and false if the device doesn't support pulse or an error accrued
          */
         pulse(value: number, duration: number, hapticActuatorIndex?: number): Promise<boolean>;
+        private _getHapticActuator;
         protected _getChildByName(node: AbstractMesh, name: string): AbstractMesh | undefined;
         protected _getImmediateChildByName(node: AbstractMesh, name: string): AbstractMesh | undefined;
         /**
@@ -6994,6 +7149,81 @@ declare namespace BABYLON {
     /**
      * Re-exports pure implementation and applies runtime side effects.
      * Import WebXRWalkingLocomotion.pure for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Exposes input sources that the XR runtime continues tracking while they are not active input sources.
+     *
+     * Tracked sources are intentionally kept separate from `XRSession.inputSources` and Babylon's normal
+     * WebXR input/controller pipeline.
+     * @see https://immersive-web.github.io/webxr/#dom-xrsession-trackedsources
+     * @see https://playground.babylonjs.com/#JRBQVL#0
+     */
+    export class WebXRTrackedSources extends WebXRAbstractFeature {
+        private readonly _trackedSources;
+        private _trackedSourcesSession;
+        /**
+         * The module's name.
+         */
+        static readonly Name: "xr-tracked-sources";
+        /**
+         * The Babylon version of this module.
+         *
+         * This number does not correspond to the WebXR specification version.
+         */
+        static readonly Version = 1;
+        /**
+         * Notifies observers when a source enters the feature's current tracked source set.
+         */
+        readonly onTrackedSourceAddedObservable: Observable<XRInputSource>;
+        /**
+         * Notifies observers when a source leaves the feature's current tracked source set, including on detach.
+         */
+        readonly onTrackedSourceRemovedObservable: Observable<XRInputSource>;
+        /**
+         * Creates a WebXR tracked sources feature.
+         * @param _xrSessionManager The WebXR session manager.
+         */
+        constructor(_xrSessionManager: WebXRSessionManager);
+        /**
+         * Gets a copy of the sources currently reported by `XRSession.trackedSources`.
+         *
+         * These sources are not added to `XRSession.inputSources` or Babylon's controller collection.
+         */
+        get trackedSources(): ReadonlyArray<XRInputSource>;
+        /**
+         * Attaches the feature to the active XR session.
+         * @param force Whether to reattach when the feature is already attached.
+         * @returns `true` when attachment succeeds; otherwise `false`.
+         */
+        attach(force?: boolean): boolean;
+        /**
+         * Detaches the feature and clears its tracked source state.
+         * @returns `true` when detachment succeeds; otherwise `false`.
+         */
+        detach(): boolean;
+        /**
+         * Disposes the feature and clears its observables.
+         */
+        dispose(): void;
+        protected _onXRFrame(): void;
+        private _onTrackedSourcesChanged;
+        private _synchronizeTrackedSources;
+        private _clearTrackedSources;
+    }
+    /**
+     * Registers the WebXR tracked sources feature.
+     *
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterWebXRTrackedSources(): void;
+
+
+    /**
+     * Re-exports the pure implementation and applies runtime side effects.
+     * Import WebXRTrackedSources.pure for tree-shakeable, side-effect-free usage.
      */
 
 
@@ -7254,6 +7484,11 @@ declare namespace BABYLON {
          * the native xr-plane object
          */
         xrPlane: XRPlane;
+        /**
+         * The semantic classification supplied by the XR runtime.
+         * This is undefined when the runtime does not expose semantic labels and null when the plane has no known classification.
+         */
+        semanticLabel?: string | null;
     }
     /**
      * The plane detector is used to detect planes in the real world when in AR
@@ -7311,11 +7546,10 @@ declare namespace BABYLON {
          */
         isCompatible(): boolean;
         /**
-         * Enable room capture mode.
-         * When enabled and supported by the system,
-         * the detectedPlanes array will be populated with the detected room boundaries
-         * @see https://immersive-web.github.io/real-world-geometry/plane-detection.html#dom-xrsession-initiateroomcapture
-         * @returns true if plane detection is enabled and supported. Will reject if not supported.
+         * Requests that the active XR session capture or refresh the current room layout.
+         * Detected room planes are reported through the existing plane observables.
+         * @see https://immersive-web.github.io/plane-detection/#dom-xrsession-initiateroomcapture
+         * @returns A promise that resolves when the native room capture request completes.
          */
         initiateRoomCapture(): Promise<void>;
         protected _onXRFrame(frame: XRFrame): void;
@@ -7590,6 +7824,11 @@ declare namespace BABYLON {
          */
         xrMesh: XRMesh;
         /**
+         * The semantic classification supplied by the XR runtime.
+         * This is undefined when the runtime does not expose semantic labels and null when the mesh has no known classification.
+         */
+        semanticLabel?: string | null;
+        /**
          * The node to use to transform the local results to world coordinates.
          * WorldParentNode will only exist if it was declared in the IWebXRMeshDetectorOptions.
          */
@@ -7752,11 +7991,11 @@ declare namespace BABYLON {
          * options to use when constructing this feature
          */
         readonly options: IWebXRLightEstimationOptions;
-        private _canvasContext;
         private _reflectionCubeMap;
         private _xrLightEstimate;
         private _xrLightProbe;
-        private _xrWebGLBinding;
+        private _reflectionCubeMapEnabled;
+        private _webGPUReflectionWarningEmitted;
         private _lightDirection;
         private _lightColor;
         private _intensity;
@@ -7814,8 +8053,7 @@ declare namespace BABYLON {
          * The most recent light estimate.  Available starting on the first frame where the device provides a light probe.
          */
         get xrLightingEstimate(): Nullable<IWebXRLightEstimation>;
-        private _getCanvasContext;
-        private _getXRGLBinding;
+        private _getXRWebGLBinding;
         /**
          * Event Listener for "reflectionchange" events.
          */
@@ -7855,6 +8093,19 @@ declare namespace BABYLON {
 
     /** This file must only contain pure code and pure imports */
     /**
+     * Registers the optional WebXR mesh-fallback implementation.
+     */
+    export function RegisterWebXRLayersFallback(): void;
+
+
+    /**
+     * Re-exports the pure implementation and registers optional WebXR mesh fallbacks.
+     * Import WebXRLayersFallback.pure for side-effect-free usage.
+     */
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
      * Configuration options of the layers feature
      */
     export interface IWebXRLayersOptions {
@@ -7868,6 +8119,92 @@ declare namespace BABYLON {
          */
         projectionLayerInit?: Partial<XRProjectionLayerInit>;
     }
+    /**
+     * Common options for creating a graphics-backed WebXR composition layer.
+     * @typeParam TWebGLInit the WebGL layer initialization dictionary
+     * @typeParam TWebGPUInit the WebGPU layer initialization dictionary
+     */
+    export interface IWebXRCompositionLayerCreationOptions<TWebGLInit, TWebGPUInit> {
+        /**
+         * Initialization values shared with the WebGL Layers API.
+         * Babylon supplies the current reference space and projection-layer pixel dimensions when omitted.
+         */
+        layerInit?: Partial<TWebGLInit>;
+        /**
+         * WebGPU-specific initialization overrides.
+         * Shared spatial and layout values are copied from `layerInit` before these overrides are applied.
+         */
+        gpuLayerInit?: Partial<TWebGPUInit>;
+        /**
+         * A Babylon node whose world position and rotation will be synchronized with the layer.
+         * Babylon creates and owns a node when this is omitted.
+         */
+        transformNode?: TransformNode;
+        /**
+         * Uses a Babylon mesh when the requested native layer factory is unavailable.
+         * Import `@babylonjs/core/XR/features/WebXRLayersFallback` to enable this optional fallback.
+         * Fallback is disabled by default.
+         */
+        fallbackMode?: "none" | "mesh";
+        /**
+         * A texture to display on the fallback mesh.
+         * Required when `fallbackMode` is `"mesh"`.
+         */
+        fallbackTexture?: BaseTexture;
+    }
+    /**
+     * Common options for creating an XRMediaBinding layer.
+     * @typeParam InitT the media layer initialization dictionary
+     */
+    export interface IWebXRMediaLayerCreationOptions<InitT> {
+        /**
+         * Initialization values for the media layer.
+         * Babylon supplies the current reference space when omitted.
+         */
+        layerInit?: Partial<InitT>;
+        /**
+         * A Babylon node whose world position and rotation will be synchronized with the layer.
+         * Babylon creates and owns a node when this is omitted.
+         */
+        transformNode?: TransformNode;
+        /**
+         * Uses a Babylon mesh and VideoTexture when XRMediaBinding is unavailable.
+         * Import `@babylonjs/core/XR/features/WebXRLayersFallback` to enable this optional fallback.
+         * Fallback is disabled by default.
+         */
+        fallbackMode?: "none" | "mesh";
+    }
+    /**
+     * Selects whether a layer is created from a graphics binding or directly from a media element.
+     */
+    export type WebXRLayerSource = "graphics" | "media";
+    /**
+     * The result of creating a spatial WebXR layer.
+     * Native wrappers expose an XR composition layer, while fallback wrappers expose a Babylon mesh.
+     * @typeParam LayerT the native layer type
+     */
+    export type WebXRLayerCreationResult<LayerT extends WebXRSpatialLayer, LayerTypeT extends WebXRSpatialLayerType = WebXRSpatialLayerType> = WebXRSpatialLayerWrapper<LayerT, LayerTypeT> | WebXRFallbackLayerWrapper;
+    /**
+     * Data supplied to an optional WebXR mesh-fallback implementation.
+     * @internal
+     */
+    export interface IWebXRFallbackLayerCreationContext {
+        scene: WebXRSessionManager["scene"];
+        isWebGPU: boolean;
+        layerType: WebXRSpatialLayerType;
+        transformNode: TransformNode;
+        ownsTransformNode: boolean;
+        dimensions: IWebXRFallbackLayerDimensions;
+        worldScalingFactor: number;
+        texture?: BaseTexture;
+        video?: HTMLVideoElement;
+    }
+    /**
+     * Registers the optional mesh-fallback implementation without making its rendering dependencies part of projection-only bundles.
+     * @param factory creates a fallback wrapper
+     * @internal
+     */
+    export function _RegisterWebXRFallbackLayerFactory(factory: (context: IWebXRFallbackLayerCreationContext) => Nullable<WebXRFallbackLayerWrapper>): void;
     /**
      * Exposes the WebXR Layers API.
      */
@@ -7887,15 +8224,29 @@ declare namespace BABYLON {
          * Already-created layers
          */
         private _existingLayers;
+        private _fallbackLayers;
         private _glContext;
         private _xrWebGLBinding;
         private _isWebGPU;
         private _xrGPUBinding?;
+        private _xrMediaBinding?;
         private _isMultiviewEnabled;
         private _projectionLayerInitialized;
         private _compositionLayerTextureMapping;
         private _layerToRTTProviderMapping;
+        private _layerCleanupFunctions;
         constructor(_xrSessionManager: WebXRSessionManager, _options?: IWebXRLayersOptions);
+        /**
+         * Whether the active XR session exposes its compositor layer limit.
+         */
+        get isMaxRenderLayersSupported(): boolean;
+        /**
+         * Gets the maximum number of native layers accepted in the active session's render-state `layers` array.
+         * The projection layer counts toward this limit. Fallback mesh layers do not.
+         * @returns The native layer limit, or `null` when the runtime does not expose it.
+         * @see https://playground.babylonjs.com/#TODARD#0
+         */
+        get maxRenderLayers(): Nullable<number>;
         /**
          * Attach this feature.
          * Will usually be called by the features manager.
@@ -7912,6 +8263,11 @@ declare namespace BABYLON {
         createXRWebGLLayer(params?: XRWebGLLayerInit): WebXRWebGLLayerWrapper;
         private _validateLayerInit;
         private _extendXRLayerInit;
+        private _getProjectionLayerDimensions;
+        private _createTransformNode;
+        private _createFallbackLayer;
+        private _createGraphicsLayer;
+        private _createMediaLayer;
         /**
          * Creates a new XRProjectionLayer.
          * @param params an object providing configuration options for the new XRProjectionLayer.
@@ -7926,11 +8282,52 @@ declare namespace BABYLON {
          */
         private _createWebGPUProjectionLayer;
         /**
-         * Note about making it private - this function will be exposed once I decide on a proper API to support all of the XR layers' options
-         * @param options an object providing configuration options for the new XRQuadLayer.
-         * @param babylonTexture the texture to display in the layer
-         * @returns the quad layer, or null when the WebGPU binding lacks quad-layer support
+         * Creates a graphics-backed quad layer and adds it to the current XR session.
+         * @param options initialization and transform-node options for the layer
+         * @returns the created layer wrapper, or `null` when the active graphics binding does not support quad layers
          */
+        createQuadLayer(options?: IWebXRCompositionLayerCreationOptions<XRQuadLayerInit, XRGPUQuadLayerInit>): Nullable<WebXRLayerCreationResult<XRQuadLayer, "XRQuadLayer">>;
+        /**
+         * Creates a graphics-backed cylinder layer and adds it to the current XR session.
+         * @param options initialization and transform-node options for the layer
+         * @returns the created layer wrapper, or `null` when the active graphics binding does not support cylinder layers
+         */
+        createCylinderLayer(options?: IWebXRCompositionLayerCreationOptions<XRCylinderLayerInit, XRGPUCylinderLayerInit>): Nullable<WebXRLayerCreationResult<XRCylinderLayer, "XRCylinderLayer">>;
+        /**
+         * Creates a graphics-backed equirectangular layer and adds it to the current XR session.
+         * @param options initialization and transform-node options for the layer
+         * @returns the created layer wrapper, or `null` when the active graphics binding does not support equirectangular layers
+         */
+        createEquirectLayer(options?: IWebXRCompositionLayerCreationOptions<XREquirectLayerInit, XRGPUEquirectLayerInit>): Nullable<WebXRLayerCreationResult<XREquirectLayer, "XREquirectLayer">>;
+        /**
+         * Creates a graphics-backed cube layer and adds it to the current XR session.
+         * Cube layers synchronize only the rotation of their transform node because the WebXR API does not support cube-layer translation.
+         * @param options initialization and transform-node options for the layer
+         * @returns the created layer wrapper, or `null` when the active graphics binding does not support cube layers
+         */
+        createCubeLayer(options?: IWebXRCompositionLayerCreationOptions<XRCubeLayerInit, XRGPUCubeLayerInit>): Nullable<WebXRCubeLayerWrapper | WebXRFallbackLayerWrapper>;
+        /**
+         * Creates a video-backed quad layer and adds it to the current XR session.
+         * @see https://playground.babylonjs.com/#D35HOL#0
+         * @param video the video element presented by the XR compositor
+         * @param options initialization and transform-node options for the layer
+         * @returns the created media layer wrapper, or `null` when XRMediaBinding is unavailable
+         */
+        createMediaQuadLayer(video: HTMLVideoElement, options?: IWebXRMediaLayerCreationOptions<XRMediaQuadLayerInit>): Nullable<WebXRLayerCreationResult<XRQuadLayer, "XRQuadLayer">>;
+        /**
+         * Creates a video-backed cylinder layer and adds it to the current XR session.
+         * @param video the video element presented by the XR compositor
+         * @param options initialization and transform-node options for the layer
+         * @returns the created media layer wrapper, or `null` when XRMediaBinding is unavailable
+         */
+        createMediaCylinderLayer(video: HTMLVideoElement, options?: IWebXRMediaLayerCreationOptions<XRMediaCylinderLayerInit>): Nullable<WebXRLayerCreationResult<XRCylinderLayer, "XRCylinderLayer">>;
+        /**
+         * Creates a video-backed equirectangular layer and adds it to the current XR session.
+         * @param video the video element presented by the XR compositor
+         * @param options initialization and transform-node options for the layer
+         * @returns the created media layer wrapper, or `null` when XRMediaBinding is unavailable
+         */
+        createMediaEquirectLayer(video: HTMLVideoElement, options?: IWebXRMediaLayerCreationOptions<XRMediaEquirectLayerInit>): Nullable<WebXRLayerCreationResult<XREquirectLayer, "XREquirectLayer">>;
         private _createQuadLayer;
         /**
          * @experimental
@@ -7956,7 +8353,21 @@ declare namespace BABYLON {
          * Add a new layer to the already-existing list of layers
          * @param wrappedLayer the new layer to add to the existing ones
          */
-        addXRSessionLayer(wrappedLayer: WebXRLayerWrapper): void;
+        addXRSessionLayer(wrappedLayer: WebXRLayerWrapper<WebXRSupportedLayerType>): void;
+        /**
+         * Removes a non-projection layer from the current XR session.
+         * @param wrappedLayer the layer wrapper to remove
+         * @param dispose whether to dispose the wrapper and destroy its native composition layer
+         * @returns whether the layer was present and removed
+         */
+        removeXRSessionLayer(wrappedLayer: WebXRLayerWrapper<WebXRSupportedLayerType>, dispose?: boolean): boolean;
+        /**
+         * Removes either a native spatial layer or a fallback layer created by this feature.
+         * @param wrappedLayer the native or fallback layer wrapper to remove
+         * @param dispose whether to dispose resources owned by the wrapper
+         * @returns whether the wrapper was present and removed
+         */
+        removeLayer(wrappedLayer: WebXRLayerCreationResult<WebXRSpatialLayer>, dispose?: boolean): boolean;
         /**
          * Sets the layers to be used by the XR session.
          * Note that you must call this function with any layers you wish to render to
@@ -7966,7 +8377,16 @@ declare namespace BABYLON {
          * as the first layer in the array, which feeds the WebXR camera(s) attached to the session.
          * @param wrappedLayers An array of WebXRLayerWrapper, usually returned from the WebXRLayers createLayer functions.
          */
-        setXRSessionLayers(wrappedLayers?: Array<WebXRLayerWrapper>): void;
+        setXRSessionLayers(wrappedLayers?: Array<WebXRLayerWrapper<WebXRSupportedLayerType>>): void;
+        private _validateLayerCount;
+        /**
+         * Checks whether the active runtime exposes the factory needed for a layer type.
+         * This is a capability check only; creation can still fail when an initialization dictionary is invalid.
+         * @param layerType the concrete WebXR layer type
+         * @param source whether to check a graphics-backed or media-backed layer
+         * @returns whether the requested factory is available
+         */
+        isLayerTypeSupported(layerType: WebXRSpatialLayerType | "XRProjectionLayer", source?: WebXRLayerSource): boolean;
         isCompatible(): boolean;
         /**
          * Dispose this feature and all of the resources attached.
@@ -9017,6 +9437,27 @@ declare namespace BABYLON {
          * Describes which depth sensing data format ("ushort" or "float") is used.
          */
         get depthDataFormat(): WebXRDepthDataFormat;
+        /**
+         * Whether depth sensing is currently active for the XR session.
+         * Returns false when there is no active session or the runtime does not expose the active state.
+         * @see https://immersive-web.github.io/depth-sensing/
+         * @see https://playground.babylonjs.com/#SU7NUW#0
+         */
+        get isDepthSensingActive(): boolean;
+        /**
+         * Pauses depth sensing for the active XR session.
+         * @returns A promise that resolves when the native pause operation completes.
+         * @throws If there is no active XR session or pausing depth sensing is not supported by the runtime.
+         * @see https://immersive-web.github.io/depth-sensing/
+         */
+        pauseDepthSensingAsync(): Promise<void>;
+        /**
+         * Resumes depth sensing for the active XR session.
+         * @returns A promise that resolves when the native resume operation completes.
+         * @throws If there is no active XR session or resuming depth sensing is not supported by the runtime.
+         * @see https://immersive-web.github.io/depth-sensing/
+         */
+        resumeDepthSensingAsync(): Promise<void>;
         /**
          * Latest cached InternalTexture which containing depth buffer information.
          * This can be used when the depth usage is "gpu".
@@ -11287,6 +11728,10 @@ declare namespace BABYLON {
          */
         xrAnchor: XRAnchor;
         /**
+         * The persistent handle associated with this anchor, if one was requested or the anchor was restored from one
+         */
+        persistentHandle?: string;
+        /**
          * if defined, this object will be constantly updated by the anchor's position and rotation
          */
         attachedNode?: TransformNode;
@@ -11375,6 +11820,44 @@ declare namespace BABYLON {
          */
         get anchors(): IWebXRAnchor[];
         /**
+         * Whether the current XR session exposes all session-level persistent anchor APIs
+         * @returns Whether all session-level persistent anchor APIs are supported
+         */
+        get isPersistentAnchorSupported(): boolean;
+        /**
+         * Get the persistent anchor handles known to the current XR session
+         * @returns The persistent anchor handles
+         * @throws If persistent anchor enumeration is not supported by the current session
+         */
+        get persistentAnchors(): ReadonlyArray<string>;
+        /**
+         * Request a persistent handle for a tracked anchor
+         * @param anchor The Babylon anchor to persist
+         * @returns A promise that resolves with the persistent handle
+         * @throws If requesting persistent handles is not supported by the native anchor
+         */
+        requestPersistentHandleAsync(anchor: IWebXRAnchor): Promise<string>;
+        /**
+         * Restore a persistent anchor into the Babylon anchor lifecycle
+         * @param handle The persistent anchor handle to restore
+         * @returns A promise that resolves after the restored anchor is tracked by an XR frame
+         * @throws If restoring persistent anchors is not supported by the current session
+         */
+        restorePersistentAnchorAsync(handle: string): Promise<IWebXRAnchor>;
+        /**
+         * Restore all persistent anchors known to the current XR session
+         * @returns A promise that resolves after all restored anchors are tracked by an XR frame
+         * @throws If persistent anchor enumeration or restoration is not supported by the current session
+         */
+        restorePersistentAnchorsAsync(): Promise<IWebXRAnchor[]>;
+        /**
+         * Delete a persistent anchor from native storage
+         * @param handle The persistent anchor handle to delete
+         * @returns A promise that resolves after native persistent storage is deleted
+         * @throws If deleting persistent anchors is not supported by the current session
+         */
+        deletePersistentAnchorAsync(handle: string): Promise<void>;
+        /**
          * detach this feature.
          * Will usually be called by the features manager
          *
@@ -11392,6 +11875,9 @@ declare namespace BABYLON {
          * @returns the index of the anchor in the array or -1 if not found
          */
         private _findIndexInAnchorArray;
+        private _findFutureAnchor;
+        private _setPersistentHandle;
+        private _rejectPendingPersistentAnchors;
         private _updateAnchorWithXRFrame;
         private _createAnchorAtTransformationAsync;
     }
@@ -11541,9 +12027,9 @@ declare namespace BABYLON {
      * {@link XRGPUSubImage} GPUTextures instead of WebGL textures.
      * @internal
      */
-    export class WebXRWebGPUCompositionLayerRenderTargetTextureProvider extends WebXRWebGPURenderTargetTextureProvider {
+    export class WebXRWebGPUCompositionLayerRenderTargetTextureProvider<LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> extends WebXRWebGPURenderTargetTextureProvider<LayerTypeT> {
         protected readonly _xrGPUBinding: XRGPUBinding;
-        readonly layerWrapper: WebXRWebGPUCompositionLayerWrapper;
+        readonly layerWrapper: WebXRCompositionLayerWrapper<XRCompositionLayer, LayerTypeT>;
         protected readonly _depthStencilFormat?: GPUTextureFormat | undefined;
         protected _lastSubImages: Map<XREye, XRGPUSubImage>;
         /**
@@ -11562,7 +12048,7 @@ declare namespace BABYLON {
             texture: RenderTargetTexture;
             eye?: XREye;
         }>;
-        constructor(_xrSessionManager: WebXRSessionManager, _xrGPUBinding: XRGPUBinding, layerWrapper: WebXRWebGPUCompositionLayerWrapper, _depthStencilFormat?: GPUTextureFormat | undefined);
+        constructor(_xrSessionManager: WebXRSessionManager, _xrGPUBinding: XRGPUBinding, layerWrapper: WebXRCompositionLayerWrapper<XRCompositionLayer, LayerTypeT>, _depthStencilFormat?: GPUTextureFormat | undefined);
         protected _getRenderTargetForSubImage(subImage: XRGPUSubImage, eye?: XREye): WebXRLayerRenderTargetTexture;
         private _getSubImageForEye;
         getRenderTargetTextureForEye(eye?: XREye): Nullable<RenderTargetTexture>;
@@ -11587,27 +12073,276 @@ declare namespace BABYLON {
 
 
     /**
-     * Wraps xr composition layers.
-     * @internal
+     * Physical dimensions used to approximate a native composition layer with a Babylon mesh.
      */
-    export class WebXRCompositionLayerWrapper extends WebXRLayerWrapper {
+    export interface IWebXRFallbackLayerDimensions {
+        /** The quad width in meters. */
+        width?: number;
+        /** The quad height in meters. */
+        height?: number;
+        /** The cylinder or sphere radius in meters. */
+        radius?: number;
+        /** The cylinder central angle in radians. */
+        centralAngle?: number;
+        /** The cylinder width-to-height aspect ratio. */
+        aspectRatio?: number;
+        /** The equirectangular horizontal angle in radians. */
+        centralHorizontalAngle?: number;
+        /** The equirectangular upper vertical angle in radians. */
+        upperVerticalAngle?: number;
+        /** The equirectangular lower vertical angle in radians. */
+        lowerVerticalAngle?: number;
+    }
+    /**
+     * Wraps a mesh used when a requested native WebXR composition layer is unavailable.
+     */
+    export class WebXRFallbackLayerWrapper {
+        /**
+         * The requested WebXR composition layer type.
+         */
+        readonly layerType: WebXRSpatialLayerType;
+        /**
+         * The Babylon node whose world position and rotation control the fallback mesh.
+         */
+        readonly transformNode: TransformNode;
+        private readonly _ownsTransformNode;
+        private readonly _currentPosition;
+        private readonly _currentRotation;
+        private readonly _meshRotationOffset;
+        private readonly _material;
+        private readonly _ownsTexture;
+        /**
+         * The native layer is always `null` for a fallback wrapper.
+         */
+        readonly layer: null;
+        /**
+         * Whether this wrapper is backed by a native WebXR composition layer.
+         */
+        readonly isNative = false;
+        /**
+         * The Babylon mesh that approximates the requested composition layer.
+         */
+        readonly mesh: Mesh;
+        /**
+         * The texture displayed by the fallback mesh.
+         */
+        readonly texture: BaseTexture;
+        constructor(scene: Scene, 
+        /**
+         * The requested WebXR composition layer type.
+         */
+        layerType: WebXRSpatialLayerType, 
+        /**
+         * The texture displayed by the fallback mesh.
+         */
+        texture: BaseTexture, 
+        /**
+         * The Babylon node whose world position and rotation control the fallback mesh.
+         */
+        transformNode: TransformNode, _ownsTransformNode: boolean, ownsTexture: boolean, dimensions: IWebXRFallbackLayerDimensions, worldScalingFactor: number);
+        private _createMesh;
+        /**
+         * Copies the transform node's world position and rotation to the fallback mesh without applying the node's scaling.
+         * @param worldScalingFactor the number of Babylon scene units represented by one meter
+         */
+        updateFromTransformNode(worldScalingFactor?: number): void;
+        /**
+         * Disposes the fallback mesh, material, and any resources owned by this wrapper.
+         */
+        dispose(): void;
+    }
+
+
+    /**
+     * The non-projection composition layers that can be positioned in an XR space.
+     */
+    export type WebXRSpatialLayer = XRQuadLayer | XRCylinderLayer | XREquirectLayer | XRCubeLayer;
+    /**
+     * Wraps an XR composition layer and creates its Babylon render target provider.
+     * @typeParam LayerT the concrete WebXR composition layer type
+     * @see https://playground.babylonjs.com/#TODARD#0
+     */
+    export class WebXRCompositionLayerWrapper<LayerT extends XRCompositionLayer = XRCompositionLayer, LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> extends WebXRLayerWrapper<LayerTypeT> {
         getWidth: () => number;
         getHeight: () => number;
-        readonly layer: XRCompositionLayer;
-        readonly layerType: WebXRLayerType;
+        readonly layer: LayerT;
+        readonly layerType: LayerTypeT;
+        /**
+         * Whether the layer renders both views into a texture array.
+         */
         readonly isMultiview: boolean;
-        createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider;
+        createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider<LayerTypeT>;
         _originalInternalTexture: Nullable<InternalTexture>;
-        constructor(getWidth: () => number, getHeight: () => number, layer: XRCompositionLayer, layerType: WebXRLayerType, isMultiview: boolean, createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider, _originalInternalTexture?: Nullable<InternalTexture>);
+        private readonly _destroyLayerOnDispose;
+        /**
+         * Whether the layer can only be rendered when its native `needsRedraw` flag is set.
+         */
+        readonly isStatic: boolean;
+        /**
+         * Whether this layer receives its content directly from an HTML media element.
+         */
+        readonly isMediaLayer: boolean;
+        /**
+         * Whether Babylon should acquire subimages and expose render target textures for this layer.
+         */
+        readonly usesRenderTargetProvider: boolean;
+        /**
+         * Whether the native layer exposes compositor opacity control.
+         */
+        get isOpacitySupported(): boolean;
+        /**
+         * Gets the compositor opacity applied to this layer.
+         * @returns The native opacity in the range 0 to 1.
+         * @throws If opacity is not supported by the active XR runtime.
+         */
+        get opacity(): number;
+        /**
+         * Sets the compositor opacity applied to this layer.
+         * The native runtime clamps the value to the range 0 to 1.
+         * @param value The desired opacity.
+         * @throws If opacity is not supported by the active XR runtime.
+         */
+        set opacity(value: number);
+        /**
+         * Whether the native layer exposes compositor quality hints.
+         */
+        get isQualitySupported(): boolean;
+        /**
+         * Gets the compositor quality hint applied to this layer.
+         * @returns The current native layer quality hint.
+         * @throws If quality hints are not supported by the active XR runtime.
+         */
+        get quality(): XRLayerQuality;
+        /**
+         * Sets the compositor quality hint applied to this layer.
+         * @param value The desired quality hint.
+         * @throws If quality hints are not supported by the active XR runtime, or the native runtime rejects the value.
+         */
+        set quality(value: XRLayerQuality);
+        /**
+         * Whether the native layer exposes mono-presentation control.
+         */
+        get isForceMonoPresentationSupported(): boolean;
+        /**
+         * Gets whether the compositor presents the left-eye layer configuration to both eyes.
+         * @returns Whether mono presentation is forced.
+         * @throws If mono presentation control is not supported by the active XR runtime.
+         */
+        get forceMonoPresentation(): boolean;
+        /**
+         * Sets whether the compositor presents the left-eye layer configuration to both eyes.
+         * Applications should continue rendering both eyes when this is enabled.
+         * @param value Whether to force mono presentation.
+         * @throws If mono presentation control is not supported by the active XR runtime.
+         */
+        set forceMonoPresentation(value: boolean);
+        constructor(getWidth: () => number, getHeight: () => number, layer: LayerT, layerType: LayerTypeT, 
+        /**
+         * Whether the layer renders both views into a texture array.
+         */
+        isMultiview: boolean, createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider<LayerTypeT>, _originalInternalTexture?: Nullable<InternalTexture>, _destroyLayerOnDispose?: boolean, 
+        /**
+         * Whether the layer can only be rendered when its native `needsRedraw` flag is set.
+         */
+        isStatic?: boolean);
+        private _assertControlSupported;
+        /**
+         * Disposes the Babylon render-target resources and destroys the native layer when this wrapper owns it.
+         */
+        dispose(): void;
+    }
+    /**
+     * Wraps a positionable XR composition layer and synchronizes it with a Babylon transform node.
+     * The node's scaling does not affect the physical dimensions of the layer.
+     * @typeParam LayerT the concrete positionable WebXR layer type
+     */
+    export class WebXRSpatialLayerWrapper<LayerT extends WebXRSpatialLayer = WebXRSpatialLayer, LayerTypeT extends WebXRSpatialLayerType = WebXRSpatialLayerType> extends WebXRCompositionLayerWrapper<LayerT, LayerTypeT> {
+        /**
+         * Whether the layer should follow changes to the session manager's reference space.
+         */
+        readonly usesSessionReferenceSpace: boolean;
+        /**
+         * The Babylon node whose world position and rotation are applied to the native layer.
+         */
+        readonly transformNode: TransformNode;
+        private readonly _ownsTransformNode;
+        private readonly _currentPosition;
+        private readonly _currentRotation;
+        private readonly _lastPosition;
+        private readonly _lastRotation;
+        constructor(getWidth: () => number, getHeight: () => number, layer: LayerT, layerType: LayerTypeT, isMultiview: boolean, isStatic: boolean, 
+        /**
+         * Whether the layer should follow changes to the session manager's reference space.
+         */
+        usesSessionReferenceSpace: boolean, createRTTProvider: (xrSessionManager: WebXRSessionManager) => WebXRLayerRenderTargetTextureProvider<LayerTypeT>, 
+        /**
+         * The Babylon node whose world position and rotation are applied to the native layer.
+         */
+        transformNode: TransformNode, _ownsTransformNode: boolean);
+        /**
+         * Synchronizes the native layer with the current world transform of the Babylon node.
+         * @param useRightHandedSystem whether the Babylon scene uses right-handed coordinates
+         * @param worldScalingFactor the number of Babylon scene units represented by one meter
+         */
+        updateFromTransformNode(useRightHandedSystem: boolean, worldScalingFactor: number): void;
+        /**
+         * Disposes the native layer wrapper and its Babylon transform node when the node was created by Babylon.
+         */
+        dispose(): void;
+    }
+    /**
+     * Wraps an XRMediaBinding layer.
+     * @typeParam LayerT the concrete media layer type
+     */
+    export class WebXRMediaLayerWrapper<LayerT extends Exclude<WebXRSpatialLayer, XRCubeLayer> = Exclude<WebXRSpatialLayer, XRCubeLayer>, LayerTypeT extends Exclude<WebXRSpatialLayerType, "XRCubeLayer"> = Exclude<WebXRSpatialLayerType, "XRCubeLayer">> extends WebXRSpatialLayerWrapper<LayerT, LayerTypeT> {
+        /**
+         * Media layers receive their contents directly from the user agent.
+         */
+        readonly isMediaLayer: boolean;
+        /**
+         * Media layers are populated directly by the user agent.
+         */
+        readonly usesRenderTargetProvider: boolean;
+        /**
+         * Creates a wrapper for a media-backed spatial layer.
+         * @param getWidth returns the current video width
+         * @param getHeight returns the current video height
+         * @param layer the native media composition layer
+         * @param layerType the concrete spatial layer type
+         * @param transformNode the Babylon transform synchronized with the native layer
+         * @param ownsTransformNode whether the wrapper should dispose the transform node
+         * @param usesSessionReferenceSpace whether the layer should follow session reference-space changes
+         */
+        constructor(getWidth: () => number, getHeight: () => number, layer: LayerT, layerType: LayerTypeT, transformNode: TransformNode, ownsTransformNode: boolean, usesSessionReferenceSpace: boolean);
+    }
+    /**
+     * Wraps a native cube layer and exposes its raw subimage.
+     * Cube layers require six face uploads or render passes and therefore do not use Babylon's 2D composition-layer render target provider.
+     */
+    export class WebXRCubeLayerWrapper extends WebXRSpatialLayerWrapper<XRCubeLayer, "XRCubeLayer"> {
+        private readonly _binding;
+        /**
+         * Cube layers are populated through raw cubemap or array-layer access.
+         */
+        readonly usesRenderTargetProvider: boolean;
+        constructor(getWidth: () => number, getHeight: () => number, layer: XRCubeLayer, isStatic: boolean, usesSessionReferenceSpace: boolean, _binding: XRWebGLBinding | XRGPUBinding, transformNode: TransformNode, ownsTransformNode: boolean);
+        /**
+         * Gets the compositor-owned cube subimage for the current frame.
+         * WebGL callers must populate all six cubemap faces. WebGPU callers must render to six consecutive array layers beginning at the descriptor's base array layer.
+         * @param frame the current XR frame
+         * @param eye the eye to retrieve for stereo cube layers
+         * @returns the raw WebGL or WebGPU cube subimage
+         */
+        getSubImage(frame: XRFrame, eye?: XREye): XRWebGLSubImage | XRGPUSubImage;
     }
     /**
      * Provides render target textures and other important rendering information for a given XRCompositionLayer.
      * @internal
      */
-    export class WebXRCompositionLayerRenderTargetTextureProvider extends WebXRWebGLRenderTargetTextureProvider {
+    export class WebXRCompositionLayerRenderTargetTextureProvider<LayerTypeT extends WebXRSupportedLayerType = WebXRLayerType> extends WebXRWebGLRenderTargetTextureProvider<LayerTypeT> {
         protected readonly _xrSessionManager: WebXRSessionManager;
         protected readonly _xrWebGLBinding: XRWebGLBinding;
-        readonly layerWrapper: WebXRCompositionLayerWrapper;
+        readonly layerWrapper: WebXRCompositionLayerWrapper<XRCompositionLayer, LayerTypeT>;
         protected _lastSubImages: Map<XREye, XRWebGLSubImage>;
         private _compositionLayer;
         /**
@@ -11617,7 +12352,7 @@ declare namespace BABYLON {
             texture: RenderTargetTexture;
             eye?: XREye;
         }>;
-        constructor(_xrSessionManager: WebXRSessionManager, _xrWebGLBinding: XRWebGLBinding, layerWrapper: WebXRCompositionLayerWrapper);
+        constructor(_xrSessionManager: WebXRSessionManager, _xrWebGLBinding: XRWebGLBinding, layerWrapper: WebXRCompositionLayerWrapper<XRCompositionLayer, LayerTypeT>);
         protected _getRenderTargetForSubImage(subImage: XRWebGLSubImage, eye?: XREye): RenderTargetTexture;
         private _getSubImageForEye;
         getRenderTargetTextureForEye(eye?: XREye): Nullable<RenderTargetTexture>;
@@ -13731,6 +14466,13 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export var iblCopyVoxelBufferToGridComputeShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
     export var iblCombineVoxelGridsPixelShaderWGSL: {
         name: string;
         shader: string;
@@ -15034,6 +15776,13 @@ declare namespace BABYLON {
 
     /** @internal */
     export var imageProcessingCompatibilityWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var iblVoxelOpacityAtomicMaxWGSL: {
         name: string;
         shader: string;
     };
@@ -21172,6 +21921,11 @@ declare namespace BABYLON {
          */
         constructor(scene: Scene, ps: IParticleSystem, shaderLanguage?: ShaderLanguage);
         /**
+         * GPUParticleSystem's "size" buffer layout (baseSize, scaleX, scaleY) is incompatible with this feature.
+         * @returns true if the per-particle size attribute is supported
+         */
+        protected _supportsPerParticleSizeAttribute(): boolean;
+        /**
          * Indicates if the object is ready to be rendered
          * @returns True if everything is ready for the object to be rendered, otherwise false
          */
@@ -21227,6 +21981,11 @@ declare namespace BABYLON {
         addBuffers(buffers: {
             [key: string]: FloatArray;
         }): void;
+        /**
+         * Per-particle sizing needs an actual "size" buffer; custom buffers are optional.
+         * @returns true if a "size" buffer was supplied
+         */
+        protected _supportsPerParticleSizeAttribute(): boolean;
         protected _createEffects(): void;
         /**
          * Indicates if the object is ready to be rendered
@@ -21259,6 +22018,12 @@ declare namespace BABYLON {
      * It is based on a list of vertices (particles)
      */
     export abstract class FluidRenderingObject {
+        /**
+         * Uses each particle's own "size" vertex attribute instead
+         * of a single uniform size for all particles (default: false, opt-in).
+         */
+        static UsePerParticleSizeAttribute: boolean;
+        protected _usesPerParticleSizeAttribute: boolean;
         protected _scene: Scene;
         protected _engine: AbstractEngine;
         protected _effectsAreDirty: boolean;
@@ -21307,6 +22072,11 @@ declare namespace BABYLON {
          * @param shaderLanguage The shader language to use
          */
         constructor(scene: Scene, shaderLanguage?: ShaderLanguage);
+        /**
+         * Override to return false if this object's buffers have an incompatible "size" layout.
+         * @returns true if the per-particle size attribute is supported
+         */
+        protected _supportsPerParticleSizeAttribute(): boolean;
         protected _createEffects(): void;
         /**
          * Indicates if the object is ready to be rendered
@@ -21648,6 +22418,13 @@ declare namespace BABYLON {
         set coloredShadows(value: boolean);
         get coloredShadows(): boolean;
         private _coloredShadows;
+        /**
+         * Maximum number of translucent voxels a shadow ray roulettes through before it is treated as
+         * unoccluded. Higher values converge more accurately at extra cost. Applied via a shader define.
+         */
+        set maxVoxelRouletteTests(value: number);
+        get maxVoxelRouletteTests(): number;
+        private _maxVoxelRouletteTests;
         private _debugVoxelMarchEnabled;
         private _debugPassPP;
         private _debugSizeParams;
@@ -21713,6 +22490,9 @@ declare namespace BABYLON {
         private _voxelMrtsYaxis;
         private _voxelMrtsZaxis;
         private _voxelMaterial;
+        private _voxelOpacityBuffer?;
+        private _copyBufferToGridCompute?;
+        private _useOpacityBuffer;
         private _voxelClearColor;
         /**
          * Return the voxel grid texture.
@@ -21783,6 +22563,17 @@ declare namespace BABYLON {
         private _copyMipMap;
         private _computeNumberOfSlabs;
         private _createTextures;
+        /**
+         * WebGPU only. Allocates the opacity accumulator buffer and the compute shader that copies it into
+         * the r8 grid. Storage textures can't blend or do float atomics, so splats accumulate via atomicMax
+         * and this compute pass decodes the result into mip 0.
+         */
+        private _ensureVoxelOpacityAccumulator;
+        /**
+         * WebGPU only. Dispatches the compute pass that decodes the per-voxel opacity accumulator buffer
+         * into the r8 voxel grid (mip 0). Runs after all voxelization passes and before mip generation.
+         */
+        private _copyVoxelOpacityBufferToGrid;
         private _createVoxelMRTs;
         private _disposeVoxelTextures;
         private _createVoxelMaterials;
@@ -21981,6 +22772,12 @@ declare namespace BABYLON {
          * region so shouldn't need to change if you scale your scene.
          */
         ssShadowThicknessScale?: number;
+        /**
+         * Maximum number of translucent voxels a shadow ray roulettes through before it is treated as
+         * unoccluded (default 16). Higher values converge more accurately through thick translucent volumes
+         * (e.g. dense Gaussian splats) at extra cost. Opaque voxels always block on first contact.
+         */
+        maxVoxelRouletteTests?: number;
     }
     /**
      * Voxel-based shadow rendering for IBL's.
@@ -22054,6 +22851,12 @@ declare namespace BABYLON {
          */
         get voxelShadowOpacity(): number;
         set voxelShadowOpacity(value: number);
+        /**
+         * Maximum number of translucent voxels a shadow ray roulettes through before it is treated as
+         * unoccluded. Higher values converge more accurately at extra cost. Opaque voxels always block.
+         */
+        get maxVoxelRouletteTests(): number;
+        set maxVoxelRouletteTests(value: number);
         /**
          * How dark the screen-space shadows appear. 1.0 is full opacity, 0.0 is no shadows.
          */
@@ -23760,7 +24563,33 @@ declare namespace BABYLON {
          * If not provided, the last created scene will be used.
          */
         scene?: Nullable<Scene>;
+        /**
+         * The correlated color temperature, in Kelvin, of the illuminant to neutralize via white balance, applied to
+         * the resolved image processing configuration - see `ImageProcessingConfiguration.temperature`. Providing
+         * this (or `tint`) also enables white balance. Defaults to 6500 K.
+         */
+        temperature?: number;
+        /**
+         * The white balance tint offset to apply, on the green/magenta axis, to the resolved image processing
+         * configuration - see `ImageProcessingConfiguration.tint`. Providing this (or `temperature`) also enables
+         * white balance. Defaults to 0 (no tint offset).
+         */
+        tint?: number;
     }
+    /**
+     * Applies the `temperature`/`tint` white balance options (if provided) to an image processing configuration,
+     * enabling white balance if either was supplied. Exported (but internal) so it can be applied uniformly
+     * regardless of how the configuration was resolved - in particular, `ImageProcessingPostProcess` also calls this
+     * directly on `this.imageProcessingConfiguration` after construction, since a caller-supplied `effectWrapper`
+     * bypasses `ThinImageProcessingPostProcess`'s own constructor (and thus its own call to this function) entirely.
+     * @param configuration the image processing configuration to update
+     * @param options the options object that may contain `temperature`/`tint`, or a plain size number (ignored)
+     * @internal
+     */
+    export function _ApplyWhiteBalanceOptions(configuration: ImageProcessingConfiguration, options?: {
+        temperature?: number;
+        tint?: number;
+    } | number): void;
     /**
      * Post process used to apply image processing to a scene
      */
@@ -23858,6 +24687,30 @@ declare namespace BABYLON {
          * Sets contrast used in the effect.
          */
         set contrast(value: number);
+        /**
+         * Gets whether the white balance effect is enabled.
+         */
+        get whiteBalanceEnabled(): boolean;
+        /**
+         * Sets whether the white balance effect is enabled.
+         */
+        set whiteBalanceEnabled(value: boolean);
+        /**
+         * Gets the white balance correlated color temperature, in Kelvin, used in the effect.
+         */
+        get temperature(): number;
+        /**
+         * Sets the white balance correlated color temperature, in Kelvin, used in the effect.
+         */
+        set temperature(value: number);
+        /**
+         * Gets the white balance tint offset used in the effect.
+         */
+        get tint(): number;
+        /**
+         * Sets the white balance tint offset used in the effect.
+         */
+        set tint(value: number);
         /**
          * Gets Vignette stretch size.
          */
@@ -25793,6 +26646,22 @@ declare namespace BABYLON {
 
 
     /**
+     * Options used to create an `ImageProcessingPostProcess`.
+     */
+    export type ImageProcessingPostProcessOptions = PostProcessOptions & {
+        /**
+         * The correlated color temperature, in Kelvin, of the illuminant to neutralize via white balance - see
+         * `ImageProcessingConfiguration.temperature`. Providing this (or `tint`) also enables white balance.
+         * Defaults to 6500 K.
+         */
+        temperature?: number;
+        /**
+         * The white balance tint offset to apply, on the green/magenta axis - see `ImageProcessingConfiguration.tint`.
+         * Providing this (or `temperature`) also enables white balance. Defaults to 0 (no tint offset).
+         */
+        tint?: number;
+    };
+    /**
      * ImageProcessingPostProcess
      * @see https://doc.babylonjs.com/features/featuresDeepDive/postProcesses/usePostProcesses#imageprocessing
      */
@@ -25876,6 +26745,30 @@ declare namespace BABYLON {
          * Sets contrast used in the effect.
          */
         set contrast(value: number);
+        /**
+         * Gets whether the white balance effect is enabled.
+         */
+        get whiteBalanceEnabled(): boolean;
+        /**
+         * Sets whether the white balance effect is enabled.
+         */
+        set whiteBalanceEnabled(value: boolean);
+        /**
+         * Gets the white balance correlated color temperature, in Kelvin, used in the effect.
+         */
+        get temperature(): number;
+        /**
+         * Sets the white balance correlated color temperature, in Kelvin, used in the effect.
+         */
+        set temperature(value: number);
+        /**
+         * Gets the white balance tint offset used in the effect.
+         */
+        get tint(): number;
+        /**
+         * Sets the white balance tint offset used in the effect.
+         */
+        set tint(value: number);
         /**
          * Gets Vignette stretch size.
          */
@@ -25981,7 +26874,7 @@ declare namespace BABYLON {
          */
         set fromLinearSpace(value: boolean);
         protected _effectWrapper: ThinImageProcessingPostProcess;
-        constructor(name: string, options: number | PostProcessOptions, camera?: Nullable<Camera>, samplingMode?: number, engine?: AbstractEngine, reusable?: boolean, textureType?: number, imageProcessingConfiguration?: ImageProcessingConfiguration);
+        constructor(name: string, options: number | ImageProcessingPostProcessOptions, camera?: Nullable<Camera>, samplingMode?: number, engine?: AbstractEngine, reusable?: boolean, textureType?: number, imageProcessingConfiguration?: ImageProcessingConfiguration);
         /**
          *  "ImageProcessingPostProcess"
          * @returns "ImageProcessingPostProcess"
@@ -48819,6 +49712,31 @@ declare namespace BABYLON {
     }
 
 
+    type ShaderImportFunction = () => readonly Promise<unknown>[];
+    /**
+     * Caches dynamic shader imports per shader language.
+     * @internal
+     */
+    export class _ShaderImportLoader {
+        private readonly _webGL;
+        private readonly _webGPU;
+        /**
+         * Creates a shader import loader.
+         * @param loadWebGL Imports the GLSL shader modules.
+         * @param loadWebGPU Imports the WGSL shader modules.
+         */
+        constructor(loadWebGL: ShaderImportFunction, loadWebGPU: ShaderImportFunction);
+        /**
+         * Gets the initialization callback needed to load shaders for the requested language.
+         * @param shaderLanguage The shader language to load.
+         * @returns The shared loading callback, or `undefined` when the shaders are already loaded.
+         */
+        getLoadCallback(shaderLanguage: ShaderLanguage): (() => Promise<void>) | undefined;
+        private _loadAsync;
+        private _completeLoad;
+    }
+
+
     /** This file must only contain pure code and pure imports */
     /**
      * Captures a screenshot of the current rendering
@@ -68923,6 +69841,7 @@ declare namespace BABYLON {
          */
         private _minimum;
         private _maximum;
+        private _disabledVisibility;
         /**
          * The index of the part in the compound mesh (internal storage)
          */
@@ -69016,19 +69935,19 @@ declare namespace BABYLON {
          */
         updatePartMetadata(vertexCount: number, splatsDataOffset: number, shDataOffset?: number): void;
         /**
-         * Gets whether the part is visible
+         * Gets whether the part should be visible when this proxy is enabled
          */
         get isVisible(): boolean;
         /**
-         * Sets whether the part is visible
+         * Sets whether the part should be visible when this proxy is enabled
          */
         set isVisible(value: boolean);
         /**
-         * Gets the visibility of the part (0.0 to 1.0)
+         * Gets the visibility applied to the part while this proxy is enabled (0.0 to 1.0)
          */
         get visibility(): number;
         /**
-         * Sets the visibility of the part (0.0 to 1.0)
+         * Sets the visibility to apply to the part while this proxy is enabled (0.0 to 1.0)
          */
         set visibility(value: number);
         /**
@@ -69957,6 +70876,24 @@ declare namespace BABYLON {
         _isReservedEmpty?: boolean;
     }
     /**
+     * A LOD engine (e.g. a streamed part) that participates in a compound's shared splat budget. The compound
+     * apportions {@link GaussianSplattingMesh.splatBudget} (net of static parts) across all registered participants
+     * by demand and pushes each its allocation. Defined here (core) so the compound never depends on the loader's
+     * streaming engine; the engine implements this and registers via
+     * {@link GaussianSplattingMesh.registerLodBudgetParticipant}.
+     * @experimental
+     */
+    export interface IGaussianSplattingLodBudgetParticipant {
+        /** The number of splats this participant would render at full (distance-optimal) detail — its budget demand. */
+        getBudgetDemand(): number;
+        /**
+         * Sets the participant's apportioned share of the compound budget (in splats). `null` clears coordination so
+         * the participant reverts to its own budget; `0` keeps it coordinated at the coarsest level.
+         * @param splats the apportioned splat allocation, or null to release coordination
+         */
+        setBudgetAllocation(splats: Nullable<number>): void;
+    }
+    /**
      * Handle to a region of a compound Gaussian Splatting mesh reserved for dynamic (streamed) content by
      * {@link GaussianSplattingMesh.reserveStreamingPart}. It lets a streaming engine populate the region's
      * splats over time and drive which of them are sorted/rendered, while the compound keeps depth-sorting
@@ -70090,6 +71027,20 @@ declare namespace BABYLON {
         /** Mutable bookkeeping for each reserved streaming region, so {@link compactAtlas} can relocate them. */
         private _streamingStates;
         /**
+         * Shared LOD splat budget for the whole compound (0 = disabled). When set, {@link _apportionBudget} divides it
+         * (net of static parts) across the registered {@link IGaussianSplattingLodBudgetParticipant}s each frame, so
+         * all hosted streams together stay within one cap. See {@link splatBudget}.
+         * Protected so {@link GaussianSplattingStream} can reuse it as its own per-stream budget.
+         */
+        protected _splatBudget: number;
+        /** LOD engines sharing {@link _splatBudget} (e.g. hosted streamed parts). */
+        private _lodBudgetParticipants;
+        /** Per-frame budget apportionment observer, installed only while a budget and participants are both present. */
+        private _budgetObserver;
+        private readonly _budgetDemands;
+        private readonly _budgetAlloc;
+        private readonly _budgetSettled;
+        /**
          * Max SH degree contributed by the live (non-tombstoned) streaming parts. Recomputed by
          * {@link _refreshStreamingShState} whenever parts change, so removing the last SH stream turns the shared SH
          * atlas off instead of leaving SH_DEGREE high over texels nothing refills.
@@ -70212,6 +71163,46 @@ declare namespace BABYLON {
          * Gets the number of parts in the compound.
          */
         get partCount(): number;
+        /**
+         * Shared LOD splat budget for the whole compound: a cap on the total splats its budget-participating LOD
+         * engines (hosted streamed parts) render together, net of static parts. `0`/undefined disables it (each stream
+         * uses its own budget, or none). Setting it apportions the cap across all registered participants by demand and
+         * takes effect on the next frame. See {@link IGaussianSplattingLodBudgetParticipant}.
+         * @experimental
+         */
+        get splatBudget(): number;
+        set splatBudget(value: number);
+        /**
+         * Registers a LOD engine to share this compound's {@link splatBudget}. The compound apportions the budget
+         * across all registered participants each frame. No-op if already registered.
+         * @param participant the LOD engine (e.g. a hosted streamed part)
+         * @experimental
+         */
+        registerLodBudgetParticipant(participant: IGaussianSplattingLodBudgetParticipant): void;
+        /**
+         * Removes a previously registered budget participant and releases its coordinated allocation (it reverts to its
+         * own budget).
+         * @param participant the LOD engine to remove
+         * @experimental
+         */
+        unregisterLodBudgetParticipant(participant: IGaussianSplattingLodBudgetParticipant): void;
+        /**
+         * Total splats contributed by static (non-streaming) parts — the fixed floor subtracted from the budget before
+         * the streamable remainder is apportioned. Streaming regions are excluded (their rendered count is LOD-driven).
+         * @returns the static parts' splat count
+         */
+        private _staticSplatCount;
+        /**
+         * Installs or removes the per-frame apportionment observer so it runs only while a budget and at least one
+         * participant are both present. When coordination turns off, participants are released to their own budgets.
+         */
+        private _updateBudgetCoordination;
+        /**
+         * Apportions {@link splatBudget} (net of {@link _staticSplatCount}) across the registered participants by demand
+         * via water-filling: each gets `min(demand, fairShare)` and any leftover is redistributed to the still-unmet
+         * ones. Pushes each participant its allocation.
+         */
+        private _apportionBudget;
         /**
          * Gets the part visibility array.
          */
@@ -81568,6 +82559,36 @@ declare namespace BABYLON {
     }
 
 
+    /**
+     * The minimum correlated color temperature, in Kelvin, representable by {@link TemperatureTintToXyz} (there is no
+     * upper bound: increasingly high temperatures approach mired 0, already within the tabulated range).
+     */
+    export var MinTemperatureKelvin: number;
+    /**
+     * The maximum magnitude of the tint offset accepted by {@link TemperatureTintToXyz}, in either direction.
+     */
+    export const MaxTintMagnitude = 150;
+    /**
+     * Converts a correlated color temperature and tint offset into the CIE XYZ (Y = 1) coordinates of the
+     * corresponding illuminant white point, using a tabulated approximation of the Planckian locus in CIE 1960 UCS
+     * (u, v) space.
+     * @param temperatureKelvin The correlated color temperature of the illuminant, in Kelvin
+     * @param tint An offset perpendicular to the Planckian locus (the green/magenta axis), in the range
+     * [-{@link MaxTintMagnitude}, {@link MaxTintMagnitude}]
+     * @returns The CIE XYZ (Y = 1) coordinates of the illuminant white point
+     */
+    export function TemperatureTintToXyz(temperatureKelvin: number, tint: number): Vector3;
+    /**
+     * Computes the linear RGB (sRGB / Rec.709 primaries) color-correction matrix that white-balances the given
+     * illuminant, by chromatically adapting its white point (see {@link TemperatureTintToXyz}) to the working
+     * color space's reference white using the Bradford transform.
+     * @param temperatureKelvin The correlated color temperature of the illuminant to neutralize, in Kelvin
+     * @param tint An offset perpendicular to the Planckian locus (the green/magenta axis), in the range [-150, 150]
+     * @returns A column-major 3x3 matrix (9 values), ready to be bound as a `mat3` shader uniform
+     */
+    export function GetWhiteBalanceMatrix(temperatureKelvin: number, tint: number): Float32Array | Array<number>;
+
+
     /** @internal */
     export class MatrixManagement {
         /** @internal */
@@ -82266,6 +83287,7 @@ declare namespace BABYLON {
     var StandardMaterialDefines_base: {
         new (...args: any[]): {
             IMAGEPROCESSING: boolean;
+            WHITEBALANCE: boolean;
             VIGNETTE: boolean;
             VIGNETTEBLENDMODEMULTIPLY: boolean;
             VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -82679,7 +83701,7 @@ declare namespace BABYLON {
          * If sets to true, the decal map will be applied after the detail map. Else, it is applied before (default: false)
          */
         accessor applyDecalMapAfterDetailMap: boolean;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         private _vertexPullingMetadata;
         /**
          * Defines additional PrePass parameters for the material.
@@ -86950,6 +87972,64 @@ declare namespace BABYLON {
          * Sets the contrast used in the effect.
          */
         set contrast(value: number);
+        private _whiteBalanceEnabled;
+        /**
+         * Gets whether the white balance effect is enabled.
+         */
+        get whiteBalanceEnabled(): boolean;
+        /**
+         * Sets whether the white balance effect is enabled.
+         */
+        set whiteBalanceEnabled(value: boolean);
+        private _temperature;
+        /**
+         * Gets the correlated color temperature, in Kelvin, of the illuminant to neutralize when whiteBalanceEnabled
+         * is set to true - i.e. the light the scene is assumed to have been lit with, not a "warm"/"cool" creative
+         * adjustment. Lower values (e.g. ~2000-3500 K) correspond to warm/orange sources such as tungsten or candle
+         * light; higher values (e.g. ~7000-10000 K) correspond to cool/blue sources such as shade or overcast sky.
+         * Clamped to the tabulated range (roughly 1667 K and above) - the getter reflects the clamped value. Default is 6500.
+         */
+        get temperature(): number;
+        /**
+         * Sets the correlated color temperature, in Kelvin, of the illuminant to neutralize when whiteBalanceEnabled
+         * is set to true - i.e. the light the scene is assumed to have been lit with, not a "warm"/"cool" creative
+         * adjustment. Lower values (e.g. ~2000-3500 K) correspond to warm/orange sources such as tungsten or candle
+         * light; higher values (e.g. ~7000-10000 K) correspond to cool/blue sources such as shade or overcast sky.
+         * Clamped to the tabulated range (roughly 1667 K and above) - the getter reflects the clamped value. Default is 6500.
+         */
+        set temperature(value: number);
+        private _tint;
+        /**
+         * Gets the white balance tint offset used in the effect if whiteBalanceEnabled is set to true, on the
+         * green/magenta axis perpendicular to temperature - e.g. to correct for illuminants (such as some
+         * fluorescent lights) that a color temperature alone can't fully neutralize. Positive values shift the
+         * corrected image toward magenta (compensating a green-tinted illuminant); negative values shift it toward
+         * green (compensating a magenta-tinted illuminant). Clamped to [-150, 150] - the getter reflects the clamped value. Default is 0 (no tint offset).
+         */
+        get tint(): number;
+        /**
+         * Sets the white balance tint offset used in the effect if whiteBalanceEnabled is set to true, on the
+         * green/magenta axis perpendicular to temperature - e.g. to correct for illuminants (such as some
+         * fluorescent lights) that a color temperature alone can't fully neutralize. Positive values shift the
+         * corrected image toward magenta (compensating a green-tinted illuminant); negative values shift it toward
+         * green (compensating a magenta-tinted illuminant). Clamped to [-150, 150] - the getter reflects the clamped value. Default is 0 (no tint offset).
+         */
+        set tint(value: number);
+        private _whiteBalanceMatrix;
+        private _whiteBalanceMatrixTemperature;
+        private _whiteBalanceMatrixTint;
+        /**
+         * Returns the white balance matrix for the current temperature/tint, computing it on first use and
+         * recomputing it if either value has changed since it was last computed. Deliberately lazy: white balance is
+         * disabled by default, and every `ImageProcessingConfiguration` instance (created per scene, per material,
+         * per post process) would otherwise pay this matrix's construction cost even when never enabled. Checking
+         * here (rather than eagerly refreshing from the temperature/tint setters) also means paths that set the
+         * private backing fields directly - such as SerializationHelper.Clone/Parse, which assign serialized
+         * properties without going through their setters - still end up with a matrix that matches the current
+         * temperature/tint.
+         * @returns the column-major white balance matrix for the current temperature/tint
+         */
+        private _getWhiteBalanceMatrix;
         /**
          * Vignette stretch size.
          */
@@ -87161,6 +88241,7 @@ declare namespace BABYLON {
      */
     export interface IImageProcessingConfigurationDefines {
         IMAGEPROCESSING: boolean;
+        WHITEBALANCE: boolean;
         VIGNETTE: boolean;
         VIGNETTEBLENDMODEMULTIPLY: boolean;
         VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -87184,6 +88265,7 @@ declare namespace BABYLON {
     export function ImageProcessingDefinesMixin<Tbase extends ImageProcessingDefinesMixinConstructor>(base: Tbase): {
         new (...args: any[]): {
             IMAGEPROCESSING: boolean;
+            WHITEBALANCE: boolean;
             VIGNETTE: boolean;
             VIGNETTEBLENDMODEMULTIPLY: boolean;
             VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -87205,6 +88287,7 @@ declare namespace BABYLON {
      */
     export class ImageProcessingConfigurationDefines extends MaterialDefines implements IImageProcessingConfigurationDefines {
         IMAGEPROCESSING: boolean;
+        WHITEBALANCE: boolean;
         VIGNETTE: boolean;
         VIGNETTEBLENDMODEMULTIPLY: boolean;
         VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -96999,6 +98082,7 @@ declare namespace BABYLON {
     var PBRMaterialDefines_base: {
         new (...args: any[]): {
             IMAGEPROCESSING: boolean;
+            WHITEBALANCE: boolean;
             VIGNETTE: boolean;
             VIGNETTEBLENDMODEMULTIPLY: boolean;
             VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -97657,7 +98741,7 @@ declare namespace BABYLON {
          */
         private _applyDecalMapAfterDetailMap;
         private _debugMode;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         private _breakShaderLoadedCheck;
         private _vertexPullingMetadata;
         /**
@@ -98189,6 +99273,7 @@ declare namespace BABYLON {
     var OpenPBRMaterialDefines_base: {
         new (...args: any[]): {
             IMAGEPROCESSING: boolean;
+            WHITEBALANCE: boolean;
             VIGNETTE: boolean;
             VIGNETTEBLENDMODEMULTIPLY: boolean;
             VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -99366,7 +100451,7 @@ declare namespace BABYLON {
          */
         private _applyDecalMapAfterDetailMap;
         private _debugMode;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         private _breakShaderLoadedCheck;
         private _vertexPullingMetadata;
         /**
@@ -100592,6 +101677,7 @@ declare namespace BABYLON {
     var NodeMaterialDefines_base: {
         new (...args: any[]): {
             IMAGEPROCESSING: boolean;
+            WHITEBALANCE: boolean;
             VIGNETTE: boolean;
             VIGNETTEBLENDMODEMULTIPLY: boolean;
             VIGNETTEBLENDMODEOPAQUE: boolean;
@@ -111274,7 +112360,7 @@ declare namespace BABYLON {
         private _white;
         private _primaryShadowColor;
         private _primaryHighlightColor;
-        private _shadersLoaded;
+        private static readonly _ShaderLoader;
         /**
          * Instantiates a Background Material in the given scene
          * @param name The friendly name of the material
@@ -134490,6 +135576,7 @@ declare namespace BABYLON {
     }
 
 
+    /** This file must only contain pure code and pure imports */
     /**
      * A keyboard event block that fires when a key is released.
      * Inherits all inputs/outputs from {@link FlowGraphKeyboardEventBlock}.
@@ -134507,8 +135594,20 @@ declare namespace BABYLON {
          */
         getClassName(): string;
     }
+    /**
+     * Registers the FlowGraphKeyUpEventBlock class.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFlowGraphKeyUpEventBlock(): void;
 
 
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import flowGraphKeyUpEventBlock.pure for tree-shakeable, side-effect-free usage.
+     */
+
+
+    /** This file must only contain pure code and pure imports */
     /**
      * Configuration for the key down event block.
      */
@@ -134543,6 +135642,17 @@ declare namespace BABYLON {
          */
         getClassName(): string;
     }
+    /**
+     * Registers the FlowGraphKeyDownEventBlock class.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFlowGraphKeyDownEventBlock(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import flowGraphKeyDownEventBlock.pure for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** Pure barrel — re-exports only side-effect-free modules */
@@ -134656,6 +135766,7 @@ declare namespace BABYLON {
     }
 
 
+    /** This file must only contain pure code and pure imports */
     /**
      * A data block that outputs whether a specific keyboard key is currently pressed,
      * optionally requiring one or more modifier keys to also be held.
@@ -134718,6 +135829,17 @@ declare namespace BABYLON {
          */
         getClassName(): string;
     }
+    /**
+     * Registers the FlowGraphIsKeyPressedBlock class.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterFlowGraphIsKeyPressedBlock(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import flowGraphIsKeyPressedBlock.pure for tree-shakeable, side-effect-free usage.
+     */
 
 
     /** This file must only contain pure code and pure imports */
@@ -137505,6 +138627,7 @@ declare namespace BABYLON {
          * created (adapter-request time): WebGPU has no post-hoc "make XR compatible" step, so it cannot
          * be toggled on later. Leave unset/false for the default non-XR path.
          * Default: false
+         * @experimental WebGPU-XR support is experimental and may change.
          */
         xrCompatible?: boolean;
         /**
@@ -150951,6 +152074,18 @@ declare namespace BABYLON {
      */
 
 
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Registers the texture loader implementation on AbstractEngine.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterAbstractEngineTextureLoaders(): void;
+
+
+    /**
+     * Re-exports pure implementation and applies runtime side effects.
+     * Import abstractEngine.textureLoaders.pure for tree-shakeable, side-effect-free usage.
+     */
 
 
         interface AbstractEngine {
@@ -155301,6 +156436,7 @@ declare namespace BABYLON {
         private _prepareForPicking;
         private _getPickingRenderRegion;
         private _shouldUseIndividualMultiPickReadback;
+        private _isPartProxyActiveForPicking;
         private _preparePickingBuffer;
         private _addPickingTextureToRenderTargets;
         private _removePickingTextureFromRenderTargets;
@@ -173253,6 +174389,8 @@ interface XRInputSource {
     readonly gamepad?: Gamepad | undefined;
     readonly profiles: string[];
     readonly hand?: XRHand;
+    /** Indicates that the user agent recommends omitting the application's input source representation. */
+    readonly skipRendering?: boolean;
 }
 
 declare abstract class XRInputSource implements XRInputSource {}
@@ -173444,6 +174582,7 @@ interface XRSession extends EventTarget {
     readonly visibilityState: XRVisibilityState;
     readonly frameRate?: number | undefined;
     readonly supportedFrameRates?: Float32Array | undefined;
+    readonly maxRenderLayers?: number | undefined;
 
     /**
      * Removes a callback from the animation frame painting callback from
@@ -173539,8 +174678,8 @@ interface XRView {
     readonly eye: XREye;
     readonly projectionMatrix: Float32Array;
     readonly transform: XRRigidTransform;
-    readonly recommendedViewportScale?: number | undefined;
-    requestViewportScale(scale: number): void;
+    readonly recommendedViewportScale?: number | null | undefined;
+    requestViewportScale(scale: number | null): void;
 }
 
 declare abstract class XRView implements XRView {}
@@ -173566,10 +174705,17 @@ type XRAnchorSet = Set<XRAnchor>;
 
 interface XRAnchor {
     anchorSpace: XRSpace;
+    requestPersistentHandle?: () => Promise<string>;
     delete(): void;
 }
 
 declare abstract class XRAnchor implements XRAnchor {}
+
+interface XRSession {
+    readonly persistentAnchors?: ReadonlyArray<string>;
+    restorePersistentAnchor?: (uuid: string) => Promise<XRAnchor>;
+    deletePersistentAnchor?: (uuid: string) => Promise<void>;
+}
 
 interface XRFrame {
     trackedAnchors?: XRAnchorSet | undefined;
@@ -173656,6 +174802,7 @@ interface XRPlane {
     planeSpace: XRSpace;
     polygon: DOMPointReadOnly[];
     lastChangedTime: number;
+    semanticLabel?: string | null;
 }
 
 declare abstract class XRPlane implements XRPlane {}
@@ -173812,8 +174959,11 @@ interface XRCompositionLayer extends XRLayer {
     readonly layout: XRLayerLayout;
     blendTextureSourceAlpha: boolean;
     chromaticAberrationCorrection?: boolean | undefined;
+    forceMonoPresentation?: boolean | undefined;
+    opacity?: number | undefined;
     readonly mipLevels: number;
     readonly needsRedraw: boolean;
+    quality?: XRLayerQuality | undefined;
     destroy(): void;
 
     space: XRSpace;
@@ -173839,6 +174989,8 @@ type XRTextureType = "texture" | "texture-array";
 
 type XRLayerLayout = "default" | "mono" | "stereo" | "stereo-left-right" | "stereo-top-bottom";
 
+type XRLayerQuality = "default" | "text-optimized" | "graphics-optimized";
+
 interface XRProjectionLayerInit {
     scaleFactor?: number | undefined;
     textureType?: XRTextureType | undefined;
@@ -173852,7 +175004,7 @@ interface XRProjectionLayer extends XRCompositionLayer {
     readonly textureHeight: number;
     readonly textureArrayLength: number;
     readonly ignoreDepthValues: number;
-    fixedFoveation: number;
+    fixedFoveation?: number | null | undefined;
 }
 
 declare abstract class XRProjectionLayer implements XRProjectionLayer {}
@@ -173877,7 +175029,7 @@ interface XRMediaLayerInit {
 
 interface XRCylinderLayerInit extends XRLayerInit {
     textureType?: XRTextureType | undefined;
-    transform: XRRigidTransform;
+    transform?: XRRigidTransform | undefined;
     radius?: number | undefined;
     centralAngle?: number | undefined;
     aspectRatio?: number | undefined;
@@ -174264,6 +175416,7 @@ interface XRMesh {
     vertices: Float32Array;
     indices: Uint32Array;
     lastChangedTime: DOMHighResTimeStamp;
+    semanticLabel?: string | null;
 }
 
 type XRMeshSet = Set<XRMesh>;
