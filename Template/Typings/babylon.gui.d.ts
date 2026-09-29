@@ -3758,9 +3758,11 @@ declare namespace BABYLON.GUI {
          * Gets value as pixel
          * @param host defines the root host
          * @param refValue defines the reference value for percentages
+         * @param fontSize defines the computed font size in pixels for em units
+         * @param rootFontSize defines the computed root font size in pixels for rem units
          * @returns the value as pixel
          */
-        getValueInPixel(host: AdvancedDynamicTexture, refValue: number): number;
+        getValueInPixel(host: AdvancedDynamicTexture, refValue: number, fontSize?: number, rootFontSize?: number): number;
         /**
          * Update the current value and unit.
          * @param value defines the value to store
@@ -3770,10 +3772,12 @@ declare namespace BABYLON.GUI {
         updateInPlace(value: number, unit?: number): ValueAndUnit;
         /**
          * Gets the value accordingly to its unit
-         * @param host  defines the root host
+         * @param host defines the root host
+         * @param fontSize defines the computed font size in pixels for em units
+         * @param rootFontSize defines the computed root font size in pixels for rem units
          * @returns the value
          */
-        getValue(host: AdvancedDynamicTexture): number;
+        getValue(host: AdvancedDynamicTexture, fontSize?: number, rootFontSize?: number): number;
         /**
          * Gets a string representation of the value
          * @param host defines the root host
@@ -3790,6 +3794,14 @@ declare namespace BABYLON.GUI {
         private static _Regex;
         private static _UNITMODE_PERCENTAGE;
         private static _UNITMODE_PIXEL;
+        /**
+         * Font-relative units, resolved against the control's computed font size.
+         */
+        static readonly UNITMODE_EM = 2;
+        /**
+         * Root-relative units, resolved against the GUI root container's computed font size.
+         */
+        static readonly UNITMODE_REM = 3;
         /** UNITMODE_PERCENTAGE */
         static get UNITMODE_PERCENTAGE(): number;
         /** UNITMODE_PIXEL */
@@ -6578,6 +6590,98 @@ declare namespace BABYLON.GUI {
      */
 
 
+    /**
+     * Main-axis direction and ordering of a FlexPanel.
+     */
+    export type FlexDirection = "row" | "row-reverse" | "column" | "column-reverse";
+    /**
+     * Whether overflowing items form additional lines, and their cross-axis order.
+     */
+    export type FlexWrap = "nowrap" | "wrap" | "wrap-reverse";
+    /**
+     * Distribution of spare space along the main axis.
+     */
+    export type FlexJustification = "flex-start" | "flex-end" | "center" | "space-between" | "space-around" | "space-evenly";
+    /**
+     * Alignment of items within each line. Stretch fills the line's cross-axis size.
+     */
+    export type FlexAlignment = "flex-start" | "flex-end" | "center" | "stretch";
+    /**
+     * Distribution of lines along the cross axis.
+     */
+    export type FlexContentAlignment = FlexJustification | "stretch";
+    /**
+     * Arranges controls in flexible rows or columns using their declared width/height as the basis.
+     * Supports wrapping, gaps, alignment and Control.flexGrow/flexShrink without rewriting child properties.
+     * The panel uses its declared size; intrinsic CSS sizing and baseline alignment are not supported.
+     */
+    export class FlexPanel extends Container {
+        private _items;
+        private _lines;
+        private _boxes;
+        private _gap;
+        private _flexDirection;
+        /**
+         * Gets or sets the main axis and item direction. Defaults to row.
+         */
+        get flexDirection(): FlexDirection;
+        set flexDirection(value: FlexDirection);
+        private _flexWrap;
+        /**
+         * Gets or sets line wrapping. Defaults to nowrap.
+         */
+        get flexWrap(): FlexWrap;
+        set flexWrap(value: FlexWrap);
+        private _justifyContent;
+        /**
+         * Gets or sets the distribution of remaining main-axis space after flexing.
+         */
+        get justifyContent(): FlexJustification;
+        set justifyContent(value: FlexJustification);
+        private _alignItems;
+        /**
+         * Gets or sets cross-axis alignment within each line. Stretch fills the line.
+         */
+        get alignItems(): FlexAlignment;
+        set alignItems(value: FlexAlignment);
+        private _alignContent;
+        /**
+         * Gets or sets cross-axis line distribution when wrapping is enabled.
+         */
+        get alignContent(): FlexContentAlignment;
+        set alignContent(value: FlexContentAlignment);
+        /**
+         * Gets or sets the gap between items and lines in px, em, rem, or percent of the main-axis size.
+         */
+        get gap(): string | number;
+        set gap(value: string | number);
+        /**
+         * Creates a flex layout container.
+         * @param name defines the control name
+         */
+        constructor(name?: string);
+        protected _getTypeName(): string;
+        /**
+         * Removes a control and releases its cached layout data.
+         * @param control defines the control to remove
+         * @returns the current panel
+         */
+        removeControl(control: Control): FlexPanel;
+        /** @internal */
+        _getLayoutMeasureForChild(child: Control): Measure | null;
+        private _spacing;
+        private _offset;
+        private _resolveFlexibleLengths;
+        protected _beforeChildLayout(): void;
+    }
+    /**
+     * Registers FlexPanel for serialization. Safe to call repeatedly.
+     */
+    export function RegisterFlexPanel(): void;
+
+
+
+
     /** Class used to create 2D ellipse containers */
     export class Ellipse extends Container {
         name?: string | undefined;
@@ -6702,6 +6806,7 @@ declare namespace BABYLON.GUI {
         private _fontFamily;
         private _fontStyle;
         private _fontWeight;
+        private static readonly _DefaultFontSize;
         private _fontSize;
         private _font;
         /** @internal */
@@ -7065,7 +7170,11 @@ declare namespace BABYLON.GUI {
         /** Gets or sets font size in pixels */
         get fontSizeInPixels(): number;
         set fontSizeInPixels(value: number);
-        /** Gets or sets font size */
+        /**
+         * Gets or sets the font size in px, percent of parent height, em, or rem.
+         * For font declarations, em uses the parent font and rem uses the GUI root font.
+         * Relative font sizes on the root use the default 18px font, including adaptive scaling.
+         */
         get fontSize(): string | number;
         set fontSize(value: string | number);
         /** Gets or sets foreground color */
@@ -7273,6 +7382,18 @@ declare namespace BABYLON.GUI {
          * @param evt Defines the KeyboardEvent
          */
         processKeyboard(evt: BABYLON.IKeyboardEvent): void;
+        private _flexGrow;
+        /**
+         * Gets or sets the nonnegative share of free main-axis space in a FlexPanel.
+         */
+        get flexGrow(): number;
+        set flexGrow(value: number);
+        private _flexShrink;
+        /**
+         * Gets or sets the nonnegative shrink factor in a FlexPanel, weighted by the declared main-axis size.
+         */
+        get flexShrink(): number;
+        set flexShrink(value: number);
         /**
          * Creates a new control
          * @param name defines the name of the control
@@ -7433,6 +7554,14 @@ declare namespace BABYLON.GUI {
          */
         protected _processMeasures(parentMeasure: Measure, context: BABYLON.ICanvasRenderingContext): void;
         protected _evaluateClippingState(parentMeasure: Measure): void;
+        /**
+         * Resolves a GUI dimension using this control's computed font size.
+         * @param value defines the dimension to resolve
+         * @param reference defines the reference size for percentages
+         * @returns the dimension in pixels
+         * @internal
+         */
+        _getValueInPixel(value: ValueAndUnit, reference: number): number;
         /** @internal */
         _measure(): void;
         /**
@@ -7753,6 +7882,15 @@ declare namespace BABYLON.GUI {
          * @internal
          */
         _layout(parentMeasure: Measure, context: BABYLON.ICanvasRenderingContext): boolean;
+        /** @internal */
+        protected _beforeChildLayout(): void;
+        /**
+         * Gets an optional parent-controlled layout box, relative to the content origin.
+         * @param _child defines the child to lay out
+         * @returns the layout box, or null for the child's own layout
+         * @internal
+         */
+        _getLayoutMeasureForChild(_child: Control): BABYLON.Nullable<Measure>;
         protected _postMeasure(): void;
         private _inverseTransformMatrix;
         private _inverseMeasure;

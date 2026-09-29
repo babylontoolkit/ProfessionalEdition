@@ -2721,6 +2721,14 @@ declare namespace BABYLON.GLTF2.Loader {
     export interface ITexture extends GLTF2.ITexture, IArrayItem {
         /** @internal */
         _textureInfo: ITextureInfo;
+        /** @internal */
+        _babylonTextures?: BaseTexture[];
+        /** @internal */
+        _babylonTextureSources?: {
+            babylonTexture: BaseTexture;
+            imageIndex: number;
+            samplerIndex?: number;
+        }[];
     }
     /**
      * Loader interface with additional members.
@@ -2828,8 +2836,9 @@ declare namespace BABYLON.GLTF2 {
         onLoading?(): void;
         /**
          * Called after the loader state changes to READY.
+         * @returns a promise when the extension has asynchronous readiness work
          */
-        onReady?(): void;
+        onReady?(): void | Promise<void>;
         /**
          * Define this method to modify the default behavior when loading scenes.
          * @param context The context when loading the asset
@@ -3376,10 +3385,11 @@ declare namespace BABYLON.GLTF2 {
          * @internal
          */
         _loadTextureAsync(context: string, texture: BABYLON.GLTF2.Loader.ITexture, assign?: (babylonTexture: BaseTexture) => void): Promise<BaseTexture>;
+        private _trackTexture;
         /**
          * @internal
          */
-        _createTextureAsync(context: string, sampler: BABYLON.GLTF2.Loader.ISampler, image: BABYLON.GLTF2.Loader.IImage, assign?: (babylonTexture: BaseTexture) => void, textureLoaderOptions?: unknown, useSRGBBuffer?: boolean): Promise<BaseTexture>;
+        _createTextureAsync(context: string, sampler: BABYLON.GLTF2.Loader.ISampler, image: BABYLON.GLTF2.Loader.IImage, assign?: (babylonTexture: BaseTexture) => void, textureLoaderOptions?: unknown, useSRGBBuffer?: boolean, sourceTexture?: BABYLON.GLTF2.Loader.ITexture): Promise<BaseTexture>;
         private _loadSampler;
         /**
          * Loads a glTF image.
@@ -3417,7 +3427,7 @@ declare namespace BABYLON.GLTF2 {
         private _forEachExtensions;
         private _applyExtensions;
         private _extensionsOnLoading;
-        private _extensionsOnReady;
+        private _extensionsOnReadyAsync;
         private _extensionsLoadSceneAsync;
         private _extensionsLoadNodeAsync;
         private _extensionsLoadCameraAsync;
@@ -4060,9 +4070,10 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
     /**
      * get a path-to-object converter for the given glTF tree
      * @param gltf the glTF tree to use
+     * @param configure optional callback for adding asset-local accessors to this converter
      * @returns a path-to-object converter for the given glTF tree
      */
-    export function GetPathToObjectConverter(gltf: BABYLON.GLTF2.Loader.IGLTF): BABYLON.GLTF2.Loader.Extensions.GLTFPathToObjectConverter<unknown, unknown, unknown>;
+    export function GetPathToObjectConverter(gltf: BABYLON.GLTF2.Loader.IGLTF, configure?: (mapping: object) => void): BABYLON.GLTF2.Loader.Extensions.GLTFPathToObjectConverter<unknown, unknown, unknown>;
     /**
      * This function will return the object accessor for the given key in the object model
      * If the key is not found, it will return undefined
@@ -4081,8 +4092,9 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * Note that this will NOT change the typescript types. To do that you will need to change the interface itself (extending it in the module that uses it)
      * @param key the key to add the object accessor at. For example /cameras/\{\}/perspective/aspectRatio
      * @param accessor the object accessor to add
+     * @param mapping object-model mapping to update; defaults to the process-wide mapping used as the template for new converters
      */
-    export function AddObjectAccessorToKey<GLTFTargetType = any, BabylonTargetType = any, BabylonValueType = any>(key: string, accessor: IObjectAccessor<GLTFTargetType, BabylonTargetType, BabylonValueType>): void;
+    export function AddObjectAccessorToKey<GLTFTargetType = any, BabylonTargetType = any, BabylonValueType = any>(key: string, accessor: IObjectAccessor<GLTFTargetType, BabylonTargetType, BabylonValueType>, mapping?: object): void;
 
 
 
@@ -5038,6 +5050,8 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * The name of this extension.
          */
         readonly name = "KHR_node_selectability";
+        /** Applies node state before KHR_interactivity graphs start. */
+        readonly order = 100;
         /**
          * Defines whether this extension is enabled.
          */
@@ -5105,6 +5119,8 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * The name of this extension.
          */
         readonly name = "KHR_node_hoverability";
+        /** Applies node state before KHR_interactivity graphs start. */
+        readonly order = 100;
         /**
          * Defines whether this extension is enabled.
          */
@@ -6645,12 +6661,76 @@ declare namespace BABYLON {
         /**
          * Defines options for the KHR_interactivity extension.
          */
-        ["KHR_interactivity"]: {};
+        ["KHR_interactivity"]: {
+            /**
+             * Whether the selected default graph starts automatically after import.
+             * Defaults to true.
+             */
+            autoStart?: boolean;
+            /**
+             * Whether to retain only the canonical source model and executable
+             * FlowGraph serialization without constructing runtime graphs.
+             * Defaults to false.
+             */
+            parseOnly?: boolean;
+            /**
+             * Whether to enforce the ratified graph validation rules.
+             * Defaults to true. Set to false only for pre-ratification assets.
+             */
+            strictValidation?: boolean;
+        };
     }
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
+     * Runtime projection of one canonical KHR_interactivity graph.
+     */
+    export interface IKHRInteractivityGraphImportResult {
+        /** Canonical source graph and diagnostics. */
+        graph: BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityGraphModel;
+        /** Executable FlowGraph serialization when lowering succeeded. */
+        serializedFlowGraph?: ISerializedFlowGraph;
+        /** Runtime FlowGraph when runtime construction was requested. */
+        flowGraph?: FlowGraph;
+        /** Coordinator that owns the runtime FlowGraph. */
+        coordinator?: FlowGraphCoordinator;
+        /** Additional lowering/runtime diagnostics. */
+        diagnostics: BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityDiagnostic[];
+    }
+    /**
+     * Completed KHR_interactivity import result associated with a loaded scene.
+     */
+    export interface IKHRInteractivityImportResult {
+        /** Stable zero-based identity of this interactivity asset among assets appended to the scene. */
+        assetIndex: number;
+        /** Canonical, lossless source document. */
+        document: BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityDocument;
+        /** Graph import results in source order. */
+        graphs: IKHRInteractivityGraphImportResult[];
+        /** Shared path converter required by pointer blocks. */
+        pathConverter: BABYLON.GLTF2.Loader.Extensions.CompositePathToObjectConverter<IObjectAccessor>;
+        /** Live glTF loader data used by glTF data-provider blocks. */
+        glTF: BABYLON.GLTF2.GLTFLoader["gltf"];
+        /** Scene that owns the imported asset and its runtime object mappings, when retained by the importer. */
+        scene?: Scene;
+        /** Host resolver that supplies KHR reference semantics to executable graphs. */
+        hostResolver: BABYLON.GLTF2.Loader.Extensions.InteractivityHostResolver;
+    }
+    /**
+     * Gets the completed KHR_interactivity import result for a loaded scene.
+     * @param scene scene loaded from the glTF asset
+     * @returns the import result, or undefined when the scene has no KHR_interactivity data
+     */
+    export function GetKHRInteractivityImportResult(scene: Scene): IKHRInteractivityImportResult | undefined;
+    /**
+     * Gets every completed KHR_interactivity import result appended to a loaded scene.
+     * Results remain in asset load order and each result has a stable {@link IKHRInteractivityImportResult.assetIndex}.
+     * @param scene scene containing the loaded glTF assets
+     * @returns the scene's import results, or an empty array when it has no KHR_interactivity data
+     */
+    export function GetKHRInteractivityImportResults(scene: Scene): readonly IKHRInteractivityImportResult[];
+    /**
      * Loader extension for KHR_interactivity
      */
     export class KHR_interactivity implements BABYLON.GLTF2.IGLTFLoaderExtension {
@@ -6659,6 +6739,8 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * The name of this extension.
          */
         readonly name = "KHR_interactivity";
+        /** Runs after extensions that contribute interactivity operations and object state. */
+        readonly order = 200;
         /**
          * Defines whether this extension is enabled.
          */
@@ -6670,6 +6752,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * @param _loader
          */
         constructor(_loader: BABYLON.GLTF2.GLTFLoader);
+        private _initializePathConverter;
         dispose(): void;
         onReady(): Promise<void>;
     }
@@ -6677,7 +6760,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * @internal
      * populates the object model with the interactivity extension
      */
-    export function _AddInteractivityObjectModel(scene: Scene): void;
+    export function _AddInteractivityObjectModel(scene: Scene, targetFps: number, mapping: object): void;
     /**
      * @internal
      * Registers KHR_interactivity runtime dependencies without changing the extension registry.
@@ -7555,6 +7638,37 @@ declare namespace BABYLON {
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
+        type InteractivityNodeState = "hoverable" | "selectable";
+    /**
+     * Initializes authored and inherited selectability or hoverability state.
+     * @param nodes all nodes in the glTF asset
+     * @param state state kind to initialize
+     * @param getAuthoredState reads the extension-authored local state
+     */
+    export function InitializeInteractivityNodeState(nodes: readonly BABYLON.GLTF2.Loader.INode[], state: InteractivityNodeState, getAuthoredState: (node: BABYLON.GLTF2.Loader.INode) => boolean | undefined): void;
+    /**
+     * Gets the locally authored runtime state for a node.
+     * @param node glTF node
+     * @param state state kind
+     * @returns local state, defaulting to true
+     */
+    export function GetInteractivityNodeState(node: BABYLON.GLTF2.Loader.INode, state: InteractivityNodeState): boolean;
+    /**
+     * Updates local state and reapplies inherited state to the affected subtree.
+     * @param node glTF node
+     * @param state state kind
+     * @param value new local state
+     */
+    export function SetInteractivityNodeState(node: BABYLON.GLTF2.Loader.INode, state: InteractivityNodeState, value: boolean): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Supplies the KHR_interactivity representation of opaque `ref` values to the FlowGraph engine.
      *
@@ -7574,9 +7688,10 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         decodeEventReference(reference: string): string | undefined;
         /**
          * @param reference the reference to decode
+         * @param collection optional glTF root collection the reference must address
          * @returns the index the reference denotes, or `undefined` when it is not an indexed JSON Pointer
          */
-        decodeIndexReference(reference: string): number | undefined;
+        decodeIndexReference(reference: string, collection?: string): number | undefined;
         /**
          * Maps a Babylon object loaded from the glTF back to a JSON Pointer addressing it.
          *
@@ -7621,13 +7736,12 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
             value?: any;
         }[];
     }
-    export var gltfTypeToBabylonType: {
-        [key: string]: {
-            length: number;
-            flowGraphType: FlowGraphTypes;
-            elementType: "number" | "boolean" | "string";
-        };
-    };
+    /**
+     * Captures import-time defaults for unconnected runtime inputs that have no authored KHR socket.
+     * @param flowGraph the fully parsed FlowGraph
+     * @internal
+     */
+    export function _CaptureKHRInteractivityRuntimeInputDefaults(flowGraph: FlowGraph): void;
     /**
      * Parses a KHR_interactivity graph definition (the raw glTF JSON object) into
      * the serialized FlowGraph form consumed by {@link ParseFlowGraphAsync}.
@@ -7637,9 +7751,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * {@link serializeToFlowGraph}.
      */
     export class InteractivityGraphToFlowGraphParser {
-        private _interactivityGraph;
         private _gltf;
         _animationTargetFps: number;
+        private _graphIndex;
+        private _supportedExtensions?;
+        private _declarationModels?;
         /**
          * Note - the graph should be rejected if the same type is defined twice.
          * We currently don't validate that.
@@ -7657,16 +7773,22 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * the last block) is not disturbed, then concatenated into the serialized graph.
          */
         private _insertedBlocks;
-        constructor(_interactivityGraph: BABYLON.GLTF2.IKHRInteractivity_Graph, _gltf: BABYLON.GLTF2.Loader.IGLTF, _animationTargetFps?: number);
+        constructor(interactivityGraph: BABYLON.GLTF2.IKHRInteractivity_Graph, _gltf: BABYLON.GLTF2.Loader.IGLTF, _animationTargetFps?: number, _graphIndex?: number, _supportedExtensions?: ReadonlySet<string> | undefined, _declarationModels?: readonly BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityDeclarationModel[] | undefined, canonicalGraph?: BABYLON.GLTF2.IKHRInteractivity_Graph);
+        private _interactivityGraph;
+        private _canonicalGraph;
+        private get _strictValidation();
+        private _getAllowedDynamicValueSockets;
+        private _getAllowedDynamicFlowSockets;
         get arrays(): {
             types: {
                 length: number;
                 flowGraphType: FlowGraphTypes;
-                elementType: "number" | "boolean" | "string";
+                elementType: "number" | "boolean" | "string" | "any";
             }[];
             mappings: {
                 flowGraphMapping: BABYLON.GLTF2.Loader.Extensions.IGLTFToFlowGraphMapping;
                 fullOperationName: string;
+                declaration: BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityDeclarationModel;
             }[];
             staticVariables: {
                 type: FlowGraphTypes;
@@ -7682,12 +7804,19 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         private _parseDeclarations;
         private _parseVariables;
         private _parseVariable;
+        private _normalizeStaticReference;
         private _parseEvents;
         private _parseNodes;
+        private _createBlockProvenance;
         private _getEmptyBlock;
+        private _setSocketProvenance;
+        private _getBlockRole;
+        private _createUnsupportedExtensionBlock;
         private _parseNodeConfiguration;
         private _parseNodeConnections;
+        private _ensureMappedSocketProvenance;
         private _createNewSocketConnection;
+        private _isUnsupportedExtensionBlock;
         /**
          * Wires an upstream data output into a downstream data input through a runtime multiply block that
          * scales the value by the animation target fps. This converts a KHR animation time (seconds),
@@ -7697,6 +7826,9 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * @param context the serialized flow graph context that stores literal socket values
          * @param upstreamOutput the data output socket providing the time value (in seconds)
          * @param downstreamInput the data input socket that expects the time in frames
+         * @param nodeIndex source node receiving the converted value
+         * @param declarationIndex source declaration used by the receiving node
+         * @param operation owning KHR operation
          */
         private _connectWithSecondsToFramesConversion;
         private _connectFlowGraphNodes;
@@ -7724,7 +7856,527 @@ declare namespace BABYLON {
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Ratified KHR_interactivity specification baseline used by this importer.
+     */
+    export const KHR_INTERACTIVITY_SPECIFICATION_COMMIT = "f798712c5685bc9223a628140fba707db8889300";
+    /**
+     * Runtime representation of every ratified built-in KHR_interactivity type.
+     */
+    export var gltfTypeToBabylonType: {
+        [key: string]: {
+            length: number;
+            flowGraphType: FlowGraphTypes;
+            elementType: "number" | "boolean" | "string" | "any";
+        };
+    };
+    /**
+     * Classification of a KHR_interactivity declaration.
+     */
+    export type KHRInteractivityDeclarationSupport = "core" | "extension" | "unsupported-extension" | "unknown-core";
+    /**
+     * A structured KHR_interactivity import diagnostic.
+     */
+    export interface IKHRInteractivityDiagnostic {
+        /** JSON pointer identifying the source location. */
+        path: string;
+        /** Human-readable diagnostic text. */
+        message: string;
+        /** Diagnostic severity. */
+        severity: "error" | "warning";
+    }
+    /**
+     * Stable source identity retained on every FlowGraph block lowered from a KHR_interactivity node.
+     */
+    export interface IKHRInteractivityBlockProvenance {
+        /** Source graph index. */
+        graphIndex: number;
+        /** Source node index. */
+        nodeIndex: number;
+        /** Source declaration index. */
+        declarationIndex: number;
+        /** Full operation name. */
+        operation: string;
+        /** Role of this block in a one-to-many mapping. Negative roles identify generated helper blocks. */
+        role: number;
+        /** Stable JSON pointer to the source node. */
+        sourcePath: string;
+        /** Original and lowered configuration values used for safe inverse transforms. */
+        configuration?: Record<string, IKHRInteractivityConfigurationProvenance>;
+        /** Importer-generated primitive configuration that must remain unchanged for inverse export. */
+        generatedConfiguration?: Record<string, unknown>;
+        /** Runtime fingerprints for generated configuration that changes representation while parsing. */
+        generatedConfigurationRuntime?: Record<string, IKHRInteractivityInputDefaultProvenance>;
+        /** Importer-generated unconnected input defaults that have no authored KHR socket representation. */
+        generatedInputDefaults?: Record<string, IKHRInteractivityInputDefaultProvenance>;
+    }
+    /**
+     * Import-time value retained for an unconnected FlowGraph input that is not represented by an authored KHR socket.
+     */
+    export interface IKHRInteractivityInputDefaultProvenance {
+        /** Type-tagged JSON-stable fingerprint of the normalized runtime input value. */
+        runtimeValueFingerprint?: string;
+        /** Whether the import-time value could not be fingerprinted safely. */
+        unrepresentable?: true;
+    }
+    /**
+     * Provenance for a transformed KHR configuration value.
+     */
+    export interface IKHRInteractivityConfigurationProvenance {
+        /** Exact source configuration array. */
+        sourceValue?: unknown[];
+        /** Lowered FlowGraph configuration value immediately after import. */
+        runtimeValue?: unknown;
+    }
+    /** @internal */
+    export function _NormalizeKHRInteractivityRuntimeValue(value: unknown): unknown[] | undefined;
+    /** @internal */
+    export function _CreateKHRInteractivityRuntimeValueSnapshot(value: unknown): IKHRInteractivityInputDefaultProvenance;
+    /**
+     * Stable source identity retained on a FlowGraph connection lowered from a KHR_interactivity socket.
+     */
+    export interface IKHRInteractivitySocketProvenance extends IKHRInteractivityBlockProvenance {
+        /** Socket category. */
+        kind: "value" | "flow";
+        /** Whether the socket is consumed by or produced from the logical KHR node. */
+        direction: "input" | "output";
+        /** Exact source KHR socket identifier. */
+        socket: string;
+        /** Exact canonical source value, when this is an input value socket. */
+        sourceValue?: BABYLON.GLTF2.IKHRInteractivity_Variable | BABYLON.GLTF2.IKHRInteractivity_OutputSocketReference;
+        /** Lowered inline runtime value immediately after import. */
+        runtimeValue?: unknown[];
+        /** Type-tagged runtime fingerprint used to distinguish parsing precision changes from edits. */
+        runtimeValueSnapshot?: IKHRInteractivityInputDefaultProvenance;
+    }
+    /**
+     * Canonical source retained on a FlowGraph lowered from KHR_interactivity.
+     */
+    export interface IKHRInteractivityGraphProvenance {
+        /** Source graph index. */
+        graphIndex: number;
+        /** Ratified specification revision used by the importer. */
+        specificationCommit: string;
+        /** Detached canonical source graph. */
+        source: BABYLON.GLTF2.IKHRInteractivity_Graph;
+        /** Explicit editor-authored variable defaults keyed by canonical variable index. */
+        authoredVariableValues?: Record<number, unknown[]>;
+        /** Explicit editor-authored FlowGraph variable types keyed by canonical variable index. */
+        authoredVariableTypes?: Record<number, string>;
+        /** True when variables were explicitly added, renamed, or deleted in the editor. */
+        authoredVariableStructureChanged?: boolean;
+    }
+    /**
+     * Canonical declaration information retained during import.
+     */
+    export interface IKHRInteractivityDeclarationModel {
+        /** Declaration index in the source graph. */
+        index: number;
+        /** Full operation name, including the defining extension when present. */
+        operation: string;
+        /** Whether Babylon can execute the declaration. */
+        support: KHRInteractivityDeclarationSupport;
+        /** Exact source declaration. */
+        source: BABYLON.GLTF2.IKHRInteractivity_Declaration;
+    }
+    /**
+     * Canonical graph information retained during import.
+     */
+    export interface IKHRInteractivityGraphModel {
+        /** Graph index in the root extension. */
+        index: number;
+        /** Stable source path. */
+        path: string;
+        /** Human-readable graph name. */
+        name: string;
+        /** Exact source graph, including extension and extras payloads. */
+        source: BABYLON.GLTF2.IKHRInteractivity_Graph;
+        /** Executable graph with specification defaults and fallbacks applied. */
+        effectiveSource: BABYLON.GLTF2.IKHRInteractivity_Graph;
+        /** Canonical declarations in source order. */
+        declarations: IKHRInteractivityDeclarationModel[];
+        /** Validation diagnostics for this graph. */
+        diagnostics: IKHRInteractivityDiagnostic[];
+        /** Whether this graph is valid and can be lowered to FlowGraph. */
+        valid: boolean;
+    }
+    /**
+     * Lossless canonical representation of a KHR_interactivity root extension.
+     */
+    export interface IKHRInteractivityDocument {
+        /** Ratified specification revision used for validation. */
+        specificationCommit: string;
+        /** Exact source extension, including unknown extensions and extras. */
+        source: BABYLON.GLTF2.IKHRInteractivity;
+        /** Default graph index, or -1 when the source selection is invalid. */
+        defaultGraphIndex: number;
+        /** Canonical graph models in source order. */
+        graphs: IKHRInteractivityGraphModel[];
+        /** Root-level validation diagnostics. */
+        diagnostics: IKHRInteractivityDiagnostic[];
+    }
+    /**
+     * Creates a detached JSON copy of a KHR_interactivity graph.
+     * @param graph source graph
+     * @returns a lossless JSON copy
+     */
+    export function CloneKHRInteractivityGraph(graph: BABYLON.GLTF2.IKHRInteractivity_Graph): BABYLON.GLTF2.IKHRInteractivity_Graph;
+    /**
+     * Creates the executable graph view with all ratified configuration defaults and fallback rules
+     * applied without modifying the lossless source graph.
+     * @param graph source graph
+     * @param declarations canonical declarations
+     * @param assetNodeCount number of glTF nodes in the containing asset
+     * @returns normalized executable graph
+     */
+    export function CreateEffectiveKHRInteractivityGraph(graph: BABYLON.GLTF2.IKHRInteractivity_Graph, declarations: readonly IKHRInteractivityDeclarationModel[], assetNodeCount?: number): BABYLON.GLTF2.IKHRInteractivity_Graph;
+    /**
+     * Creates and validates a canonical copy of one KHR_interactivity graph.
+     * @param graph source graph
+     * @param index graph index in the root extension
+     * @param supportedExtensions enabled extensions that may provide executable operations
+     * @param assetNodeCount number of nodes in the containing glTF asset
+     * @returns the canonical graph model
+     */
+    export function CreateKHRInteractivityGraphModel(graph: BABYLON.GLTF2.IKHRInteractivity_Graph | null | undefined, index?: number, supportedExtensions?: ReadonlySet<string>, assetNodeCount?: number): IKHRInteractivityGraphModel;
+    /**
+     * Creates an immutable canonical KHR_interactivity document and validates all graph-local references.
+     * @param extension source extension object from the glTF document
+     * @param supportedExtensions enabled extensions that may provide executable operations
+     * @param assetNodeCount number of nodes in the containing glTF asset
+     * @returns the canonical document
+     */
+    export function CreateKHRInteractivityDocument(extension: BABYLON.GLTF2.IKHRInteractivity, supportedExtensions?: ReadonlySet<string>, assetNodeCount?: number): IKHRInteractivityDocument;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Export support classification for a FlowGraph block or imported composite.
+     */
+    export type KHRInteractivityExportClassification = "exact" | "inverse-composite" | "unsupported" | "lossy";
+    /**
+     * Structured KHR_interactivity export diagnostic.
+     */
+    export interface IKHRInteractivityExportDiagnostic {
+        /** Stable diagnostic code. */
+        code: "GRAPH_SOURCE_MISSING" | "GRAPH_COUNT_MISMATCH" | "NODE_SOURCE_MISSING" | "BLOCK_PROVENANCE_INVALID" | "BLOCK_ROLE_MISSING" | "BLOCK_ROLE_DUPLICATE" | "BLOCK_TYPE_MISMATCH" | "BLOCK_UNSUPPORTED" | "BLOCK_AMBIGUOUS" | "COMPOSITE_CONNECTION_CHANGED" | "SOCKET_PROVENANCE_MISSING" | "SOCKET_CONNECTION_AMBIGUOUS" | "SOCKET_TARGET_UNREPRESENTABLE" | "INPUT_DEFAULT_UNREPRESENTABLE" | "VALUE_UNREPRESENTABLE" | "CONFIGURATION_UNREPRESENTABLE" | "REFERENCE_UNRESOLVED" | "DEPENDENCY_CYCLE" | "GRAPH_INVALID";
+        /** JSON pointer or FlowGraph location associated with the issue. */
+        path: string;
+        /** Human-readable actionable diagnostic. */
+        message: string;
+        /** Diagnostic severity. */
+        severity: "error" | "warning";
+        /** Source graph index, when known. */
+        graphIndex?: number;
+        /** Source node index, when known. */
+        nodeIndex?: number;
+        /** FlowGraph block id, when known. */
+        blockId?: string;
+        /** KHR socket id, when known. */
+        socket?: string;
+    }
+    /**
+     * Representability result for one logical KHR node or standalone FlowGraph block.
+     */
+    export interface IKHRInteractivityNodeExportAnalysis {
+        /** Source graph index. */
+        graphIndex: number;
+        /** Source KHR node index, when this is an imported node. */
+        nodeIndex?: number;
+        /** Full KHR operation name, when known. */
+        operation?: string;
+        /** FlowGraph blocks participating in this logical node. */
+        blockIds: string[];
+        /** Export support classification. */
+        classification: KHRInteractivityExportClassification;
+        /** Diagnostics scoped to this logical node. */
+        diagnostics: IKHRInteractivityExportDiagnostic[];
+    }
+    /**
+     * Complete representability analysis for a KHR_interactivity export.
+     */
+    export interface IKHRInteractivityExportAnalysis {
+        /** True when every graph can be exported without loss or ambiguity. */
+        representable: boolean;
+        /** Per-node classifications in deterministic graph/source order. */
+        nodes: IKHRInteractivityNodeExportAnalysis[];
+        /** All diagnostics in deterministic order. */
+        diagnostics: IKHRInteractivityExportDiagnostic[];
+    }
+    /**
+     * Indexed glTF root collections that KHR_interactivity references can target.
+     */
+    export type KhrInteractivityRootCollection = "nodes" | "animations" | "cameras" | "materials" | "meshes" | "textures" | "images" | "samplers" | "skins" | "scenes";
+    /**
+     * Final glTF remapping context supplied by the serializer extension.
+     */
+    export interface IKHRInteractivitySerializerContext {
+        /**
+         * Gets the final number of glTF nodes.
+         * @returns final glTF node count
+         */
+        getNodeCount(): number;
+        /**
+         * Gets the final glTF node index for a Babylon node.
+         * @param node Babylon node to resolve
+         * @returns final glTF node index, or undefined when the node was not exported
+         */
+        getNodeIndex(node: Node): number | undefined;
+        /**
+         * Gets the final glTF animation index for a Babylon animation group.
+         * @param animation Babylon animation group to resolve
+         * @returns final glTF animation index, or undefined when the animation was not exported
+         */
+        getAnimationIndex(animation: AnimationGroup): number | undefined;
+        /**
+         * Gets the final glTF camera index for a Babylon camera.
+         * @param camera Babylon camera to resolve
+         * @returns final glTF camera index, or undefined when the camera was not exported
+         */
+        getCameraIndex(camera: Camera): number | undefined;
+        /**
+         * Gets the final glTF material index for a Babylon material.
+         * @param material Babylon material to resolve
+         * @returns final glTF material index, or undefined when the material was not exported
+         */
+        getMaterialIndex(material: Material): number | undefined;
+        /**
+         * Gets the final glTF index for an imported Babylon entity in a root collection.
+         * @param collection target glTF root collection
+         * @param entity imported Babylon entity associated with the source entry
+         * @returns final glTF index, or undefined when the entity was not exported uniquely
+         */
+        getRootIndex?(collection: KhrInteractivityRootCollection, entity: object): number | undefined;
+        /**
+         * Writes a companion extension on an already-exported glTF node.
+         * @param nodeIndex final glTF node index
+         * @param extensionName companion extension name
+         * @param value companion extension payload
+         */
+        setNodeExtension(nodeIndex: number, extensionName: string, value: unknown): void;
+    }
+    /**
+     * Provider consumed by the KHR_interactivity serializer extension.
+     */
+    export interface IKHRInteractivityExportProvider {
+        /** Whether KHR_interactivity must be listed in extensionsRequired. */
+        readonly required: boolean;
+        /** Other extensions referenced or emitted by the interactivity export. */
+        readonly additionalExtensionsUsed: readonly string[];
+        /** Other extensions that must be listed in extensionsRequired. */
+        readonly additionalExtensionsRequired: readonly string[];
+        /**
+         * Gets the detached representability analysis.
+         * @returns current export analysis
+         */
+        analyze(): IKHRInteractivityExportAnalysis;
+        /**
+         * Builds the canonical extension after glTF entity indices are finalized.
+         * @param context final serializer remapping context
+         * @returns ratified KHR_interactivity extension payload
+         */
+        build(context: IKHRInteractivitySerializerContext): BABYLON.GLTF2.IKHRInteractivity;
+    }
+    /**
+     * Options used to create a KHR_interactivity export plan.
+     */
+    export interface IKHRInteractivityExportOptions {
+        /** Canonical Phase 1 document associated with the FlowGraphs. Required for a lossless export. */
+        document?: BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityDocument;
+        /** Loader glTF tree used to resolve original entity references. */
+        sourceGLTF?: BABYLON.GLTF2.Loader.IGLTF;
+        /** Root default graph index. Defaults to the canonical document selection or zero. */
+        defaultGraphIndex?: number;
+        /** Target animation frame rate used by imported animation composites. Defaults to 60. */
+        targetFps?: number;
+        /** Whether the emitted KHR_interactivity extension is required. Defaults to true. */
+        required?: boolean;
+        /** Additional extensions that must be required together with the behavior graph. */
+        additionalExtensionsRequired?: readonly string[];
+    }
+    /**
+     * Error thrown when export cannot preserve the authored behavior graph.
+     */
+    export class KHRInteractivityExportError extends Error {
+        readonly diagnostics: readonly IKHRInteractivityExportDiagnostic[];
+        /**
+         * @param diagnostics precise export diagnostics
+         */
+        constructor(diagnostics: readonly IKHRInteractivityExportDiagnostic[]);
+    }
+    /**
+     * Detached representability and export plan for one or more FlowGraphs.
+     */
+    export class KHRInteractivityExportPlan implements IKHRInteractivityExportProvider {
+        private readonly _flowGraphs;
+        private readonly _options;
+        private _analysis;
+        private _graphAnalyses;
+        private _additionalExtensionsUsed;
+        private readonly _rootDiagnostics;
+        private _isPreflight;
+        /** Whether KHR_interactivity is required in the exported asset. */
+        readonly required: boolean;
+        /** Additional operation/companion extensions referenced by the exported graphs. */
+        get additionalExtensionsUsed(): readonly string[];
+        /** Additional extensions explicitly required by the caller. */
+        readonly additionalExtensionsRequired: readonly string[];
+        /**
+         * @param _flowGraphs FlowGraphs to analyze without mutating them
+         * @param _options canonical source and export settings
+         */
+        constructor(_flowGraphs: readonly FlowGraph[], _options?: IKHRInteractivityExportOptions);
+        private _refreshAnalysis;
+        private _mergeBuildDiagnostics;
+        /**
+         * Gets the detached representability analysis.
+         * @returns current analysis
+         */
+        analyze(): IKHRInteractivityExportAnalysis;
+        /**
+         * Builds the extension after final glTF entity remapping is available.
+         * @param context serializer remapping context
+         * @returns canonical KHR_interactivity payload
+         */
+        build(context: IKHRInteractivitySerializerContext): BABYLON.GLTF2.IKHRInteractivity;
+        private _getSourceGraph;
+        private _validateBuildWithSourceIndices;
+        private _analyzeGraphs;
+        private _classifyStandaloneBlock;
+        private _analyzeImportedNodes;
+        private _validateUnsupportedExtensionBlock;
+        private _validateMappedBlocks;
+        private _buildGraph;
+        private _rebuildNode;
+        private _getMappingObject;
+        private _inferSocketProvenance;
+        private _isNoOpFlowTarget;
+        private _isEffectiveFlowInput;
+        private _isEffectiveFlowOutput;
+        private _getAllowedDynamicFlowSockets;
+        private _resolveValueTypeIndex;
+        private _resolveOutputTypeIndex;
+        private _isEffectiveValueInput;
+        private _rebuildInputValue;
+        private _unwrapAnimationTimeHelper;
+        private _rebuildConfiguration;
+        private _remapPointerTemplateInputs;
+        private _updateVariables;
+        private _remapValueArray;
+        private _topologicallyOrderNodes;
+        private _remapGraphReferences;
+        private _getVariableReferenceCollection;
+        private _getPointerReferenceCollection;
+        private _getRemappedRootIndex;
+        private _getSourceRootObjects;
+        private _getSourceRootIndex;
+        private _getExportedObjectIndex;
+        private _remapReferenceToCollection;
+        private _remapReference;
+        private _validateExtensionReferencePreservation;
+        private _collectAdditionalExtensions;
+        private _writeCompanionNodeExtensions;
+        private _sortDiagnostics;
+    }
+    /**
+     * Creates a detached KHR_interactivity export plan without mutating the FlowGraphs.
+     * @param flowGraphs graphs to export in root graph order
+     * @param options canonical source and serializer settings
+     * @returns reusable representability/export provider
+     */
+    export function CreateKHRInteractivityExportPlan(flowGraphs: readonly FlowGraph[], options?: IKHRInteractivityExportOptions): KHRInteractivityExportPlan;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
     
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Socket definition retained for an unsupported extension operation.
+     */
+    export interface IFlowGraphUnsupportedInteractivitySocket {
+        /** Socket name. */
+        name: string;
+        /** FlowGraph runtime type name. */
+        type?: string;
+        /** Exact KHR_interactivity type signature. */
+        signature?: string;
+    }
+    /**
+     * Configuration for an unsupported KHR_interactivity extension operation.
+     */
+    export interface IFlowGraphUnsupportedInteractivityBlockConfiguration extends IFlowGraphBlockConfiguration {
+        /** Full extension operation name. */
+        operation: string;
+        /** Input value sockets declared by the extension. */
+        inputValueSockets: IFlowGraphUnsupportedInteractivitySocket[];
+        /** Output value sockets declared by the extension. */
+        outputValueSockets: IFlowGraphUnsupportedInteractivitySocket[];
+        /** Input flow sockets used by the source graph. */
+        inputFlowSockets: string[];
+        /** Output flow sockets used by the source graph. */
+        outputFlowSockets: string[];
+    }
+    /**
+     * Inspectable runtime no-op for an operation owned by an unsupported glTF extension.
+     */
+    export class FlowGraphUnsupportedInteractivityBlock extends FlowGraphExecutionBlock {
+        config: IFlowGraphUnsupportedInteractivityBlockConfiguration;
+        constructor(config: IFlowGraphUnsupportedInteractivityBlockConfiguration);
+        /** @internal */
+        _execute(_context: FlowGraphContext, _callingSignal: FlowGraphSignalConnection): void;
+        /** @returns the serialized class name */
+        getClassName(): string;
+    }
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Resolves a runtime object to its owning glTF node reference.
+     * @param context active FlowGraph context
+     * @param value runtime object, usually a picked primitive
+     * @returns the owning node reference or the null reference
+     */
+    export function GetInteractivityObjectReference(context: FlowGraphContext, value: object | undefined): string;
+    /**
+     * Converts a runtime object into the opaque reference used by KHR_interactivity.
+     */
+    export class FlowGraphObjectReferenceBlock extends FlowGraphBlock {
+        /** Runtime object to encode. */
+        readonly object: FlowGraphDataConnection<object | undefined>;
+        /** Opaque KHR_interactivity reference. */
+        readonly value: FlowGraphDataConnection<string>;
+        constructor(config?: IFlowGraphBlockConfiguration);
+        /** @internal */
+        _updateOutputs(context: FlowGraphContext): void;
+        /** @returns the serialized class name */
+        getClassName(): string;
+    }
+
 
 
 }
@@ -7740,7 +8392,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
          * the glTF object to provide data from
          */
-        glTF: BABYLON.GLTF2.Loader.IGLTF;
+        glTF?: BABYLON.GLTF2.Loader.IGLTF;
     }
     /**
      * a glTF-based FlowGraph block that provides arrays with babylon object, based on the glTF tree
@@ -7757,7 +8409,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * Corresponds directly to the glTF nodes array
          */
         readonly nodes: FlowGraphDataConnection<TransformNode[]>;
-        constructor(config: IFlowGraphGLTFDataProviderBlockConfiguration);
+        constructor(config?: IFlowGraphGLTFDataProviderBlockConfiguration);
         getClassName(): string;
     }
 
@@ -7769,11 +8421,71 @@ declare namespace BABYLON {
 
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
-        interface IGLTFToFlowGraphMappingObject {
+        /**
+     * Configuration for a KHR event reference output.
+     */
+    export interface IFlowGraphEventReferenceBlockConfiguration extends IFlowGraphBlockConfiguration {
+        /** Stable key shared by equivalent event operations. */
+        eventKey?: string;
+    }
+    /**
+     * Produces the opaque reference associated with a KHR event operation.
+     */
+    export class FlowGraphEventReferenceBlock extends FlowGraphExecutionBlock {
+        config: IFlowGraphEventReferenceBlockConfiguration;
+        private readonly _assetInverse;
+        private readonly _selectionPointValue;
+        private readonly _selectionRayOriginValue;
+        /** Output flow activated after event values are captured. */
+        readonly out: FlowGraphSignalConnection;
+        /** Runtime node associated with the event. */
+        readonly node: FlowGraphDataConnection<object | undefined>;
+        /** Controller index associated with the event. */
+        readonly controllerIndexInput: FlowGraphDataConnection<number>;
+        /** Selection point associated with the event. */
+        readonly selectionPointInput: FlowGraphDataConnection<Vector3>;
+        /** Selection ray origin associated with the event. */
+        readonly selectionRayOriginInput: FlowGraphDataConnection<Vector3>;
+        /** Opaque node reference. */
+        readonly nodeReference: FlowGraphDataConnection<string>;
+        /** Retained controller index. */
+        readonly controllerIndex: FlowGraphDataConnection<number>;
+        /** Retained selection point. */
+        readonly selectionPoint: FlowGraphDataConnection<Vector3>;
+        /** Retained selection ray origin. */
+        readonly selectionRayOrigin: FlowGraphDataConnection<Vector3>;
+        /** Opaque event reference. */
+        readonly value: FlowGraphDataConnection<string>;
+        constructor(config: IFlowGraphEventReferenceBlockConfiguration);
+        /** @internal */
+        _execute(context: FlowGraphContext): void;
+        /** @returns the serialized class name */
+        getClassName(): string;
+    }
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Describes how one KHR_interactivity configuration or socket property maps to FlowGraph.
+     *
+     * The same contract is used for fixed sockets, wildcard sockets, configuration validation,
+     * defaulting, and multi-block routing during strict graph lowering.
+     */
+    export interface IGLTFToFlowGraphMappingObject {
         /**
          * The name of the property in the FlowGraph block.
          */
         name: string;
+        /**
+         * Whether this socket mapping exists only for pre-ratification compatibility input.
+         */
+        compatibilityOnly?: boolean;
         /**
          * The type of the property in the glTF specs.
          * If not provided will be inferred.
@@ -7806,7 +8518,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * This is used if we generate more than one block for a single glTF node.
          * Defaults to the first block in the mapping.
          */
-        toBlock?: FlowGraphBlockNames;
+        toBlock?: FlowGraphBlockNames | string;
         /**
          * Used in configuration values. If defined, this will be the default value, if no value is provided.
          */
@@ -7820,6 +8532,77 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * be fed by a `pointer/get` (e.g. the read-only `maxTime` animation pointer).
          */
         convertConnectedTimeToFrames?: boolean;
+        /**
+         * KHR configuration value type used by canonical validation.
+         */
+        configurationType?: "bool" | "int" | "int[]" | "string";
+        /**
+         * Whether this configuration entry exists only for canonical validation.
+         */
+        validationOnly?: boolean;
+        /**
+         * Whether an operation without a complete default configuration requires this property.
+         */
+        required?: boolean;
+        /**
+         * Graph array referenced by an integer configuration value.
+         */
+        indexSource?: "types" | "variables" | "events" | "nodes" | "assetNodes";
+        /**
+         * Minimum number of values required for an array configuration.
+         */
+        minItems?: number;
+        /**
+         * Whether the configured indices generate required input value sockets.
+         */
+        generatesInputValueSockets?: boolean;
+        /**
+         * Whether integer case values generate required input value sockets.
+         */
+        generatesCaseInputValueSockets?: boolean;
+        /**
+         * Whether this string configuration generates JSON Pointer Template sockets.
+         */
+        pointerTemplate?: boolean;
+        /**
+         * Whether an invalid value falls back to the operation's default configuration.
+         */
+        invalidUsesDefault?: boolean;
+        /**
+         * Allowed KHR type signatures for a type-index configuration.
+         */
+        allowedSignatures?: readonly ("bool" | "float" | "float2" | "float3" | "float4" | "float2x2" | "float3x3" | "float4x4" | "int" | "ref" | "custom")[];
+        /** Allowed literal values for this configuration property. */
+        allowedValues?: readonly (boolean | number | string)[];
+        /**
+         * Input socket whose effective type determines this output socket type.
+         */
+        typeSourceInput?: string;
+        /** Inclusive minimum for an integer configuration value. */
+        minimum?: number;
+        /** Inclusive maximum for an integer configuration value. */
+        maximum?: number;
+        /**
+         * Whether this configuration value generates numbered input flow sockets.
+         */
+        generatesInputFlowSockets?: boolean;
+        /**
+         * Whether this configuration array generates output flow sockets.
+         */
+        generatesOutputFlowSockets?: boolean;
+        /**
+         * Properties in the same group fall back to their defaults together when any member is
+         * missing or invalid.
+         */
+        configurationGroup?: string;
+        /**
+         * Whether duplicate array values are removed from the effective configuration.
+         */
+        uniqueValues?: boolean;
+        /**
+         * Whether a string configuration value is a `debug/log` message template.
+         */
+        debugLogTemplate?: boolean;
     }
     /**
      * Description of how a KHR_interactivity declaration (op such as
@@ -7834,6 +8617,13 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * When adding blocks defined in this module use the KHR_interactivity prefix.
          */
         blocks: (FlowGraphBlockNames | string)[];
+        /**
+         * Exact value socket contract for an operation supplied by another extension.
+         */
+        declarationSchema?: {
+            inputValueSockets: Record<string, "bool" | "float" | "float2" | "float3" | "float4" | "float2x2" | "float3x3" | "float4x4" | "int" | "ref" | "custom">;
+            outputValueSockets: Record<string, "bool" | "float" | "float2" | "float3" | "float4" | "float2x2" | "float3x3" | "float4x4" | "int" | "ref" | "custom">;
+        };
         /**
          * The inputs of the glTF node mapped to the FlowGraph block.
          */
@@ -7941,7 +8731,26 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         extraProcessor?: (gltfBlock: BABYLON.GLTF2.IKHRInteractivity_Node, declaration: BABYLON.GLTF2.IKHRInteractivity_Declaration, mapping: IGLTFToFlowGraphMapping, parser: BABYLON.GLTF2.Loader.Extensions.InteractivityGraphToFlowGraphParser, serializedObjects: ISerializedFlowGraphBlock[], context: ISerializedFlowGraphContext, globalGLTF?: BABYLON.GLTF2.Loader.IGLTF) => ISerializedFlowGraphBlock[];
     }
     export function getMappingForFullOperationName(fullOperationName: string): IGLTFToFlowGraphMapping | undefined;
+    /**
+     * Returns whether a KHR operation accepts the conventional `in` flow socket when the registry
+     * does not need a renamed or dynamic input mapping.
+     * @param operation full KHR operation name
+     * @returns true when the operation accepts the conventional input flow
+     */
+    export function HasDefaultInteractivityFlowInput(operation: string): boolean;
+    /**
+     * Normalizes serialized or runtime FlowGraph custom-event configuration for inverse comparison.
+     * @param value serialized event-data entries or the runtime event-data dictionary
+     * @returns stable event-data entries sorted by socket id
+     */
+    export function NormalizeInteractivityEventDataConfiguration(value: unknown): unknown;
     export function getMappingForDeclaration(declaration: BABYLON.GLTF2.IKHRInteractivity_Declaration, returnNoOpIfNotAvailable?: boolean): IGLTFToFlowGraphMapping | undefined;
+    /**
+     * Creates the typed no-op mapping required for an unsupported extension declaration.
+     * @param declaration unsupported extension declaration
+     * @returns a mapping that preserves the declared value sockets
+     */
+    export function getNoOpMappingForDeclaration(declaration: BABYLON.GLTF2.IKHRInteractivity_Declaration): IGLTFToFlowGraphMapping;
     /**
      * This function will add new mapping to glTF interactivity.
      * Other extensions can define new types of blocks, this is the way to let interactivity know how to parse them.
@@ -7950,6 +8759,40 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * @param mapping The mapping object. See documentation or examples below.
      */
     export function addNewInteractivityFlowGraphMapping(key: string, extension: string, mapping: IGLTFToFlowGraphMapping): void;
+    /**
+     * One operation entry in the shared KHR_interactivity-to-FlowGraph registry.
+     */
+    export interface IKHRInteractivityOperationRegistryEntry {
+        /** Ratified operation identifier. */
+        op: string;
+        /** Extension defining the operation, when it is not a KHR_interactivity core operation. */
+        extension?: string;
+        /** Bidirectional structural mapping used by import and export. */
+        mapping: IGLTFToFlowGraphMapping;
+    }
+    /**
+     * Gets a deterministic snapshot of the registered KHR_interactivity operation mappings.
+     * Export analysis uses this same registry as import lowering so the two directions cannot
+     * independently drift.
+     * @returns registered mappings sorted by extension and operation
+     */
+    export function GetInteractivityOperationRegistry(): readonly IKHRInteractivityOperationRegistryEntry[];
+    /**
+     * Result of parsing a ratified `debug/log` message template.
+     */
+    export interface IDebugLogTemplateParseResult {
+        /** Whether all literal braces are doubled and every parameter is well formed. */
+        valid: boolean;
+        /** Unique parameter socket ids in first-occurrence order. */
+        sockets: string[];
+    }
+    /**
+     * Parses a ratified `debug/log` message template.
+     * Literal braces must be doubled; non-empty text inside a single brace pair defines a socket id.
+     * @param message message template to parse
+     * @returns template validity and its exact dynamic socket ids
+     */
+    export function ParseDebugLogTemplate(message: string): IDebugLogTemplateParseResult;
     export function getAllSupportedNativeNodeTypes(): string[];
     /**
      *
@@ -8877,6 +9720,424 @@ declare namespace BABYLON.GLTF1 {
 
 }
 declare namespace BABYLON {
+
+    export interface WorkerAsset {
+        bytes: Uint8Array;
+        fileName: string;
+        files?: Record<string, Uint8Array>;
+        resolveByFileName: boolean;
+        glueUrl?: string;
+        wasmUrl?: string;
+        dataUrl?: string;
+    }
+    export interface ExtractRequest {
+        type: "extract";
+        requestId: number;
+        asset: WorkerAsset;
+    }
+    export interface WorkerTimings {
+        totalMs: number;
+        stageOpenMs: number;
+        stageReadMs: number;
+        preparationMs: number;
+        packingMs: number;
+        heapCopyMs: number;
+    }
+    export interface WorkerStatistics {
+        nodes: number;
+        meshes: number;
+        analyticPrimitives: number;
+        instances: number;
+        materials: number;
+        vertices: number;
+        triangles: number;
+        commandBytes: number;
+        dataBytes: number;
+    }
+    export type WorkerResponse = {
+        type: "progress";
+        requestId: number;
+        progress: USDLoadProgress;
+    } | {
+        type: "log";
+        requestId: number;
+        level: number;
+        message: string;
+    } | {
+        type: "result";
+        requestId: number;
+        commands: ArrayBuffer;
+        data: ArrayBuffer;
+        timings: WorkerTimings;
+        statistics: WorkerStatistics;
+        missingAssets: string[];
+    } | {
+        type: "error";
+        requestId: number;
+        message: string;
+        stack?: string;
+    };
+
+
+    export interface MaterializationResult {
+        container: AbstractAssetContainer & {
+            dispose(): void;
+        };
+        materializeMs: number;
+    }
+    export function materializeCommandBuffers(scene: Scene, commandBuffer: ArrayBuffer, dataBuffer: ArrayBuffer, addToScene: boolean, signal?: AbortSignal): Promise<MaterializationResult>;
+
+
+    /**
+     * Binary input accepted for supporting USD layers and assets.
+     */
+    export type USDBinaryInput = ArrayBuffer | ArrayBufferView;
+    /**
+     * Virtual files supplied alongside the root USD layer, keyed by their path relative to the
+     * root layer.
+     */
+    export type USDVirtualFiles = Readonly<Record<string, USDBinaryInput>>;
+    /**
+     * Progress phases reported by the USD worker and Babylon materializer.
+     */
+    export interface USDLoadProgress {
+        /**
+         * Current importer phase.
+         */
+        phase: "initializing" | "staging" | "extracting" | "materializing";
+        /**
+         * Human-readable phase description.
+         */
+        message: string;
+    }
+    /**
+     * Options for the OpenUSD scene loader.
+     */
+    export interface USDFileLoaderOptions {
+        /**
+         * Virtual path used to stage the root layer. Set this when supporting files need
+         * to resolve relative to a directory hierarchy.
+         */
+        rootFileName?: string;
+        /**
+         * Supporting layers, payloads, and textures keyed by virtual path in the same
+         * virtual file system as `rootFileName`.
+         */
+        files?: USDVirtualFiles;
+        /**
+         * Enables conservative file-name fallback for unresolved absolute references.
+         * Defaults to true.
+         */
+        resolveByFileName?: boolean;
+        /**
+         * URL of the module worker. Defaults to the protocol-versioned worker hosted on the Babylon.js CDN.
+         */
+        workerUrl?: string | URL;
+        /**
+         * URL of the generated Emscripten JavaScript module.
+         */
+        glueUrl?: string;
+        /**
+         * URL of the OpenUSD WebAssembly binary.
+         */
+        wasmUrl?: string;
+        /**
+         * URL of the OpenUSD preloaded resource bundle.
+         */
+        dataUrl?: string;
+        /**
+         * Called when the importer moves to a new processing phase.
+         */
+        onProgress?: (progress: USDLoadProgress) => void;
+        /**
+         * Called for OpenUSD diagnostic messages.
+         */
+        onLog?: (level: "info" | "warning" | "error", message: string) => void;
+        /**
+         * Called after extraction and Babylon.js object creation complete.
+         */
+        onComplete?: (diagnostics: USDImportDiagnostics) => void;
+    }
+    /**
+     * Timing data measured by the OpenUSD worker and Babylon materializer.
+     */
+    export interface USDImportTimings {
+        /** Total extraction time, including the final Wasm heap copy. */
+        totalMs: number;
+        /** Time spent opening and composing the USD stage. */
+        stageOpenMs: number;
+        /** Time spent traversing the composed stage. */
+        stageReadMs: number;
+        /** Time spent preparing renderable vertex streams. */
+        preparationMs: number;
+        /** Time spent packing the command and raw-data buffers. */
+        packingMs: number;
+        /** Time spent copying command and data buffers from the Wasm heap. */
+        heapCopyMs: number;
+        /** Time spent creating Babylon.js objects. */
+        materializeMs: number;
+    }
+    /**
+     * Statistics reported for an imported USD stage.
+     */
+    export interface USDImportStatistics {
+        /** Number of transform nodes extracted from the composed stage. */
+        nodes: number;
+        /** Number of polygonal `UsdGeomMesh` sources. */
+        meshes: number;
+        /** Number of analytic cube, sphere, cylinder, and cone sources. */
+        analyticPrimitives: number;
+        /** Number of native Babylon instances created from shared USD geometry. */
+        instances: number;
+        /** Number of authored USD materials translated. */
+        materials: number;
+        /** Number of unique vertices in polygonal source meshes. */
+        vertices: number;
+        /** Number of unique triangles in polygonal source meshes. */
+        triangles: number;
+        /** Size of the command buffer in bytes. */
+        commandBytes: number;
+        /** Size of the raw-data buffer in bytes. */
+        dataBytes: number;
+    }
+    /**
+     * Diagnostics reported after a USD import completes.
+     */
+    export interface USDImportDiagnostics {
+        /** Timing data for extraction and Babylon.js object creation. */
+        timings: USDImportTimings;
+        /** Counts and buffer sizes reported by the OpenUSD extractor. */
+        statistics: USDImportStatistics;
+        /** Asset references OpenUSD could not resolve from the supplied virtual files. */
+        missingAssets: readonly string[];
+    }
+
+
+        interface SceneLoaderPluginOptions {
+            /**
+             * Defines options for the USD loader.
+             */
+            [USDFileLoaderMetadata.name]: Partial<USDFileLoaderOptions>;
+        }
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * OpenUSD scene loader backed by a WebAssembly command-buffer extractor.
+     */
+    export class USDFileLoader implements ISceneLoaderPluginAsync, ISceneLoaderPluginFactory {
+        /**
+         * Default URLs for the prebuilt OpenUSD importer assets.
+         */
+        static DefaultConfiguration: {
+            glueUrl: string;
+            wasmUrl: string;
+            dataUrl: string;
+            workerUrl: string;
+        };
+        /**
+         * Defines the name of the plugin.
+         */
+        readonly name: "usd";
+        /**
+         * Defines the extensions the plugin can load.
+         */
+        readonly extensions: {
+            readonly ".usd": {
+                readonly isBinary: true;
+            };
+            readonly ".usda": {
+                readonly isBinary: true;
+            };
+            readonly ".usdc": {
+                readonly isBinary: true;
+            };
+            readonly ".usdz": {
+                readonly isBinary: true;
+            };
+        };
+        private readonly _options;
+        private _worker;
+        private _workerUrl;
+        private _workerBlobUrl;
+        private _nextRequestId;
+        private readonly _pending;
+        private readonly _activeLoads;
+        /**
+         * Creates a USD loader.
+         * @param options Options controlling worker assets, supporting files, and diagnostics.
+         */
+        constructor(options?: Partial<USDFileLoaderOptions>);
+        /**
+         * Creates a configured plugin instance for a SceneLoader operation.
+         * @param options SceneLoader plugin options.
+         * @returns The configured USD loader.
+         */
+        createPlugin(options: SceneLoaderPluginOptions): ISceneLoaderPluginAsync;
+        /**
+         * Imports all objects from a USD stage into a scene.
+         * @param _meshesNames Mesh name filtering is not currently supported.
+         * @param scene The scene receiving the imported objects.
+         * @param data The USD, USDA, USDC, or USDZ bytes.
+         * @param rootUrl The source root URL.
+         * @param onProgress SceneLoader progress callback.
+         * @param fileName Name of the root USD layer.
+         * @returns The imported Babylon.js objects.
+         */
+        importMeshAsync(_meshesNames: string | readonly string[] | null | undefined, scene: Scene, data: unknown, rootUrl: string, onProgress?: (event: ISceneLoaderProgressEvent) => void, fileName?: string): Promise<ISceneLoaderAsyncResult>;
+        /**
+         * Loads a USD stage into a scene.
+         * @param scene The scene receiving the imported objects.
+         * @param data The USD, USDA, USDC, or USDZ bytes.
+         * @param rootUrl The source root URL.
+         * @param onProgress SceneLoader progress callback.
+         * @param fileName Name of the root USD layer.
+         */
+        loadAsync(scene: Scene, data: unknown, rootUrl: string, onProgress?: (event: ISceneLoaderProgressEvent) => void, fileName?: string): Promise<void>;
+        /**
+         * Loads a USD stage into an asset container.
+         * @param scene The scene used to create imported objects.
+         * @param data The USD, USDA, USDC, or USDZ bytes.
+         * @param rootUrl The source root URL.
+         * @param onProgress SceneLoader progress callback.
+         * @param fileName Name of the root USD layer.
+         * @returns The populated asset container.
+         */
+        loadAssetContainerAsync(scene: Scene, data: unknown, rootUrl: string, onProgress?: (event: ISceneLoaderProgressEvent) => void, fileName?: string): Promise<AssetContainer>;
+        /**
+         * Releases the worker and rejects pending loads.
+         */
+        dispose(): void;
+        private _loadAsync;
+        private _getWorker;
+        private _terminateWorker;
+    }
+    /** @internal */
+    export function _RegisterUSDLoaderDependencies(): void;
+    /**
+     * Registers the USD scene loader plugin and its Babylon.js runtime dependencies.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterUSDFileLoader(): void;
+
+
+    /**
+     * Defines the USD loader plugin metadata.
+     */
+    export var USDFileLoaderMetadata: {
+        readonly name: "usd";
+        readonly extensions: {
+            readonly ".usd": {
+                readonly isBinary: true;
+            };
+            readonly ".usda": {
+                readonly isBinary: true;
+            };
+            readonly ".usdc": {
+                readonly isBinary: true;
+            };
+            readonly ".usdz": {
+                readonly isBinary: true;
+            };
+        };
+    };
+
+
+    /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./usdFileLoader.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+    export const COMMAND_MAGIC = 1111774037;
+    export const PROTOCOL_VERSION = 5;
+    export const MISSING_OFFSET = 4294967295;
+    export enum Command {
+        Scene = 1,
+        Texture = 2,
+        Material = 3,
+        TransformNode = 4,
+        Skeleton = 5,
+        Geometry = 6,
+        Mesh = 7,
+        Instance = 8,
+        Animation = 9,
+        AnalyticPrimitive = 10,
+        ThinInstances = 11,
+        MorphTarget = 12
+    }
+    export enum AnalyticPrimitiveType {
+        Cube = 0,
+        Sphere = 1,
+        Cylinder = 2,
+        Cone = 3
+    }
+    export enum PrimitiveAxis {
+        X = 0,
+        Y = 1,
+        Z = 2
+    }
+    export enum AnimationTarget {
+        Node = 0,
+        Bone = 1,
+        MorphTarget = 2
+    }
+    export enum AnimationProperty {
+        Position = 0,
+        RotationQuaternion = 1,
+        Scaling = 2,
+        Matrix = 3,
+        Influence = 4
+    }
+    export enum MaterialFlags {
+        DoubleSided = 1,
+        Unlit = 2,
+        AlphaBlend = 4
+    }
+    export enum TextureOutputChannel {
+        R = 0,
+        G = 1,
+        B = 2,
+        A = 3,
+        RGB = 4
+    }
+    export enum USDTextureColorSpace {
+        Auto = 0,
+        Raw = 1,
+        SRGB = 2
+    }
+    export enum MeshFlags {
+        DoubleSided = 1,
+        LeftHanded = 2
+    }
+    export enum GeometryFlags {
+        Normals = 1,
+        Tangents = 2,
+        Uv0 = 4,
+        Colors = 8,
+        Skin0 = 16,
+        Skin1 = 32
+    }
+    export interface CommandRecord {
+        opcode: Command;
+        flags: number;
+        payloadOffset: number;
+        payloadLength: number;
+    }
+    export function readCommands(buffer: ArrayBuffer): CommandRecord[];
+    export class PayloadReader {
+        #private;
+        offset: number;
+        constructor(buffer: ArrayBuffer, offset: number, length: number);
+        u32(): number;
+        f32(): number;
+    }
+
+
+    /** Pure barrel — re-exports only side-effect-free modules */
+
+
+
 
         interface SceneLoaderPluginOptions {
             /**
@@ -9847,6 +11108,18 @@ declare namespace BABYLON {
      */
     export type GaussianSplattingStreamDebugLodSource = "optimal" | "current";
     /**
+     * Immutable metadata-resolution state for a stream's total number of finest-LOD splats.
+     * @experimental
+     */
+    export type GaussianSplattingStreamLod0SplatCount = Readonly<{
+        status: "pending";
+    }> | Readonly<{
+        status: "available";
+        count: number;
+    }> | Readonly<{
+        status: "unavailable";
+    }>;
+    /**
      * Options for {@link GaussianSplattingStream}.
      */
     export interface IGaussianSplattingStreamOptions {
@@ -9892,17 +11165,20 @@ declare namespace BABYLON {
         /** Number of times a failed file download is retried before giving up. PlayCanvas default `2`. */
         maxDownloadRetries?: number;
         /**
-         * GPU memory budget (in megabytes) for resident splats. When set (and smaller than the full dataset),
-         * LOD files are streamed through a fixed-size work buffer and unreferenced files are evicted to stay
-         * within budget, allowing datasets larger than a single full-dataset buffer. Converted to a splat count
-         * using the per-splat cost (core data plus any baked SH and rotation/scale textures). Combined with
-         * {@link maxResidentSplats} by taking the smaller of the two.
+         * Initial GPU/CPU memory estimate (in megabytes) for resident splats. It is converted to a splat count
+         * using the per-splat cost (core data plus any baked SH and rotation/scale textures), combined with
+         * {@link maxResidentSplats} by taking the smaller limit, then raised when necessary to fit the complete
+         * coarse layer. The work buffer has a fixed lifetime capacity; construct a new stream to use another limit.
+         * Finite non-positive values leave this limit unset; non-finite values are rejected.
          */
         memoryBudgetMb?: number;
         /**
-         * Maximum number of splats kept resident in the work buffer. When set (and smaller than the full
-         * dataset), enables eviction-based streaming (see {@link memoryBudgetMb}). Default unset = size the work
-         * buffer for the whole dataset (no eviction).
+         * Initial maximum number of splats kept resident in the fixed-size work buffer. It is raised when necessary
+         * to fit the complete coarse layer. When unset and the complete source size is known, streams retain the complete
+         * source. Streams that defer finer metadata use a bounded device-tiered default with coarse-derived refinement
+         * headroom.
+         * Finite non-positive values leave this limit unset; non-finite or unsafe positive counts are rejected.
+         * Positive fractional counts are floored to at least one splat before applying the coarse minimum.
          */
         maxResidentSplats?: number;
         /**
@@ -9932,10 +11208,10 @@ declare namespace BABYLON {
         /**
          * When true, higher-order spherical-harmonics carried by the SOG files (`shN`) are GPU-decoded into baked
          * packed-u32 SH textures so the streamed splats render with view-dependent lighting (matching the non-stream
-         * `.spz`/`.sog` path) instead of flat DC-only color. The SH degree is the max `shN.bands` across the streamed
-         * files (lower-band files neutral-fill). No effect when the files carry no `shN`. Defaults to `true`, matching
-         * the non-stream path's always-decode-if-present behavior; set to `false` to force flat DC-only color even
-         * when the data carries `shN` (e.g. to save the decode cost/texture memory).
+         * `.spz`/`.sog` path) instead of flat DC-only color. Streams with complete initial metadata use the maximum
+         * source SH degree. Streams that defer finer metadata reserve the supported degree-4 layout before it is known,
+         * even if the files ultimately carry no `shN`; lower-degree files neutral-fill the unused bands.
+         * Defaults to `true`; set to `false` to force flat DC-only color and avoid the SH decode cost/texture memory.
          */
         decodeSh?: boolean;
         /**
@@ -9965,6 +11241,7 @@ declare namespace BABYLON {
         private readonly _rootUrl;
         private readonly _streamOptions;
         private readonly _leafNodes;
+        private _lod0SplatCount;
         private _lodBaseDistance;
         private _lodMultiplier;
         private _lodBehindPenalty;
@@ -9979,6 +11256,7 @@ declare namespace BABYLON {
         private _hostBudgetAllocation;
         private _frustumCulling;
         private readonly _frustumPlanes;
+        private readonly _cullCameraViewProj;
         private readonly _cullViewProj;
         private readonly _frustumScratch;
         private _workBuffer;
@@ -9992,6 +11270,7 @@ declare namespace BABYLON {
         private _residency;
         private readonly _fileCounts;
         private readonly _fileMeta;
+        private readonly _baseFileIds;
         private readonly _decodedFiles;
         private readonly _loadingFiles;
         private readonly _decodeQueue;
@@ -9999,6 +11278,7 @@ declare namespace BABYLON {
         private readonly _cancelledDecodes;
         private _evictionEnabled;
         private _residentBudget;
+        private _minimumResidentSplats;
         private _maxResidentSplats;
         private _memoryBudgetMb;
         private _evictionCooldownFrames;
@@ -10010,6 +11290,7 @@ declare namespace BABYLON {
         private _environmentFiles;
         private _lodObserver;
         private _baseLayerReady;
+        private _metadataReady;
         private _framesSinceLodUpdate;
         private readonly _lastLodCamPositions;
         private _lastLodSignature;
@@ -10130,6 +11411,28 @@ declare namespace BABYLON {
          */
         get effectiveSplatBudget(): number;
         /**
+         * The resolved maximum number of splats kept resident in the work buffer. This combines
+         * {@link IGaussianSplattingStreamOptions.maxResidentSplats} and {@link IGaussianSplattingStreamOptions.memoryBudgetMb},
+         * taking the smaller positive limit and raising it to {@link minimumResidentSplats}. With neither limit set,
+         * the complete source size is retained when known; otherwise a bounded device-tiered default is used.
+         * The fixed capacity is capped at the device texture limit. `0` means initial capacity has not been resolved.
+         * @experimental
+         */
+        get residentSplatBudget(): number;
+        /**
+         * Minimum fixed work-buffer capacity required for the complete coarse representation: one invisible padding
+         * splat, the included environment, and every unique whole coarse source file. It is `0` until the required
+         * coarse metadata has resolved. Initial residency options below this value are raised to it.
+         * @experimental
+         */
+        get minimumResidentSplats(): number;
+        /**
+         * The total number of splats represented by valid level-0 leaf entries. This remains pending while source
+         * metadata is loading and is unavailable when no applicable level-0 entries exist or required metadata fails.
+         * @experimental
+         */
+        get lod0SplatCount(): GaussianSplattingStreamLod0SplatCount;
+        /**
          * Resolves the raw {@link splatBudget} option to a concrete cap: `undefined` ⇒ 0 (disabled), `"auto"` ⇒ a
          * device-tiered default, a positive number ⇒ itself (floored).
          * @param option the raw option value
@@ -10197,14 +11500,14 @@ declare namespace BABYLON {
         set debugLodSource(value: GaussianSplattingStreamDebugLodSource);
         dispose(doNotRecurse?: boolean): void;
         /**
-         * Disposes this stream (which tombstones its region) and then compacts the host once to actually reclaim the
-         * reserved rows. Used on a definitive load failure / empty result — a discrete, one-off reclaim, versus a bare
+         * Disposes this stream and, when hosted, compacts the host once to reclaim its tombstoned region's reserved
+         * rows. Used on a definitive load failure / empty result — a discrete, one-off reclaim, versus a bare
          * {@link dispose} that only tombstones so tearing down several parts doesn't rebuild the atlas repeatedly.
          */
         private _disposeAndReclaim;
         /**
          * The world matrix that actually places this stream's splats, used to map the camera into the space the
-         * node bounds live in (for LOD distance) and to build per-node world AABBs (for frustum culling). Standalone:
+         * node bounds live in (for LOD distance) and to build camera-local frusta (for frustum culling). Standalone:
          * this controller mesh carries the transform. Hosted: this controller is a hidden, unplaced node — the splats
          * are placed by the reserved part's proxy (SOG up-axis basis composed with the host's placement), so LOD and
          * culling MUST use the proxy's world matrix or they compute distances/frustum tests in the wrong space
@@ -10272,9 +11575,9 @@ declare namespace BABYLON {
          */
         private _collectLodEntries;
         /**
-         * Streams the scene: learns every source file's splat count, allocates one unified GPU work buffer
-         * sized for all LOD files, decodes the environment and the coarsest LOD of every node as a permanent
-         * base layer, then installs the per-frame loop that streams finer LODs on demand.
+         * Streams the scene. Large streams fetch only required coarse metadata before allocating and decoding the
+         * complete coarse layer; finer metadata starts afterwards so it cannot occupy the download queue ahead of
+         * visible geometry. Small streams and streams containing only coarse files retain an exact all-file capacity upper bound.
          */
         private _streamAllAsync;
         /**
@@ -10287,21 +11590,47 @@ declare namespace BABYLON {
          */
         private _waitForCanBackupAsync;
         /**
-         * Resolves the resident-splat budget from the raw options, sizing a memory (MB) budget with the actual per-splat
-         * GPU+CPU cost — core data plus the baked SH textures and rotation/scale textures when enabled — so SH/rotation
-         * assets don't silently consume up to double the configured budget. Requires the SH degree (from the metadata
-         * pre-pass) to be known. The smaller of the splat-count and memory budgets wins.
+         * Resolves the fixed initial work-buffer capacity. Explicit count/MB limits are combined by taking the smaller
+         * and then raised to the complete coarse minimum. Without an explicit limit, a known complete source retains
+         * legacy full residency. When finer metadata is deferred and the complete size is unknown, the device-tiered
+         * memory estimate is given at least one largest-coarse-file of headroom so one replacement file can refine
+         * while all coarse fallback files remain pinned.
+         * @param fullCapacity exact complete source capacity, or null when unavailable
+         * @param largestBaseFileCount largest whole coarse source file, used as modest replacement headroom
+         * @returns the fixed initial work-buffer capacity
          */
         private _resolveResidentBudget;
+        /**
+         * Returns the estimated combined GPU/CPU bytes occupied by one resident splat.
+         * @returns estimated bytes per resident splat
+         */
+        private _bytesPerResidentSplat;
         /**
          * Collects the unique set of source file indices referenced by any LOD of any leaf, sorted ascending.
          * @returns sorted unique file indices
          */
         private _collectAllFileIds;
         /**
-         * Fetches the environment bundle and every referenced file's metadata to learn splat counts, caching
-         * each file's parsed metadata for the later on-demand decode. Metadata fetches run in parallel.
+         * Collects unique whole source files required by the coarsest entry of every valid leaf.
+         * @returns sorted unique coarse file indices
+         */
+        private _collectBaseFileIds;
+        /**
+         * Resolves the immutable minimum initial capacity from padding, environment, and unique whole coarse files.
+         * @param baseFileIds unique coarse source file indices
+         * @param environmentCount included environment splat count
+         */
+        private _resolveMinimumResidentSplats;
+        /**
+         * Settles the level-0 diagnostic from normalized renderable leaf entries after their source metadata resolves.
+         * A file may back several leaf ranges, so its source count is deliberately not used in the total.
+         */
+        private _resolveLod0SplatCount;
+        /**
+         * Fetches the environment bundle and the supplied referenced files' metadata to learn splat counts, caching
+         * each file's parsed metadata for the later on-demand decode. File metadata fetches run in parallel.
          * @param fileIds file indices to fetch metadata for
+         * @param includeEnvironment whether to fetch the optional environment bundle in this phase
          * @returns the environment splat count (0 when there is no environment)
          */
         private _gatherCountsAsync;
@@ -10369,6 +11698,7 @@ declare namespace BABYLON {
          * Concurrent or repeat requests for the same file are ignored. If the file is cancelled mid-flight
          * (because every node that wanted it retargeted), the decode bails cooperatively at the next checkpoint.
          * @param fileId file index to decode
+         * @returns whether the file was decoded and published successfully
          */
         private _decodeFileAsync;
         /**
@@ -10533,6 +11863,22 @@ declare namespace BABYLON {
          * @returns whether any node's in-frustum state changed
          */
         private _updateNodeFrustum;
+        /**
+         * Normalizes an initial residency option, preserving finite non-positive values as an unset limit.
+         * @param value option value
+         * @param name option name used in errors
+         * @param integer whether the normalized value must be an integer splat count
+         * @returns normalized value
+         */
+        private static _NormalizeResidentLimit;
+        /**
+         * Adds trusted non-negative integer counts without allowing unsafe capacity arithmetic.
+         * @param left first count
+         * @param right second count
+         * @param label capacity name used in errors
+         * @returns the safe integer sum
+         */
+        private static _SafeAddCounts;
         /**
          * Reads the splat count from SOG metadata, coerced to a finite non-negative integer (metadata is untrusted, so
          * `count` / `shape[0]` may be a string or malformed — a non-numeric value must not leak into count arithmetic).
@@ -11204,6 +12550,12 @@ declare namespace BABYLON {
          */
         invertTextureY: boolean;
         /**
+         * Wait for referenced textures to finish loading before completing the OBJ load.
+         * When enabled, texture loading failures follow materialLoadingFailsSilently.
+         * Defaults to false for backwards compatibility.
+         */
+        waitForTextures?: boolean;
+        /**
          * Include in meshes the vertex colors available in some OBJ files.  This is not part of OBJ standard.
          */
         importVertexColors: boolean;
@@ -11261,6 +12613,11 @@ declare namespace BABYLON {
          */
         static get INVERT_TEXTURE_Y(): boolean;
         static set INVERT_TEXTURE_Y(value: boolean);
+        /**
+         * Wait for referenced textures to finish loading before completing the OBJ load.
+         * Defaults to false for backwards compatibility.
+         */
+        static WAIT_FOR_TEXTURES: boolean;
         /**
          * Include in meshes the vertex colors available in some OBJ files.  This is not part of OBJ standard.
          */
@@ -11415,8 +12772,12 @@ declare namespace BABYLON {
          * @param data defines the mtl data to parse
          * @param rootUrl defines the rooturl to use in order to load relative dependencies
          * @param assetContainer defines the asset container to store the material in (can be null)
+         * @param invertTextureY defines whether referenced textures are inverted on the Y axis
+         * @param materialNames defines which materials to load, or all materials if omitted
+         * @param trackTextureLoading collects texture loading promises and starts delayed textures when true; defaults to false
+         * @returns the texture loading promises, or an empty array when trackTextureLoading is false
          */
-        parseMTL(scene: Scene, data: string | ArrayBuffer, rootUrl: string, assetContainer: Nullable<AssetContainer>): void;
+        parseMTL(scene: Scene, data: string | ArrayBuffer, rootUrl: string, assetContainer: Nullable<AssetContainer>, invertTextureY?: boolean, materialNames?: ReadonlySet<string>, trackTextureLoading?: boolean): Promise<void>[];
         /**
          * Gets the texture for the material.
          *
@@ -11426,6 +12787,9 @@ declare namespace BABYLON {
          * @param rootUrl The root url to load from
          * @param value The value stored in the mtl
          * @param scene
+         * @param assetContainer The asset container to store the texture in
+         * @param invertTextureY Whether to invert the texture on the Y axis
+         * @param textureLoadPromises The promises to wait for when loading asynchronously
          * @returns The Texture
          */
         private static _GetTexture;
@@ -11456,11 +12820,82 @@ declare namespace BABYLON {
      */
     export interface FBXFileLoaderOptions {
         /**
+         * Bundle of defaults for the options that change what the loaded scene looks like.
+         * - "compatible" (default): the behaviour of the loader as first shipped: StandardMaterial for every material,
+         *   one Babylon geometry per model, curve geometry skipped, constraints recorded as metadata only, clips rebased
+         *   to start at frame 0, cameras and lights placed in world space.
+         * - "full": everything the loader can do: PBRMaterial for physically based shaders, geometry shared between
+         *   instances, curves as lines meshes, constraints solved at runtime, authored clip times, cameras and lights
+         *   parented to their nodes so they animate.
+         * An option set explicitly always wins over the preset.
+         */
+        preset?: "compatible" | "full";
+        /**
          * Source convention for tangent-space normal maps connected through FBX normal-map slots.
          * FBX does not standardize this convention, so the loader defaults to the glTF/USD-style Y-up convention.
          * Set to "y-down" for assets authored with inverted green/Y normal maps.
          */
         normalMapCoordinateSystem?: FBXNormalMapCoordinateSystem;
+        /**
+         * Which Babylon material to build.
+         * - "standard" (default, "full" preset: "auto"): always StandardMaterial (PBR parameters are approximated).
+         * - "auto": PBRMaterial for physically based FBX materials (Standard Surface, Arnold, 3ds Max Physical,
+         *   3ds Max PBR, glTF, OpenPBR, Stingray PBS) and StandardMaterial for classic Lambert/Phong materials.
+         * - "pbr": always PBRMaterial (Lambert/Phong parameters are converted).
+         */
+        materials?: "auto" | "standard" | "pbr";
+        /**
+         * Unit conversion applied at the root of the loaded hierarchy.
+         * - "preserve" (default): keep the file's units (1 Babylon unit = 1 FBX unit).
+         * - "meters": scale so that 1 Babylon unit is 1 meter, using the file's UnitScaleFactor.
+         * - a number: centimeters per Babylon unit (100 = meters, 1 = centimeters, 2.54 = inches).
+         */
+        unitScale?: "preserve" | "meters" | number;
+        /**
+         * Share vertex data between models that reference the same FBX geometry (default false, "full" preset: true).
+         * Skinned meshes are never shared.
+         */
+        shareGeometry?: boolean;
+        /**
+         * Called for every recoverable issue found while loading (unsupported features, malformed data that was
+         * skipped, approximations). The same list is stored on the root node's metadata as `fbxDiagnostics`.
+         */
+        onWarning?: (warning: FBXLoaderWarning) => void;
+        /**
+         * Segments per knot span when tessellating NURBS surfaces. Zero or undefined uses the subdivision stored in
+         * the file (usually 4), capped at 16.
+         */
+        nurbsSubdivision?: number;
+        /** How curve geometry (Line, NurbsCurve) is imported: skipped (default) or as lines meshes ("full" preset). */
+        curves?: "lines" | "skip";
+        /**
+         * Constraints (aim, parent, position, rotation, scale): "metadata" (default) only records them on the nodes,
+         * "apply" ("full" preset) attaches an `FBXConstraintBehavior` to each constrained node so it is solved before
+         * every render. IK chains are always metadata only.
+         */
+        constraints?: "apply" | "metadata";
+        /**
+         * Shift every clip so its first keyframe sits at frame 0 (default true). With false ("full" preset) keys keep
+         * the times authored in the file, so clips of one file stay aligned with each other and with their declared
+         * ranges.
+         */
+        rebaseAnimations?: boolean;
+        /**
+         * Parent cameras and lights to their FBX node so they follow its animation (default false, "full" preset:
+         * true). Otherwise they are created at the node's world position and orientation, unparented.
+         */
+        attachCamerasAndLights?: boolean;
+    }
+    /** A recoverable issue reported while loading an FBX file. */
+    export interface FBXLoaderWarning {
+        /** Which part of the loader reported the issue */
+        source: "scene" | "model" | "geometry" | "skin" | "rig" | "animation" | "blendShape" | "camera" | "light";
+        /** Human readable description */
+        message: string;
+        /** Name of the affected object, when known */
+        objectName?: string;
+        /** Structured details from the interpreter, when any */
+        details?: unknown;
     }
     /**
      * FBX file loader plugin for Babylon.js.
@@ -11483,6 +12918,22 @@ declare namespace BABYLON {
         private readonly _bindRestBones;
         private readonly _sourceBonesBySkeleton;
         private readonly _scaleCompensationHelpersBySkeleton;
+        /** Frame rate of the file being loaded (GlobalSettings TimeMode); animation is baked at this rate. */
+        private _frameRate;
+        /** Layers of the animation stack currently being converted; used by the transform samplers. */
+        private _activeLayers;
+        /** Parent model per model id, for inherit-mode aware sampling. */
+        private _parentModelById;
+        /** Curve nodes per model id for the stack currently being converted. */
+        private _curveNodesByModelId;
+        /** Helper nodes inserted above models whose InheritType is not RSrs. */
+        private _inheritScaleHelpers;
+        /** First mesh built per (geometry, geometric transform), for geometry sharing between instances. */
+        private _meshByGeometryKey;
+        /** Instance mesh -> source mesh whose geometry it shares. */
+        private _instanceSource;
+        /** Property curve nodes that were mapped onto Babylon animations; their "not evaluated" diagnostics are dropped. */
+        private _evaluatedCurveNodeIds;
         /**
          * Creates a new FBX loader.
          * @param options - Options controlling FBX loading behavior
@@ -11525,6 +12976,11 @@ declare namespace BABYLON {
          * @returns A promise containing the loaded asset container
          */
         loadAssetContainerAsync(scene: Scene, data: unknown, rootUrl: string, _onProgress?: (event: ISceneLoaderProgressEvent) => void, _fileName?: string): Promise<AssetContainer>;
+        /**
+         * Parses and interprets the file. Parsing is synchronous, so no progress events are emitted: the scene loader's
+         * progress callback reports download bytes and must not be fed synthetic counts.
+         */
+        private _parseAndInterpret;
         private _parse;
         private _parseFromArrayBuffer;
         private _buildScene;
@@ -11536,6 +12992,15 @@ declare namespace BABYLON {
         private _linkSkeletonsToTransformNodes;
         private static _modelSubtreeMatchesNameFilter;
         private static _applyModelMetadata;
+        /**
+         * Wires a LodGroup's children as Babylon LOD levels: the first child holds the highest detail; every further
+         * child replaces it beyond the group's threshold distance (or screen coverage when thresholds are percentages).
+         * Each child's display mode is honoured first: level 1 (show) stays visible outside the LOD chain, level 2
+         * (hide) is disabled, and only level 0 (use LOD) children take part in the distance switching.
+         */
+        private static _applyLodGroup;
+        /** Builds a lines mesh from Line or tessellated NurbsCurve geometry, applying the model's geometric transform. */
+        private _createLinesMesh;
         private _createMesh;
         /**
          * Apply multi-material to a mesh by creating sub-meshes grouped by material index.
@@ -11559,6 +13024,11 @@ declare namespace BABYLON {
          */
         private _buildSkinningData;
         private _createMaterial;
+        private _createPbrMaterial;
+        /** Alpha of a classic Lambert/Phong material: Opacity when present, otherwise 1 - TransparentColor * TransparencyFactor. */
+        private static _alphaFromClassicTransparency;
+        private static _applyTextureSettings;
+        private _createStandardMaterial;
         private _configureNormalTexture;
         private _getNormalMapTangentHandednessScale;
         private static _isSupportedMaterialTextureSlot;
@@ -11582,11 +13052,27 @@ declare namespace BABYLON {
         private _createCamera;
         private _createLight;
         private _createSkeleton;
+        private _rigBoneModelIds;
+        private _isRigBone;
         private _getSourceBone;
         private _getScaleCompensationHelper;
         private static _computeFBXAbsoluteMatrices;
+        /**
+         * Effective ("inherit") scale of every bone, following the FBX SDK: the local scale for RSrs bones, and for
+         * RrSs / Rrs bones the local scale multiplied by the scale of the bone's inherit-scale node (the parent for RrSs,
+         * the parent's inherit-scale node for Rrs). Bones are ordered parents first.
+         */
+        private static _computeBoneInheritScales;
+        private static _getBoneInheritScaleNode;
+        /** Scale a bone inherits into its own scale (RrSs chains), or unit scale. */
+        private static _getBoneInheritedScale;
         private static _computeFBXRuntimeLocalMatrix;
         private static _applyParentScaleCompensation;
+        /**
+         * Splits a bone's FBX local matrix into a helper (which cancels the parent scale and carries the translation,
+         * so the translation still follows the parent scale as the SDK does) and the bone's own rotation/scale. For RrSs
+         * bones the inherited scale is folded into the bone scale.
+         */
         private static _splitParentScaleCompensatedLocalMatrix;
         private static _safeInverseScale;
         private static _getInverseScaleVector;
@@ -11603,13 +13089,8 @@ declare namespace BABYLON {
          * In row-vector convention: v' = v * M
          */
         private static _computeFBXLocalMatrix;
-        /**
-         * Apply the FBX transform chain to a Babylon TransformNode or Mesh.
-         * Decomposes the full local matrix into position/rotation/scale.
-         */
-        private static _applyFBXTransform;
+        private _applyRestTRS;
         private static _computeFBXModelLocalMatrix;
-        private static _getBoneReferenceWorldMatrix;
         private static _applyMatrixToTransform;
         private _createAnimationGroup;
         private _buildInheritedRigBoneAnimations;
@@ -11619,9 +13100,61 @@ declare namespace BABYLON {
          * Computes the full FBX transform matrix at each keyframe and decomposes into TRS.
          */
         private _buildNodeAnimations;
+        /**
+         * Baked keys are interpolated linearly by Babylon. Between two frames an FBX cubic segment can deviate from that
+         * line, so sample times are refined (midpoints inserted, up to two levels) wherever the interpolated transform
+         * differs noticeably from the curve. Flat and linear segments stay at frame resolution.
+         */
+        private static _refineSampleTimes;
+        /**
+         * Keys of a scalar property animated by one or more layers: the authored keys when a single layer drives it,
+         * otherwise the frame grid evaluated through the layer stack.
+         * @param sources - Per-layer curves of the property (each with at least one curve)
+         * @param animStack - Stack being converted
+         * @param mapValue - Conversion from the FBX value to the Babylon property value
+         * @returns Animation keys
+         */
+        private _layeredScalarKeys;
+        /**
+         * Maps an animated FBX property (anything other than node transforms and blend shape weights) onto the Babylon
+         * property that carries it: mesh visibility, camera field of view and clip planes, light intensity, colour and
+         * cone angles, and material colours, alpha, roughness and metalness. `group` holds the curve nodes of every
+         * layer animating that property, in layer order; several layers are evaluated through the layer stack.
+         */
+        private _buildPropertyAnimations;
+        /** Records constraints on their nodes and, unless disabled, attaches the runtime behavior that solves them. */
+        private _applyConstraints;
+        /** Collects every recoverable issue the interpreter recorded, stores it on the root node and notifies the caller. */
+        private _reportDiagnostics;
+        /** Curve nodes affecting the inherit scale of a model: its own scale curves and those of its inherit-scale chain. */
+        private _collectInheritScaleCurves;
         private _isVector3KeysConstant;
+        /** Samples the animated Lcl Translation / Rotation / Scaling of a model, blending all layers of the active stack. */
+        private _sampleModelTRS;
+        /**
+         * Local position/rotation/scale of a model from FBX Lcl values. Without pivots and offsets the components map
+         * directly (rotation = pre * lcl * post⁻¹), which keeps zero and negative scales exact. With pivots the full
+         * matrix is built and decomposed.
+         */
+        private static _computeLocalTRS;
+        /** Applies inherit-mode adjustments to a local TRS (see _computeInheritAwareLocalMatrix). */
+        private _adjustTRSForInheritMode;
         private _sampleModelLocalMatrix;
         private _sampleModelScale;
+        /**
+         * Effective scale of a model for inherit-mode math (`inherit_scale` in ufbx terms): its own local scale, multiplied
+         * componentwise by the inherited scale when the model uses RrSs inheritance. `time` samples animation; undefined
+         * uses the rest pose.
+         */
+        private _getInheritScale;
+        /** RrSs nodes inherit scale from their parent; Rrs nodes skip their immediate parent (chaining through Rrs parents). */
+        private _getInheritScaleNode;
+        /**
+         * Local matrix of a model relative to its Babylon parent frame, accounting for inherit modes. For RSrs (the
+         * default) this is the FBX local matrix. For RrSs / Rrs the node sits under a helper that removes the parent's
+         * scale, so translation is pre-scaled by the parent scale and (for RrSs) scale accumulates componentwise.
+         */
+        private _computeInheritAwareLocalMatrix;
         /**
          * Build matrix-baked bone animation from full FBX local transforms.
          * The bind matrix carries the skinning offset, so animation curves drive
@@ -11657,6 +13190,189 @@ declare namespace BABYLON {
 
 
     /**
+     * Runtime evaluation of FBX constraints. An `FBXConstraintBehavior` is attached to each constrained node; all
+     * behaviors of a scene register with one `FBXConstraintSolver`, which solves them in dependency order (a constraint
+     * whose target or parent is driven by another constraint is solved after it) and reuses scratch objects, so solving
+     * allocates nothing per frame.
+     *
+     * The solver brackets the scene's animation phase: before animations run it writes each node's unconstrained
+     * transform back, after they ran it captures the result as the new unconstrained transform and solves. A partial
+     * weight therefore always blends from what animation (or nothing) produced this frame, never from the previous
+     * solve's output, so a 50% weight stays a 50% blend instead of converging on the target.
+     *
+     * All maths happen in FBX space, i.e. relative to the loader's root node, so the handedness conversion applied
+     * at the root never enters the solve.
+     */
+    /** Resolved target of a constraint. */
+    export interface FBXConstraintBehaviorTarget {
+        /** Target node */
+        node: TransformNode;
+        /** Normalized target weight (0..1) */
+        weight: number;
+        /** Offset matrix for parent constraints (in the target's space) */
+        offset: Matrix;
+    }
+    /** Options resolved by the loader when creating the behavior. */
+    export interface FBXConstraintBehaviorOptions {
+        /** Root of the loaded asset; world matrices are made relative to it */
+        root: TransformNode;
+        /** Resolved targets of the constraint, in file order */
+        targets: FBXConstraintBehaviorTarget[];
+        /** World up object of an aim constraint, when it has one */
+        upNode: Nullable<TransformNode>;
+        /** Scene up axis in FBX space */
+        sceneUp: Vector3;
+    }
+    /**
+     * Solves every FBX constraint of a scene once per frame, in dependency order, from the scene's animation phase
+     * observers (`beginFrame` before animations, `solve` after them). Created on demand by the first
+     * `FBXConstraintBehavior` attached in the scene and removed with the last one.
+     */
+    export class FBXConstraintSolver {
+        private readonly _scene;
+        private readonly _behaviors;
+        private _ordered;
+        private _cyclic;
+        private _dirty;
+        private _beforeAnimations;
+        private _afterAnimations;
+        private constructor();
+        /**
+         * Solver of a scene, if any constraint behavior is attached in it.
+         * @param scene - Scene to look up
+         * @returns The solver, or undefined
+         */
+        static Get(scene: Scene): FBXConstraintSolver | undefined;
+        /**
+         * Solver of a scene, created when missing.
+         * @param scene - Scene to look up
+         * @returns The solver
+         */
+        static GetOrCreate(scene: Scene): FBXConstraintSolver;
+        /** Registered behaviors in solve order (a target's constraint before the constraints that read it). */
+        get constraints(): readonly FBXConstraintBehavior[];
+        /**
+         * Behaviors that take part in a dependency cycle (A targets B while B targets A). They are solved after all
+         * acyclic constraints, in registration order, so each sees the other's result from the previous solve.
+         */
+        get cyclicConstraints(): readonly FBXConstraintBehavior[];
+        /**
+         * Adds a behavior to the solve set.
+         * @param behavior - Behavior to add
+         */
+        register(behavior: FBXConstraintBehavior): void;
+        /**
+         * Removes a behavior from the solve set; the solver disposes itself with the last one.
+         * @param behavior - Behavior to remove
+         */
+        unregister(behavior: FBXConstraintBehavior): void;
+        /** Marks the solve order stale, e.g. after re-parenting a constrained node. */
+        invalidateOrder(): void;
+        /**
+         * Start of a frame, before animations run: every constrained node gets its unconstrained transform back, so
+         * that animation either overwrites it or leaves it untouched.
+         */
+        beginFrame(): void;
+        /**
+         * End of the animation phase: takes every constrained node's current transform as its unconstrained value,
+         * then solves every registered constraint once, in dependency order.
+         */
+        solve(): void;
+        private _ensureOrder;
+        private static _IsAncestorOrSelf;
+    }
+    /** Babylon behavior evaluating an FBX aim, parent, position, rotation or scale constraint. */
+    export class FBXConstraintBehavior implements Behavior<TransformNode> {
+        /** Constraint data extracted from the file */
+        readonly constraint: FBXConstraintData;
+        private readonly _options;
+        /** Behavior name (`fbxConstraint:` followed by the constraint name) */
+        readonly name: string;
+        /** Node the behavior is attached to */
+        attachedNode: Nullable<TransformNode>;
+        /** Set to false to pause the constraint without detaching it */
+        enabled: boolean;
+        private readonly _offsetTranslation;
+        private readonly _offsetRotation;
+        private readonly _offsetScale;
+        private readonly _localBasisTransposed;
+        /** Unconstrained transform of the current frame (what animation produced), blended towards the constraint's result. */
+        private readonly _base;
+        private _hasBase;
+        /**
+         * Creates the behavior.
+         * @param constraint - Constraint data extracted from the file
+         * @param _options - Resolved targets and scene information
+         */
+        constructor(
+        /** Constraint data extracted from the file */
+        constraint: FBXConstraintData, _options: FBXConstraintBehaviorOptions);
+        /** Nothing to initialize */
+        init(): void;
+        /**
+         * Registers the behavior with the scene's solver, takes the node's current transform as the unconstrained
+         * value and solves the constraint once.
+         * @param target - Node to constrain
+         */
+        attach(target: TransformNode): void;
+        /** Unregisters the behavior; the node keeps its last solved transform. */
+        detach(): void;
+        /**
+         * Takes the node's current transform as the unconstrained value the next solve blends from. The solver calls
+         * this after the scene's animations ran; call it yourself after writing a transform by hand.
+         */
+        captureBase(): void;
+        /**
+         * Writes the unconstrained transform back to the node. The solver calls this before the scene's animations
+         * run, so a node nothing animates keeps its unconstrained value between frames instead of the solved one.
+         */
+        restoreBase(): void;
+        /**
+         * Nodes whose world transform the solve reads: the targets, the up node and the constrained node's parent.
+         * @returns The nodes, used by the solver to order constraints
+         */
+        dependencyNodes(): Nullable<Node>[];
+        /**
+         * Solves the constraint from the captured unconstrained transform and writes the node's local transform.
+         * Blends are relative to the value captured by `captureBase`, not to whatever the node holds now.
+         */
+        evaluate(): void;
+        /**
+         * World matrix of a node relative to the asset root (FBX space).
+         * @param node - node to evaluate
+         * @param out - matrix receiving the result
+         * @returns `out`
+         */
+        private _fbxWorld;
+        /**
+         * Weighted blend of the targets' world transforms (relative to the root).
+         * @param position - Receives the blended translation
+         * @param rotation - Receives the blended rotation
+         * @param scale - Receives the blended scale
+         * @returns The total target weight, 0 when no target contributes
+         */
+        private _blendTargets;
+        private _applyWeighted;
+        private _applyRotation;
+        private _writePosition;
+        private _writeScaling;
+        private _solvePosition;
+        private _solveRotation;
+        private _solveScale;
+        private _solveParent;
+        private _solveAim;
+        /**
+         * Builds a rotation matrix whose rows are `first`, `second` made orthogonal to it, and their cross product.
+         * @param first - primary axis
+         * @param second - secondary axis
+         * @param out - matrix receiving the basis
+         * @returns false when the axes are parallel or degenerate (`out` is then unchanged)
+         */
+        private static _OrthonormalBasisToRef;
+    }
+
+
+    /**
      * Intermediate representation for parsed FBX data.
      * Both binary and ASCII parsers produce this same structure.
      */
@@ -11670,6 +13386,11 @@ declare namespace BABYLON {
         type: FBXPropertyType;
         /** Parsed property value. */
         value: FBXPropertyValue;
+        /**
+         * Exact decimal text of an int64 whose magnitude exceeds 2^53; `value` then holds the rounded double. Object
+         * ids are the only int64 values where the last bits matter, and `resolveConnections` keys them by this text.
+         */
+        raw?: string;
     }
     /** A node in the FBX document tree */
     export interface FBXNode {
@@ -11696,11 +13417,22 @@ declare namespace BABYLON {
     /** Extract a property value by index, with type narrowing */
     export function getPropertyValue<T extends FBXPropertyValue>(node: FBXNode, index: number): T | undefined;
     /**
-     * Converts an FBX object ID value to a safe JavaScript number.
+     * Validates an FBX object ID value: IDs are 64-bit integers, so anything non-numeric, non-finite or fractional is
+     * rejected. IDs beyond 2^53 are carried losslessly through the property's `raw` text by `resolveConnections`.
      * @param value - Parsed FBX object ID value
-     * @returns The object ID, or undefined when the value is not numeric
+     * @returns The object ID, or undefined when the value cannot be an ID
      */
     export function getSafeFBXObjectId(value: unknown): number | undefined;
+    /** Typed array payload types produced by the parsers. */
+    export type FBXArrayValue = Float32Array | Float64Array | Int32Array | Uint8Array;
+    /**
+     * Returns the array payload of a node.
+     * FBX 7.x stores arrays as a single array property. FBX 6.x (and some 7.x ASCII exporters) store them as a run of
+     * scalar properties, and a one-element array degenerates to a single scalar. All of these are coalesced here.
+     * @param node - Node whose properties hold the array
+     * @returns The array, or null when the node has no numeric payload
+     */
+    export function getNodeArray(node: FBXNode | undefined | null): FBXArrayValue | null;
     /** Get the numeric ID from a node (first property is typically the int64 UID) */
     export function getNodeId(node: FBXNode): number | undefined;
     /**
@@ -11828,25 +13560,9 @@ declare namespace BABYLON {
         /** Recoverable skinning/bind diagnostics */
         diagnostics: FBXSkinDiagnostic[];
     }
-    /**
-     * Extract all skin deformers from the FBX scene.
-     * Returns skin data including bone hierarchy and vertex weights.
-     */
-    export function extractSkins(objectMap: FBXObjectMap): FBXSkinData[];
+    export function extractSkins(objectMap: FBXObjectMap, propertyTemplates?: FBXPropertyTemplateMap): FBXSkinData[];
     export function isSkeletonModel(modelNode: FBXNode): boolean;
-    export function extractBoneTransform(modelNode: FBXNode): {
-        translation: [number, number, number];
-        rotation: [number, number, number];
-        preRotation: [number, number, number];
-        postRotation: [number, number, number];
-        rotationPivot: [number, number, number];
-        scalingPivot: [number, number, number];
-        rotationOffset: [number, number, number];
-        scalingOffset: [number, number, number];
-        scale: [number, number, number];
-        rotationOrder: number;
-        inheritType: number;
-    };
+    export function extractBoneTransform(modelNode: FBXNode, template?: FBXPropertyTemplate): FBXNodeTransformData;
 
 
     export type FBXSceneDiagnosticType = "unsupported-constraint" | "unsupported-helper" | "unsupported-deformer" | "unsupported-node-attribute" | "unsupported-pose" | "unsupported-layered-texture" | "connection-graph";
@@ -11905,6 +13621,160 @@ declare namespace BABYLON {
     export function resolveVector2Property(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string, fallback: [number, number]): [number, number];
     export function resolveVector3Property(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string, fallback: [number, number, number]): [number, number, number];
     export function resolvePropertyValues(node: FBXNode, template: FBXPropertyTemplate | undefined, propertyName: string): FBXPropertyValue[] | undefined;
+    /** A property from a Properties70 ("P") or Properties60 ("Property") block. */
+    export interface FBXPropertyEntry {
+        name: string;
+        type: string;
+        flags: string;
+        values: FBXPropertyValue[];
+    }
+    /**
+     * Lists the properties declared directly on an object, from both the 7.x and 6.x property blocks.
+     * @param node - Object node
+     * @returns Property entries in declaration order (empty when the node has no property block)
+     */
+    export function getPropertyEntries(node: FBXNode | undefined): FBXPropertyEntry[];
+    /** Value of a user property: scalars as-is, vectors and colours as number arrays. */
+    export type FBXUserPropertyValue = string | number | boolean | number[];
+    /**
+     * User-defined properties of an object: those flagged "U" (user) in the property flags. Every DCC exports custom
+     * attributes this way (Maya extra attributes, 3ds Max user properties, Blender custom properties).
+     * @param node - Object node
+     * @returns Map of property name to value, or undefined when the object has none
+     */
+    export function extractUserProperties(node: FBXNode): Record<string, FBXUserPropertyValue> | undefined;
+    export function userPropertyValue(values: FBXPropertyValue[], typeName?: string): FBXUserPropertyValue | undefined;
+
+
+    /**
+     * NURBS curves and surfaces, and polyline ("Line") geometry.
+     *
+     * The basis evaluation and tessellation follow the FBX SDK conventions as implemented by ufbx: knot spans are
+     * subdivided uniformly, closed and periodic curves wrap their control points, and surfaces are tessellated into
+     * quads (degenerate quads at poles become triangles) with welded positions along the wrapped edges.
+     */
+    export type FBXNurbsTopology = "open" | "closed" | "periodic";
+    /** Knot vector and derived data of one parametric direction. */
+    export interface FBXNurbsBasis {
+        order: number;
+        topology: FBXNurbsTopology;
+        knots: Float64Array;
+        /** Parameter range that the curve is defined on */
+        tMin: number;
+        tMax: number;
+        /** Distinct knot values inside [tMin, tMax], i.e. the boundaries of the non-empty spans */
+        spans: Float64Array;
+        /** False when the knot vector is too short or not monotonic */
+        valid: boolean;
+    }
+    /** NURBS curve: homogeneous control points (x, y, z, w) and a basis. */
+    export interface FBXNurbsCurveData {
+        basis: FBXNurbsBasis;
+        /** Control points as x,y,z,w */
+        controlPoints: Float64Array;
+        numControlPoints: number;
+    }
+    /** NURBS surface: control points laid out as `v * numU + u`. */
+    export interface FBXNurbsSurfaceData {
+        basisU: FBXNurbsBasis;
+        basisV: FBXNurbsBasis;
+        numU: number;
+        numV: number;
+        /** Control points as x,y,z,w */
+        controlPoints: Float64Array;
+        flipNormals: boolean;
+        /** Span subdivision stored in the file (Step), 0 when absent */
+        stepU: number;
+        stepV: number;
+    }
+    /** Polyline geometry ready for a lines mesh: one or more open or closed point runs. */
+    export interface FBXCurveGeometryData {
+        id: number;
+        name: string;
+        kind: "line" | "nurbsCurve";
+        /** Each polyline as x,y,z triples; closed runs repeat their first point at the end */
+        polylines: Float64Array[];
+        /** Display colour from the geometry's Color property */
+        color: [number, number, number] | null;
+        diagnostics: FBXGeometryDiagnostic[];
+    }
+    export function createNurbsBasis(order: number, form: string | undefined, knots: Float64Array): FBXNurbsBasis;
+    /**
+     * Evaluates the basis functions (and their derivatives) that are non-zero at `u`.
+     * @returns index of the first influencing control point, or -1 when the basis cannot be evaluated
+     */
+    export function evaluateNurbsBasis(basis: FBXNurbsBasis, u: number, weights: Float64Array, derivatives: Float64Array | null): number;
+    /** Evaluates a curve point; `out` receives position (0..2) and derivative (3..5). */
+    export function evaluateNurbsCurve(curve: FBXNurbsCurveData, u: number, out: Float64Array, weights: Float64Array, derivs: Float64Array): boolean;
+    /** Evaluates a surface point; `out` receives position (0..2), du (3..5) and dv (6..8). */
+    export function evaluateNurbsSurface(surface: FBXNurbsSurfaceData, u: number, v: number, out: Float64Array, scratch: {
+        wu: Float64Array;
+        wv: Float64Array;
+        du: Float64Array;
+        dv: Float64Array;
+    }): boolean;
+    /**
+     * Tessellates a curve into a polyline with `subdivision` segments per knot span. Closed and periodic curves
+     * end on a copy of their first point.
+     */
+    export function tessellateNurbsCurve(curve: FBXNurbsCurveData, subdivision?: number): Float64Array | null;
+    /** Span subdivision to use for a surface direction: an explicit override, else the file's Step, else 4. */
+    export function resolveSpanSubdivision(fileStep: number, override: number | undefined): number;
+    /**
+     * Tessellates a surface into triangles. Positions on wrapped (closed/periodic) edges and at poles are welded
+     * exactly like the FBX SDK does, so degenerate quads collapse into triangles.
+     */
+    export function tessellateNurbsSurface(surface: FBXNurbsSurfaceData, subU: number, subV: number): {
+        positions: Float64Array;
+        indices: Uint32Array;
+        normals: Float64Array;
+        uvs: Float64Array;
+    } | null;
+    /** Reads a NurbsCurve geometry node. */
+    export function extractNurbsCurve(node: FBXNode): FBXNurbsCurveData | null;
+    /** Reads a NurbsSurface geometry node. */
+    export function extractNurbsSurface(node: FBXNode): FBXNurbsSurfaceData | null;
+    /** Tessellates a NurbsSurface geometry node into mesh geometry. */
+    export function nurbsSurfaceToGeometry(node: FBXNode, geometryId: number, subdivisionOverride: number | undefined): FBXGeometryData | null;
+    /** Reads a NurbsCurve geometry node into a tessellated polyline. */
+    export function extractNurbsCurveGeometry(node: FBXNode, geometryId: number, subdivision?: number): FBXCurveGeometryData;
+    /**
+     * Reads a Line geometry node: Points plus PointsIndex where a negative index (~index) ends a segment, as in
+     * polygon vertex indices.
+     */
+    export function extractLineGeometry(node: FBXNode, geometryId: number): FBXCurveGeometryData;
+
+
+    /** Transform properties resolved from an FBX Model, with template defaults applied. */
+    export interface FBXNodeTransformData {
+        translation: [number, number, number];
+        rotation: [number, number, number];
+        scale: [number, number, number];
+        preRotation: [number, number, number];
+        postRotation: [number, number, number];
+        rotationPivot: [number, number, number];
+        scalingPivot: [number, number, number];
+        rotationOffset: [number, number, number];
+        scalingOffset: [number, number, number];
+        geometricTranslation: [number, number, number];
+        geometricRotation: [number, number, number];
+        geometricScaling: [number, number, number];
+        /** Rotation order: 0=XYZ, 1=XZY, 2=YZX, 3=YXZ, 4=ZXY, 5=ZYX, 6=SphericXYZ */
+        rotationOrder: number;
+        /** FBX transform inheritance mode. 0=RrSs, 1=RSrs, 2=Rrs */
+        inheritType: number;
+        /** Whether the rotation space (rotation order, pre/post rotation) is active for this node */
+        rotationActive: boolean;
+        diagnostics: string[];
+    }
+    /**
+     * Resolves the transform properties of a Model node the way the FBX SDK evaluates them.
+     *
+     * `RotationActive` gates the whole rotation space: when it is false (the FbxNode template default), the SDK
+     * composes `Lcl Rotation` in plain XYZ order and ignores `RotationOrder`, `PreRotation` and `PostRotation`.
+     * `RotationSpaceForLimitOnly` restricts the rotation space to limits, which has the same effect for us.
+     */
+    export function extractNodeTransform(modelNode: FBXNode, template?: FBXPropertyTemplate): FBXNodeTransformData;
 
 
     /** Parsed material data */
@@ -11914,6 +13784,10 @@ declare namespace BABYLON {
         type: "Lambert" | "Phong";
         properties: FBXMaterialProperties;
         textures: FBXTextureRef[];
+        /** Unified classic + PBR parameter model resolved from whichever shader flavour the file uses */
+        model: FBXMaterialModel<FBXTextureRef>;
+        /** User-defined properties */
+        userProperties?: Record<string, FBXUserPropertyValue>;
     }
     export interface FBXMaterialProperties {
         diffuseColor?: [number, number, number];
@@ -11949,11 +13823,102 @@ declare namespace BABYLON {
         uvSetIndex?: number;
         /** Which named UV set this texture uses */
         uvSetName?: string;
+        /** WrapModeU: 0 = repeat, 1 = clamp */
+        wrapU?: number;
+        /** WrapModeV: 0 = repeat, 1 = clamp */
+        wrapV?: number;
+        /** Set when the texture came from a LayeredTexture (only the first layer is used) */
+        layeredTextureId?: number;
     }
     /**
      * Extract material data from an FBX Material node.
      */
     export function extractMaterial(materialNode: FBXNode, materialId: number, objectMap: FBXObjectMap, templates?: FBXPropertyTemplateMap): FBXMaterialData;
+    export function extractTextureRef(id: number, node: FBXNode, propertyName: string | undefined, objectMap: FBXObjectMap, template?: FBXPropertyTemplate): FBXTextureRef;
+
+
+    /**
+     * Unified material model.
+     *
+     * FBX materials come in many vendor flavours: the classic FbxSurfaceLambert / FbxSurfacePhong, Autodesk Standard
+     * Surface (OSL), Arnold aiStandardSurface, 3ds Max Physical Material, 3ds Max PBR (metal/rough and spec/gloss),
+     * the 3ds Max glTF material, OpenPBR, and Maya's Stingray PBS ShaderFX graph. Each stores its parameters under
+     * different property names, sometimes behind a shader binding table.
+     *
+     * This module resolves any of them into two parameter sets, mirroring how the FBX SDK / ufbx expose materials:
+     * `fbx` (the classic Lambert/Phong parameters) and `pbr` (a physically based parameter set), plus feature flags.
+     */
+    export type FBXShaderType = "unknown" | "fbxLambert" | "fbxPhong" | "oslStandardSurface" | "arnoldStandardSurface" | "3dsMaxPhysicalMaterial" | "3dsMaxPbrMetalRough" | "3dsMaxPbrSpecGloss" | "gltfMaterial" | "openPbrMaterial" | "shaderFxGraph";
+    /** One resolved material parameter: a constant value and/or a texture. */
+    export interface FBXMaterialMap<TTexture> {
+        /** Constant value (r,g,b,a for colours, x for scalars) */
+        value?: number[];
+        /** Number of meaningful components in `value` (1 for scalars, 3 or 4 for colours) */
+        valueComponents: number;
+        /** Texture bound to the parameter */
+        texture?: TTexture;
+        /** Whether the texture is enabled (some vendors carry an explicit toggle) */
+        textureEnabled: boolean;
+    }
+    export type FBXFbxMapName = "diffuseFactor" | "diffuseColor" | "specularFactor" | "specularColor" | "specularExponent" | "reflectionFactor" | "reflectionColor" | "transparencyFactor" | "transparencyColor" | "emissionFactor" | "emissionColor" | "ambientFactor" | "ambientColor" | "normalMap" | "bump" | "bumpFactor" | "displacement" | "displacementFactor" | "vectorDisplacement" | "vectorDisplacementFactor";
+    export type FBXPbrMapName = "baseFactor" | "baseColor" | "roughness" | "metalness" | "diffuseRoughness" | "specularFactor" | "specularColor" | "specularIor" | "specularAnisotropy" | "specularRotation" | "transmissionFactor" | "transmissionColor" | "transmissionDepth" | "transmissionScatter" | "transmissionScatterAnisotropy" | "transmissionDispersion" | "transmissionRoughness" | "transmissionExtraRoughness" | "transmissionPriority" | "transmissionEnableInAov" | "subsurfaceFactor" | "subsurfaceColor" | "subsurfaceRadius" | "subsurfaceScale" | "subsurfaceAnisotropy" | "subsurfaceTintColor" | "subsurfaceType" | "sheenFactor" | "sheenColor" | "sheenRoughness" | "coatFactor" | "coatColor" | "coatRoughness" | "coatIor" | "coatAnisotropy" | "coatRotation" | "coatNormal" | "coatAffectBaseColor" | "coatAffectBaseRoughness" | "thinFilmFactor" | "thinFilmThickness" | "thinFilmIor" | "emissionFactor" | "emissionColor" | "opacity" | "indirectDiffuse" | "indirectSpecular" | "normalMap" | "tangentMap" | "displacementMap" | "matteFactor" | "matteColor" | "ambientOcclusion" | "glossiness" | "coatGlossiness" | "transmissionGlossiness";
+    export type FBXMaterialFeatureName = "pbr" | "metalness" | "diffuse" | "specular" | "emission" | "transmission" | "coat" | "sheen" | "opacity" | "ambientOcclusion" | "matte" | "unlit" | "ior" | "diffuseRoughness" | "transmissionRoughness" | "thinWalled" | "caustics" | "exitToBackground" | "internalReflections" | "doubleSided" | "roughnessAsGlossiness" | "coatRoughnessAsGlossiness" | "transmissionRoughnessAsGlossiness";
+    export interface FBXMaterialModel<TTexture> {
+        shaderType: FBXShaderType;
+        /** Prefix material property names carry for this shader (e.g. "3dsMax|Parameters|") */
+        shaderPropPrefix: string;
+        fbx: Partial<Record<FBXFbxMapName, FBXMaterialMap<TTexture>>>;
+        pbr: Partial<Record<FBXPbrMapName, FBXMaterialMap<TTexture>>>;
+        features: Partial<Record<FBXMaterialFeatureName, {
+            enabled: boolean;
+            explicit: boolean;
+        }>>;
+    }
+    /** Inputs needed to resolve a material, independent of the parse representation. */
+    export interface FBXMaterialSource<TTexture> {
+        /** "lambert", "phong", "unknown", ... as written in the file */
+        shadingModelName: string;
+        /** Property values by full property name (e.g. "DiffuseColor", "Maya|baseColor", "3dsMax|Parameters|roughness") */
+        props: Map<string, {
+            type: string;
+            values: FBXPropertyValue[];
+        }>;
+        /** Textures connected to the material by property name (OP connection property) */
+        texturesByProp: Map<string, TTexture>;
+        /** Connected shader implementation, when any */
+        shader?: {
+            renderApi: string;
+            /** shader semantic name -> material property names */
+            bindings: Map<string, string[]>;
+        };
+    }
+    /** Shader types whose parameters are physically based; the loader emits PBR materials for them by default. */
+    export function isPbrShaderType(type: FBXShaderType): boolean;
+    /** Detects the shader flavour of a material from its shading model name, connected shader and 3ds Max class ids. */
+    export function detectShaderType<T>(source: FBXMaterialSource<T>): {
+        shaderType: FBXShaderType;
+        shaderPropPrefix: string;
+    };
+    /**
+     * Resolves the unified material model from raw material data.
+     */
+    export function resolveMaterialModel<T>(source: FBXMaterialSource<T>): FBXMaterialModel<T>;
+    /** Colour (first three components) of a map, or undefined. */
+    export function mapColor<T>(map: FBXMaterialMap<T> | undefined): [number, number, number] | undefined;
+    /** Scalar (first component) of a map, or undefined. */
+    export function mapScalar<T>(map: FBXMaterialMap<T> | undefined): number | undefined;
+
+
+    /**
+     * FBX 5.x (and older) documents store everything at the top level: one `Model` node per object with inline
+     * geometry, materials, skin links, lights and cameras, and `Children` lists instead of connections. This module
+     * rewrites such a document into the 6.x layout (`Objects`, `Connections`, `Takes`) so the rest of the importer
+     * can treat both the same way. The rules follow the FBX SDK's legacy reader as implemented by ufbx.
+     */
+    /** True for pre-6000 files: no `Objects` section but top-level `Model` nodes. */
+    export function isLegacyDocument(doc: FBXDocument): boolean;
+    /** Rewrites a legacy document into the 6.x object/connection layout. */
+    export function upgradeLegacyDocument(doc: FBXDocument): FBXDocument;
 
 
     /** A named UV set */
@@ -11966,7 +13931,7 @@ declare namespace BABYLON {
     /** Recoverable geometry import issue. */
     export interface FBXGeometryDiagnostic {
         /** Diagnostic category. */
-        type: "degenerate-polygon" | "triangulation-fallback" | "layer-index-out-of-bounds" | "layer-data-too-short";
+        type: "degenerate-polygon" | "triangulation-fallback" | "layer-index-out-of-bounds" | "layer-data-too-short" | "nurbs-invalid" | "nurbs-trim-ignored" | "nurbs-deformer-ignored";
         /** Human-readable diagnostic message. */
         message: string;
         /** Polygon index associated with the diagnostic, if applicable. */
@@ -12017,8 +13982,10 @@ declare namespace BABYLON {
         id: number;
         name: string;
         subType: string;
-        /** Geometry attached to this model (if it's a Mesh type) */
+        /** Geometry attached to this model (meshes and tessellated NURBS surfaces) */
         geometry?: FBXGeometryData;
+        /** Curve geometry attached to this model (Line and NurbsCurve) */
+        curve?: FBXCurveGeometryData;
         /** Materials assigned to this model */
         materials: FBXMaterialData[];
         /** Child models */
@@ -12050,18 +14017,68 @@ declare namespace BABYLON {
         /** Whether backface culling is disabled ("CullingOff") */
         cullingOff: boolean;
         /** User-defined custom properties from Properties70 */
-        customProperties?: Record<string, string | number | boolean>;
+        customProperties?: Record<string, FBXUserPropertyValue>;
+        /** LOD group settings when this model is a LodGroup; children are the levels in order */
+        lodGroup?: FBXLodGroupData;
+        /** Display layer (CollectionExclusive) the model belongs to */
+        displayLayer?: FBXDisplayLayerData;
         /** Recoverable model import diagnostics */
         diagnostics: string[];
+    }
+    /** LOD group settings (NodeAttribute "LodGroup") */
+    export interface FBXLodGroupData {
+        /** Switch distance for level i+1 (level 0 has none). In scene units, or percent of screen when `relative`. */
+        thresholds: number[];
+        /** ThresholdsUsedAsPercentage */
+        relative: boolean;
+        /** DisplayLevels|LevelN: 0 use LOD, 1 show, 2 hide */
+        displayLevels: number[];
+    }
+    /** Display layer (CollectionExclusive "DisplayLayer") */
+    export interface FBXDisplayLayerData {
+        id: number;
+        name: string;
+        show: boolean;
+        freeze: boolean;
+        color: [number, number, number];
+        modelIds: number[];
+    }
+    /** One member of a selection set: a model, optionally with a component selection on its mesh */
+    export interface FBXSelectionNodeData {
+        modelId: number;
+        /** IsTheNodeInSet: the whole node is selected (as opposed to only components) */
+        includeNode: boolean;
+        /** Selected control point indices (VertexIndexArray) */
+        vertices?: number[];
+        /** Selected edge indices (EdgeIndexArray) */
+        edges?: number[];
+        /** Selected polygon indices (PolygonIndexArray) */
+        faces?: number[];
+    }
+    /** Selection set (Collection "SelectionSet") */
+    export interface FBXSelectionSetData {
+        id: number;
+        name: string;
+        members: FBXSelectionNodeData[];
     }
     /** Camera data extracted from FBX */
     export interface FBXCameraData {
         /** Model ID this camera is attached to */
         modelId: number;
+        /** NodeAttribute object ID (animation curves target this) */
+        attributeId: number;
         /** Camera name */
         name: string;
-        /** Field of view in degrees */
+        /** Vertical field of view in degrees */
         fieldOfView: number;
+        /** Horizontal field of view in degrees */
+        fieldOfViewX: number;
+        /** ApertureMode: 0 horizontal and vertical, 1 horizontal, 2 vertical, 3 focal length */
+        apertureMode: number;
+        /** Aperture (film gate after gate fit) size in inches */
+        apertureSizeInch: [number, number];
+        /** Orthographic view size (width, height) in scene units */
+        orthographicSize: [number, number];
         /** Near clip plane */
         nearPlane: number;
         /** Far clip plane */
@@ -12080,6 +14097,8 @@ declare namespace BABYLON {
         orthoZoom?: number;
         /** Camera roll in degrees when present */
         roll?: number;
+        /** User-defined properties on the camera attribute */
+        userProperties?: Record<string, FBXUserPropertyValue>;
         /** Known unsupported or unrecognized camera properties */
         unknownProperties: string[];
         /** Recoverable camera import diagnostics */
@@ -12089,6 +14108,8 @@ declare namespace BABYLON {
     export interface FBXLightData {
         /** Model ID this light is attached to */
         modelId: number;
+        /** NodeAttribute object ID (animation curves target this) */
+        attributeId: number;
         /** Light name */
         name: string;
         /** Light type: 0=Point, 1=Directional, 2=Spot */
@@ -12113,6 +14134,15 @@ declare namespace BABYLON {
         enableFarAttenuation?: boolean;
         /** Whether the source light requested shadow casting */
         castShadows?: boolean;
+        /** Near/far attenuation ranges in scene units (when enabled) */
+        nearAttenuationStart?: number;
+        nearAttenuationEnd?: number;
+        farAttenuationStart?: number;
+        farAttenuationEnd?: number;
+        /** Area light shape: 0 rectangle, 1 sphere */
+        areaLightShape?: number;
+        /** User-defined properties on the light attribute */
+        userProperties?: Record<string, FBXUserPropertyValue>;
         /** Known unsupported or unrecognized light properties */
         unknownProperties: string[];
         /** Recoverable light import diagnostics */
@@ -12124,6 +14154,8 @@ declare namespace BABYLON {
         rootModels: FBXModelData[];
         /** All geometries in the scene */
         geometries: FBXGeometryData[];
+        /** All curve geometries (lines and tessellated NURBS curves) */
+        curves: FBXCurveGeometryData[];
         /** All materials in the scene */
         materials: FBXMaterialData[];
         /** Skin deformers (skeletons + vertex weights) */
@@ -12140,6 +14172,12 @@ declare namespace BABYLON {
         lights: FBXLightData[];
         /** Scene-level unsupported feature diagnostics */
         diagnostics: FBXSceneDiagnostic[];
+        /** Constraints (aim, parent, position, rotation, scale, IK) */
+        constraints: FBXConstraintData[];
+        /** Display layers */
+        displayLayers: FBXDisplayLayerData[];
+        /** Selection sets */
+        selectionSets: FBXSelectionSetData[];
         /** Global settings */
         upAxis: number;
         upAxisSign: number;
@@ -12148,11 +14186,89 @@ declare namespace BABYLON {
         coordAxis: number;
         coordAxisSign: number;
         unitScaleFactor: number;
+        /** Scene frame rate derived from GlobalSettings TimeMode / CustomFrameRate */
+        frameRate: number;
     }
     /**
      * Interpret a parsed FBX document into scene data.
      */
-    export function interpretFBX(doc: FBXDocument): FBXSceneData;
+    /** Options controlling how the document is interpreted. */
+    export interface FBXInterpretOptions {
+        /** Segments per knot span when tessellating NURBS surfaces; defaults to the Step stored in the file */
+        nurbsSubdivision?: number;
+        /** Shift every clip so its first key sits at time 0 (default true); false keeps the authored times */
+        rebaseKeyframes?: boolean;
+    }
+    export function interpretFBX(doc: FBXDocument, options?: FBXInterpretOptions): FBXSceneData;
+
+
+    export type FBXConstraintType = "aim" | "parent" | "position" | "rotation" | "scale" | "singleChainIK" | "unknown";
+    export type Vec3 = [number, number, number];
+    export type Bool3 = [boolean, boolean, boolean];
+    /** One weighted target of a constraint. */
+    export interface FBXConstraintTarget {
+        /** Model id of the target node */
+        modelId: number;
+        /** Normalized weight (file value / 100, or as-is for IK pole targets) */
+        weight: number;
+        /** Parent constraint translation offset expressed in the target's space */
+        offsetTranslation: Vec3;
+        /** Parent constraint rotation offset in degrees, expressed in the target's space */
+        offsetRotation: Vec3;
+        /** Parent constraint scale offset expressed in the target's space */
+        offsetScale: Vec3;
+    }
+    /** A constraint object of the file, with its targets and parameters resolved. */
+    export interface FBXConstraintData {
+        /** Constraint object id */
+        id: number;
+        /** Constraint name */
+        name: string;
+        /** Resolved constraint kind */
+        type: FBXConstraintType;
+        /** Constraint type name as written in the file (e.g. "Parent-Child") */
+        typeName: string;
+        /** Constrained model */
+        nodeId?: number;
+        /** Weighted targets in file order */
+        targets: FBXConstraintTarget[];
+        /** Global weight (file value / 100) */
+        weight: number;
+        /** False when the constraint is switched off in the file */
+        active: boolean;
+        /** Which translation axes the constraint drives */
+        affectTranslation: Bool3;
+        /** Which rotation axes the constraint drives */
+        affectRotation: Bool3;
+        /** Which scale axes the constraint drives */
+        affectScale: Bool3;
+        /** Translation offset of the constrained node */
+        offsetTranslation: Vec3;
+        /** Rotation offset of the constrained node, in degrees */
+        offsetRotation: Vec3;
+        /** Scale offset of the constrained node */
+        offsetScale: Vec3;
+        /** Aim: local axis that points at the target */
+        aimVector: Vec3;
+        /** Aim: local axis aligned with the up direction */
+        upVector: Vec3;
+        /** Aim: world up direction (world up modes 2 and 3) */
+        worldUpVector: Vec3;
+        /** Aim: 0 scene up, 1 aim up node, 2 align to node, 3 vector, 4 none */
+        worldUpType: number;
+        /** Aim: model id of the world up object (world up modes 1 and 2) */
+        worldUpNodeId?: number;
+        /** Single chain IK: model id of the first joint of the chain */
+        ikFirstJointId?: number;
+        /** Single chain IK: model id of the last joint of the chain */
+        ikEndJointId?: number;
+        /** Single chain IK: model id of the effector */
+        ikEffectorId?: number;
+        /** Single chain IK: pole vector */
+        ikPoleVector: Vec3;
+    }
+    /** Reads every constraint object of the scene. */
+    export function extractConstraints(objectMap: FBXObjectMap): FBXConstraintData[];
 
 
     /** Connection type: OO = object-to-object, OP = object-to-property */
@@ -12175,7 +14291,7 @@ declare namespace BABYLON {
         /** Object node. */
         node: FBXNode;
         /** Source of the object entry. */
-        source: "Objects" | "legacySyntheticGeometry";
+        source: "Objects" | "legacySyntheticGeometry" | "legacySyntheticAttribute" | "legacySyntheticBlendShape";
         /** Legacy string object name, when applicable. */
         legacyName?: string;
         /** True if the object was synthesized for legacy compatibility. */
@@ -12296,7 +14412,23 @@ declare namespace BABYLON {
     export function extractBlendShapes(objectMap: FBXObjectMap): FBXBlendShapeData[];
 
 
+    /**
+     * FBX animation curve model and evaluator.
+     *
+     * Keys carry cubic Bezier tangents expressed the way the FBX SDK stores them: a left and right tangent with a time
+     * extent (dx, as a fraction of the segment scaled by the tangent weight) and a value extent (dy). Linear and constant
+     * segments are represented the same way so that a single evaluator handles every case, including the weighted
+     * tangents Maya and MotionBuilder write, TCB keys, and the pre/post extrapolation modes.
+     */
+    /** FBX time units: 46186158000 ticks per second */
+    export const FBX_TIME_UNIT = 46186158000;
     export type FBXInterpolationType = "constant" | "linear" | "cubic";
+    export type FBXExtrapolationMode = "constant" | "repeat" | "mirror" | "slope" | "repeatRelative";
+    export interface FBXExtrapolation {
+        mode: FBXExtrapolationMode;
+        /** Number of repetitions, or -1 for infinite */
+        repeatCount: number;
+    }
     /** A single keyframe */
     export interface FBXKeyframe {
         /** Time in seconds */
@@ -12307,9 +14439,15 @@ declare namespace BABYLON {
         interpolation: FBXInterpolationType;
         /** Constant interpolation variant */
         constantMode?: "standard" | "next";
-        /** Cubic outgoing slope in value units per second */
+        /** Left (incoming) tangent: time extent in seconds and value extent */
+        leftDx: number;
+        leftDy: number;
+        /** Right (outgoing) tangent: time extent in seconds and value extent */
+        rightDx: number;
+        rightDy: number;
+        /** Cubic outgoing slope in value units per second (derived, kept for consumers that export hermite keys) */
         rightSlope?: number;
-        /** Cubic incoming slope for the next key, in value units per second */
+        /** Cubic incoming slope for the next key, in value units per second (derived) */
         nextLeftSlope?: number;
     }
     /** An animation curve (one axis of one property) */
@@ -12320,7 +14458,53 @@ declare namespace BABYLON {
         keys: FBXKeyframe[];
         /** True for baked sample curves that should be connected as linear samples */
         isSampled?: boolean;
+        preExtrapolation?: FBXExtrapolation;
+        postExtrapolation?: FBXExtrapolation;
     }
+    /** Raw key attribute data for one key, after run-length decoding. */
+    export interface FBXKeyAttributes {
+        flags: number;
+        data: [number, number, number, number];
+    }
+    /**
+     * Builds keyframes from parallel time/value arrays and their (run-length encoded) attributes, resolving every
+     * tangent mode the FBX SDK writes: user, broken, auto (with clamp / progressive clamp / time-independent flags and
+     * auto bias), TCB, weighted, linear and constant.
+     */
+    export function buildKeyframes(times: ArrayLike<number>, values: ArrayLike<number>, attributes: (index: number) => FBXKeyAttributes): FBXKeyframe[];
+    /** Auto tangent as the FBX SDK computes it, including clamping and auto bias. */
+    export function solveAutoTangent(prevTime: number, time: number, nextTime: number, prevValue: number, value: number, nextValue: number, weightLeft: number, weightRight: number, autoBias: number, flags: number): number;
+    /** Builds a keyframe list from explicit per-key slopes (legacy Takes and synthetic curves). */
+    export function keyframesFromSlopes(times: number[], values: number[], interpolation: FBXInterpolationType[], constantNext: boolean[], leftSlope: number[], rightSlope: number[], leftWeight?: number[], rightWeight?: number[]): FBXKeyframe[];
+    /** Reads a `Pre-Extrapolation` / `Post-Extrapolation` block: `Type` is a character code, `Repetition` a count. */
+    export function parseExtrapolation(typeValue: unknown, repetitionValue: unknown): FBXExtrapolation;
+    export function evaluateCurve(curve: FBXCurveData | undefined, time: number, defaultValue: number, noExtrapolation?: boolean): number;
+    export type Vec3 = [number, number, number];
+    export type Quat = [number, number, number, number];
+    /** Euler angles in degrees with an FBX rotation order (0=XYZ ... 5=ZYX; spheric falls back to XYZ) to a quaternion. */
+    export function eulerToQuat(v: Vec3, order: number): Quat;
+    /** Quaternion to Euler angles in degrees for an FBX rotation order (inverse of eulerToQuat). */
+    export function quatToEuler(q: Quat, order: number): Vec3;
+    /** Blend semantics of an animation layer, derived from its BlendMode and accumulation modes. */
+    export interface FBXLayerBlend {
+        /** Layer participates in blending (BlendMode Additive or Override Passthrough) */
+        blended: boolean;
+        /** Layer adds onto the result instead of replacing it (BlendMode Additive) */
+        additive: boolean;
+        /** Rotations compose as quaternions (RotationAccumulationMode ByLayer) */
+        composeRotation: boolean;
+        /** Scales compose multiplicatively (ScaleAccumulationMode Multiply) */
+        composeScale: boolean;
+        /** Layer weight in [0, 1] */
+        weight: number;
+    }
+    /**
+     * Combines one animation layer's value into the running result, exactly as the FBX SDK evaluator does.
+     * `kind` selects the accumulation rule: "R" rotations (degrees, rotation order given), "S" scales, anything else linear.
+     */
+    export function combineLayerValue(result: Vec3, value: Vec3, layer: FBXLayerBlend, kind: "T" | "R" | "S" | "other", rotationOrder: number): Vec3;
+
+
     /** An animation curve node (T/R/S for one bone) */
     export interface FBXCurveNodeData {
         /** Property type: "T" (translation), "R" (rotation), "S" (scale) */
@@ -12329,13 +14513,19 @@ declare namespace BABYLON {
         targetModelId: number;
         /** Curves for each axis */
         curves: FBXCurveData[];
+        /** Index of the owning layer within the stack's layer list */
+        layerIndex: number;
+        /** Default channel values (`d|X`, `d|Y`, `d|Z`) used for channels without a curve */
+        defaultValues?: [number, number, number];
     }
-    /** Unsupported animation curve node preserved for diagnostics and future support. */
+    /** Non-transform animation curve node (property animation), evaluated by the loader when a Babylon mapping exists. */
     export interface FBXUnsupportedCurveNodeData {
         /** Raw AnimationCurveNode property type/name */
         type: string;
         /** CurveNode object ID */
         id: number;
+        /** Index of the owning layer within the stack's layer list */
+        layerIndex: number;
         /** Target object ID if the curve node is connected to an object/property */
         targetId: number | null;
         /** OP connection property name on the target, e.g. Visibility */
@@ -12374,12 +14564,24 @@ declare namespace BABYLON {
         normalizedWeight: number;
         /** Blend mode: 0=Additive, 1=Override, 2=OverridePassthrough */
         blendMode: number;
+        /** Resolved blend semantics used by the evaluator */
+        blend: FBXLayerBlend;
+        /** Animated layer weight (0-100), when the Weight property carries a curve */
+        weightCurve?: FBXCurveData;
         /** Curve nodes in this layer */
         curveNodes: FBXCurveNodeData[];
         /** Unsupported/non-TRS curve nodes preserved for diagnostics */
         unsupportedCurveNodes: FBXUnsupportedCurveNodeData[];
         /** Recoverable layer diagnostics */
         diagnostics: FBXAnimationDiagnostic[];
+    }
+    /** Options for animation extraction. */
+    export interface FBXAnimationExtractOptions {
+        /**
+         * Shift each clip so its first key sits at time 0 (default true). False keeps the times authored in the file, so
+         * clips of one file stay aligned with each other and with the declared stack range.
+         */
+        rebaseKeyframes?: boolean;
     }
     /** One animation clip (AnimationStack) */
     export interface FBXAnimationStackData {
@@ -12403,13 +14605,7 @@ declare namespace BABYLON {
     /**
      * Extract all animation stacks from the FBX scene.
      */
-    export function extractAnimations(objectMap: FBXObjectMap): FBXAnimationStackData[];
-    /**
-     * Determines whether a key sequence appears to be a uniformly frame-baked sampled curve.
-     * @param keys - Keyframes to inspect
-     * @returns true if the keys look like sampled frame data rather than authored interpolation
-     */
-    export function isFrameBakedSampledCurve(keys: readonly FBXKeyframe[]): boolean;
+    export function extractAnimations(objectMap: FBXObjectMap, doc?: FBXDocument, options?: FBXAnimationExtractOptions): FBXAnimationStackData[];
     /**
      * Samples an FBX animation curve at a specific time.
      * @param curveData - Curve data to sample
@@ -12417,6 +14613,54 @@ declare namespace BABYLON {
      * @returns The sampled value, or null when the curve has no keys
      */
     export function sampleFBXCurveAtTime(curveData: FBXCurveData | undefined, time: number): number | null;
+    /**
+     * Pre-7000 files store animation in a top-level `Takes` block instead of AnimationStack/Layer/CurveNode objects:
+     *
+     *   Takes: { Take: "name" { LocalTime: start, stop
+     *     Model: "Model::joint1" { Channel: "Transform" { Channel: "T" { Channel: "X" { Default, KeyVer, KeyCount, Key } } } } } }
+     *
+     * Each take becomes one animation stack with a single layer. Models are matched through the same legacy string ids
+     * that the connection resolver synthesizes for 6.x objects.
+     */
+    export function extractLegacyTakes(doc: FBXDocument, objectMap: FBXObjectMap, rebaseKeyframes?: boolean): FBXAnimationStackData[];
+    /**
+     * Evaluates one transform channel (T, R or S) of a target at `time`, blending every animation layer of the stack the
+     * way the FBX SDK does: the first layer animating the channel replaces the static value, later layers are combined
+     * according to their blend mode, weight and accumulation modes.
+     * @param curveNodes - Curve nodes targeting this model (any layers, any types)
+     * @param layers - Stack layers, in order
+     * @param type - Channel to evaluate
+     * @param staticValue - Value when nothing animates the channel
+     * @param rotationOrder - Rotation order of the target (for rotation composition)
+     * @param time - Time in seconds
+     */
+    export function evaluateLayeredChannel(curveNodes: readonly FBXCurveNodeData[], layers: readonly FBXAnimationLayerData[], type: "T" | "R" | "S", staticValue: readonly [number, number, number], rotationOrder: number, time: number): [number, number, number];
+    /** Curves of one animated property (or blend shape weight) contributed by one animation layer. */
+    export interface FBXLayeredPropertySource {
+        /** Index of the owning layer within the stack's layer list */
+        layerIndex: number;
+        /** Curves of the property, keyed by channel name (`d|X`, `d|DeformPercent`, ...) */
+        curves: readonly FBXCurveData[];
+        /** Default channel values stored on the curve node */
+        defaultValues?: Record<string, number>;
+    }
+    /**
+     * Evaluates an animated property through the animation layers: the base layer replaces the static value, every
+     * further layer blends onto the running result according to its blend mode and (possibly animated) weight, like
+     * `evaluateLayeredChannel` does for transforms.
+     * @param sources - Per-layer curves of the property
+     * @param layers - Stack layers, in order
+     * @param channels - Channel names to evaluate, in output order
+     * @param staticValue - Value per channel when nothing animates it
+     * @param time - Time in seconds
+     * @returns One value per channel
+     */
+    export function evaluateLayeredProperty(sources: readonly FBXLayeredPropertySource[], layers: readonly FBXAnimationLayerData[], channels: readonly string[], staticValue: readonly number[], time: number): number[];
+    /**
+     * True when every curve of the given channel is inside a constant (stepped) segment at `time`, so a baked key at
+     * that time should hold its value instead of interpolating towards the next sample.
+     */
+    export function isChannelSteppedAt(curveNodes: readonly FBXCurveNodeData[], type: "T" | "R" | "S", time: number): boolean;
 
 
     /** Pure barrel — re-exports only side-effect-free modules */

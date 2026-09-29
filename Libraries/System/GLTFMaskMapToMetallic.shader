@@ -3,6 +3,8 @@ Shader "Hidden/Export/MaskMapToMetalRoughChannel" {
         _MaskMap("Texture", 2D) = "white" {}
         _GlossinessScale("Glossiness Scale", float) = 1.0
         _MetallicScale("Metallic Scale", float) = 1.0
+        _MetallicBias("Metallic Bias", float) = 0.0
+        _GlossinessBias("Glossiness Bias", float) = 0.0
         _FlipY("Flip texture Y", Int) = 0
         _GLTF("Is GLTF", Int) = 0
     }
@@ -30,6 +32,8 @@ Shader "Hidden/Export/MaskMapToMetalRoughChannel" {
             sampler2D _MaskMap;
             float _GlossinessScale;
             float _MetallicScale;
+            float _MetallicBias;
+            float _GlossinessBias;
             int _FlipY;
             int _GLTF;
 
@@ -45,14 +49,17 @@ Shader "Hidden/Export/MaskMapToMetalRoughChannel" {
                 // Unity MaskMap: R=Metallic, G=AO, B=DetailMask, A=Smoothness
                 float4 m = tex2D(_MaskMap, output.texcoord);
 
-                float metallic = m.r;
-                float smoothness = m.a;
-                float roughness = 1.0 - (smoothness * _GlossinessScale);
+                // HDRP remaps each channel: lerp(remapMin, remapMax, sample), which is
+                // `sample * scale + bias` (LitDataIndividualLayer.hlsl:242-243, 258-261). Built-in and
+                // URP pass bias 0, so `sample * scale` is unchanged for them.
+                float metallic = saturate(m.r * _MetallicScale + _MetallicBias);
+                float smoothness = saturate(m.a * _GlossinessScale + _GlossinessBias);
+                float roughness = 1.0 - smoothness;
 
                 float4 outTex;
                 outTex.r = 0.0;
                 outTex.g = saturate(roughness);
-                outTex.b = saturate(metallic * _MetallicScale);
+                outTex.b = metallic;
                 outTex.a = 1.0;
                 return outTex;
             }

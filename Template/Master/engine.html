@@ -610,7 +610,9 @@
                 //    }
                 //    window.setTimeout(()=>{ window.hideSceneLoader(); }, 3000);
                 //}
-                engine.runRenderLoop(() => { 
+                // One render loop at a time: a reload replaces the previous loop instead of stacking another one.
+                if (window.sceneRenderLoop != null) engine.stopRenderLoop(window.sceneRenderLoop);
+                window.sceneRenderLoop = () => { 
                     if (TOOLKIT.SceneManager.RenderLoopReady === true && TOOLKIT.SceneManager.PauseRenderLoop === false && TOOLKIT.SceneManager.LostRenderContext === false) {
                         if (window.METER) {
                             window.METER.tickStart();
@@ -632,7 +634,8 @@
                             }
                         }
                     }
-                });
+                };
+                engine.runRenderLoop(window.sceneRenderLoop);
                 window.resizeRenderingCanvas();
                 // DEPRECIATED
                 // if (autohide === true) {
@@ -655,6 +658,12 @@
     };
     window.loadSceneFile = () => {
         loaded = false;
+        // Unload the previous scene first so it can be garbage-collected (render loop, scene and default camera).
+        if (window.sceneRenderLoop != null) { engine.stopRenderLoop(window.sceneRenderLoop); window.sceneRenderLoop = null; }
+        if (window.dxcam != null) window.dxcam = null;
+        if (window.scene != null && window.scene.isDisposed !== true) {
+            try { TOOLKIT.SceneManager.DisposeScene(window.scene); } catch (e) { console.warn("Dispose previous scene failed: " + e); }
+        }
         window.scene = null;
         window.showSceneLoader();
         window.executeSceneLoader(scenepath, scenename);

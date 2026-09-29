@@ -317,6 +317,17 @@ declare namespace BABYLON {
 
 
     /**
+     * Max value the sky shader may write before the bound render target stores it as +Inf (which would
+     * corrupt anything reading the texture back, e.g. an IBL CDF). Derived from the RT's texture type:
+     * half-float caps at its 65504 ceiling; float is effectively unbounded (a huge finite +Inf guard);
+     * anything else (8-bit LDR, or the default framebuffer when no RT is bound) is [0,1]. Only used when
+     * `rawHdrOutput` is enabled.
+     * @param textureType the bound render target's texture type (Constants.TEXTURETYPE_*), or undefined
+     * @returns the maximum color value that can be stored without overflowing to +Inf
+     * @internal
+     */
+    export function _MaxColorValueForRenderTarget(textureType: number | undefined): number;
+    /**
      * This is the sky material which allows to create dynamic and texture free effects for skyboxes.
      * @see https://doc.babylonjs.com/toolsAndResources/assetLibraries/materialsLibrary/skyMat
      */
@@ -378,6 +389,28 @@ declare namespace BABYLON {
          * Defines if sky should be dithered.
          */
         dithering: boolean;
+        /**
+         * When enabled, the material emits scene-referred linear HDR: `luminance` acts as a plain linear
+         * gain (no filmic tonemap), the output is clamped to the bound render target's max representable
+         * value rather than [0, 1] (so a bright sun cannot overflow to +Inf), and no sRGB encode is
+         * applied. Enable this to bake the sky into an HDR (float / half-float) render target — e.g. an
+         * IBL environment cube — where the full dynamic range of the sun disc must be preserved. The
+         * clamp ceiling follows whatever target is bound at draw time (65504 for half-float, effectively
+         * unbounded for float); if the sky is drawn to an LDR target or the default framebuffer it falls
+         * back to [0, 1], so this flag is only meaningful when rendering into a float/half-float target.
+         * When disabled, the material produces tonemapped, display-referred output for direct viewing.
+         */
+        rawHdrOutput: boolean;
+        /**
+         * Cloud cover over the sun in [0, 1] (0 = clear direct sun, default; 1 = sun fully hidden). This
+         * softens only the *sun disc* — the sky dome color itself is unchanged (there is no overcast
+         * graying or whitening of the sky). At 0 the sun is a sharp solar disc; above 0 a physically-
+         * based single-scattering cloud model attenuates the direct beam (Beer–Lambert) and redistributes
+         * the removed energy into a dual-lobe Henyey–Greenstein aureole, energy-conserving as it broadens
+         * (thin cloud → tight silver lining; heavy cloud → broad, directionless glow). See the sun-disc
+         * branch in sky.fragment for the model + references.
+         */
+        cloudiness: number;
         private _cameraPosition;
         private _skyOrientation;
         private static readonly _ShaderLoader;
@@ -551,6 +584,16 @@ declare namespace BABYLON {
     };
 
 
+    /**
+     * A transparent "shadow catcher" material: it renders only shadow strength into its alpha channel
+     * (over {@link ShadowOnlyMaterial.shadowColor | shadowColor}, black by default), so shadows can be
+     * composited over an arbitrary background.
+     *
+     * It can receive IBL shadows (via `IblShadowsRenderPipeline.addShadowReceivingMaterial` /
+     * the Frame Graph IBL shadows task). Because the material has a single alpha output channel, IBL
+     * shadows are received as **monochrome**: a colored IBL shadow is reduced to its luminance rather
+     * than preserving per-channel hue.
+     */
     export class ShadowOnlyMaterial extends PushMaterial {
         private _activeLight;
         private _needAlphaBlending;
@@ -562,6 +605,19 @@ declare namespace BABYLON {
          * @param forceGLSL Use the GLSL code generation for the shader (even on WebGPU). Default is false
          */
         constructor(name: string, scene?: Scene, forceGLSL?: boolean);
+        /**
+         * @internal
+         * Force the material uniform buffer into "no UBO" (individual uniform) mode so that any attached
+         * material plugin (e.g. IBLShadowsPluginMaterial) binds its uniforms directly on the effect. This
+         * lets ShadowOnlyMaterial host plugins without declaring a dedicated "Material" uniform block in its
+         * shaders (its own uniforms - alpha/shadowColor/... - stay individual uniforms). The base class only
+         * does this on WebGPU ("leftovers UBO"); we extend it to every backend.
+         */
+        _createUniformBuffer(): void;
+        /**
+         * The color the shadow is rendered with (black by default). Only its RGB is used; shadow
+         * strength is written to the material's alpha channel.
+         */
         shadowColor: Color3;
         needAlphaBlending(): boolean;
         needAlphaTesting(): boolean;
@@ -574,6 +630,13 @@ declare namespace BABYLON {
         clone(name: string): ShadowOnlyMaterial;
         serialize(): any;
         getClassName(): string;
+        /**
+         * Creates a ShadowOnly material from parsed material data.
+         * @param source defines the JSON representation of the material
+         * @param scene defines the hosting scene
+         * @param rootUrl defines the root URL to use to load textures and relative dependencies
+         * @returns a new ShadowOnly material
+         */
         static Parse(source: any, scene: Scene, rootUrl: string): ShadowOnlyMaterial;
     }
 

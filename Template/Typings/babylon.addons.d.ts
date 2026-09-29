@@ -1329,6 +1329,432 @@ declare namespace ADDONS {
 
 
     /**
+     * MultiTexture: composes an array of image files into a single TEXTURE_2D_ARRAY that can be
+     * assigned to a material slot like any other texture.
+     *
+     * Lives in @babylonjs/addons (not core) because it is an application-oriented, optional feature
+     * with WebGL2/WebGPU requirements, URL polling, and a non-trivial memory footprint.
+     */
+    /**
+     * Options for creating a MultiTexture.
+     */
+    export interface IMultiTextureOptions {
+        /** Fixed layer resolution. REQUIRED. Positive integer. */
+        width: number;
+        /** Fixed layer resolution. REQUIRED. Positive integer. */
+        height: number;
+        /** Array depth to allocate. Optional positive integer; default: urls.length. Must be \>= urls.length and \<= the engine's texture2DArrayMaxLayerCount (else throw). Required when urls is empty. */
+        maxLayers?: number;
+        /** Default MultiBlendMode.ALPHA_BLEND. */
+        blendMode?: MultiBlendMode;
+        /** Default false. Passed to BABYLON.RawTexture2DArray: mip levels of the LAYER array. On WebGL2 they are consumed by the composite when rttScale less than 1 (trilinear minification); on WebGPU the composite fetches texels exactly, so these mips only affect direct per-layer sampling via `arrayTexture`. The composite RTT itself never has mips (consumed at 1:1 by materials). */
+        generateMipMaps?: boolean;
+        /** Default Texture.TRILINEAR_SAMPLINGMODE. Passed to BABYLON.RawTexture2DArray. On WebGL2 the composite shader reads the layers through this sampler, so it also drives the composite's mag/min filtering; on WebGPU the composite fetches texels exactly (see the class notes), so it only affects direct per-layer sampling via `arrayTexture`. */
+        samplingMode?: number;
+        /** Default false. Passed through to UploadImageToTexture2DArrayLayer. */
+        premultiplyAlpha?: boolean;
+        /** "resize" (default): scale to width×height. "strict": rejects mismatched dims. */
+        fit?: "resize" | "strict";
+        /** Composite RTT resolution = width*rttScale × height*rttScale. Default 1. On WebGL2 values other than 1 produce a filtered (bilinear) rescale of the composite; on WebGPU the composite fetches its texels exactly, so rttScale effectively rescales the render target without filtering. */
+        rttScale?: number;
+        /** Default false. HEAD-polling change detection. */
+        watch?: boolean;
+        /** Default 2000 ms. Only used when watch is true. */
+        pollInterval?: number;
+        /** Fired once after all initial layers have settled (success or failure). */
+        onLoad?: () => void;
+        /** Fired on any async failure (init, updateLayer, poll). Not thrown. */
+        onError?: (message?: string, exception?: any) => void;
+    }
+    /**
+     * Register side effects for MultiTexture.
+     * Registers the core 2D-array image-source extensions for both backends (the WebGL2
+     * `engine.texture2DArrayImageSource` and its WebGPU counterpart) lazily at first use, matching
+     * the Atmosphere addon's convention. Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterMultiTexture(): void;
+    /**
+     * Composes an array of image files into a single TEXTURE_2D_ARRAY and blends the layers per pixel
+     * according to a selectable {@link MultiBlendMode}. The blended result is written to a render-target
+     * texture that can be assigned to materials like any other texture.
+     *
+     * Requires a WebGL2 or WebGPU engine (TEXTURE_2D_ARRAY + sampler2DArray). The constructor throws
+     * synchronously on WebGL1.
+     *
+     * Supported source formats are the raster formats your browser can decode with createImageBitmap
+     * (PNG, JPEG, WebP, AVIF, GIF first frame, BMP). Compressed/container formats such as KTX2 are NOT
+     * supported: the existing KTX2 transcode path goes straight to the GPU (which would bypass the
+     * CPU pixel cache this class maintains), and KTX2 containers hold the whole array in a single file
+     * (which conflicts with the one-file-per-layer-index update model).
+     *
+     * Notes:
+     * - `url` is null (the base texture loader is not used); the `urls` property is the source of truth.
+     * - By default every decoded layer is read back into a CPU `Uint8ClampedArray` (see `pixels`). This
+     *   costs one canvas readback (and a full-width×height RGBA CPU copy) per (re)load of a layer — it
+     *   runs on every initial load, `updateLayerAsync` reload, and watch-triggered reload, so frequent
+     *   reloads or large layers carry a CPU/memory cost (roughly `width × height × 4` bytes per layer).
+     * - With `premultiplyAlpha: true` the GPU layers are stored premultiplied, but the CPU `pixels`
+     *   cache still holds the raw decoded (non-premultiplied) bytes.
+     * - The default ALPHA_BLEND mode composites the layers with standard source-over blending: each
+     *   layer is drawn over the accumulated result, so later layers cover earlier ones and a fully
+     *   opaque layer hides everything below it. With straight-alpha layers (premultiplyAlpha: false)
+     *   the fold is the source-over `over` operator (`outA = layer.a + outA * (1 - layer.a)`); with
+     *   the premultiplied form (`out = layer + out * (1 - layer.a)`). The composite always outputs
+     *   straight RGBA, so materials see identical pixels regardless of `premultiplyAlpha` (which
+     *   only controls the layer storage/fold).
+     * - ALPHA_MAX picks the sample with the highest alpha; ties (equal alpha) resolve to the highest
+     *   layer index (last input draws over earlier ones).
+     * - With zero active layers, ALPHA_BLEND/ALPHA_MAX/ADD/SUBTRACT/SCREEN output transparent black
+     *   and MULTIPLY outputs white (empty-product identity).
+     * - Compositing is performed independently of the scene render loop: MultiTexture re-composites
+     *   its internal render target explicitly after every mutation (layer add/insert/remove/update,
+     *   blend-mode change, array growth), so `scene.proceduralTexturesEnabled` has no effect on it.
+     * - How the composite samples the layer array depends on the engine backend, but both are
+     *   filtered and honour `samplingMode`. On WebGL2 the GLSL composite shader reads the layers
+     *   through the array sampler (`texture(...)`), so `samplingMode` affects the output, `rttScale`
+     *   other than 1 produces a filtered bilinear rescale, and (with `generateMipMaps: true`)
+     *   trilinear minification can use the layer mips. On WebGPU the WGSL composite shader samples
+     *   the layer array through its sampler at mip 0 (`textureSampleLevel(..., 0.0)`), so `samplingMode`
+     *   affects the output but only mip-0 filtering applies (no mip-level selection) and `rttScale`
+     *   rescale is filtered at mip 0. The `_arrayTexture` sampler that materials use to read the
+     *   per-layer array is unaffected by this backend difference.
+     * - `MultiTexture` lives in `@babylonjs/addons` and lazily registers the core 2D-array
+     *   image-source extensions on first construction, matching the `Atmosphere` addon's convention.
+     *   No engine mutation occurs at addons import time. `RegisterMultiTexture()` calls both the WebGL2
+     *   (`engine.texture2DArrayImageSource`) and WebGPU pure registration functions, so a pure/tree-shaken
+     *   WebGPU build receives `updateTextureArrayLayerFromImageSource` without any extra consumer import.
+     * - The allocated array depth (options.maxLayers ?? urls.length) must be a positive integer and no
+     *   larger than the device limit getCaps().texture2DArrayMaxLayerCount. Empty urls are only accepted
+     *   together with an explicit options.maxLayers. addLayerAsync/insertLayerAsync double the depth when it is
+     *   full and throw a RangeError if the doubled depth would exceed that limit.
+     */
+    export class MultiTexture extends BABYLON.BaseTexture {
+        /**
+         * The internal BABYLON.ProceduralTexture that composites the layers into the render-target texture
+         * assigned to materials. MultiTexture composes, rather than extends, BABYLON.ProceduralTexture: it
+         * creates this composite with `skipSceneRegistration: true` so the scene render loop does not
+         * drive it, and calls {@link _renderComposite} explicitly after each mutation. All texture
+         * surface methods (isReady/getInternalTexture) forward to it.
+         */
+        get composite(): BABYLON.ProceduralTexture;
+        private _compositeInternal;
+        /** Fired once after all initial layers have settled (success or failure). */
+        readonly onLoadObservable: BABYLON.Observable<MultiTexture>;
+        private _layers;
+        private _layerCount;
+        private _maxLayers;
+        private _deviceMaxLayerCap;
+        private _blendMode;
+        private _pollTimer;
+        /** True while a _poll() tick is in flight; overlapping interval firings early-return so a slow tick never double-fetches. */
+        private _pollInFlight;
+        private _canvas;
+        private _ctx;
+        private _disposed;
+        private _mtOptions;
+        private _arrayTexture;
+        /** Number of in-flight mip-suppressed operations (init pool + mutations). See _suppressArrayMips. */
+        private _mipSuppressCount;
+        /**
+         * Number of active layers (drives the uLayerCount uniform). Changes only via addLayerAsync/removeLayerAsync.
+         */
+        get layerCount(): number;
+        /**
+         * The underlying TEXTURE_2D_ARRAY, for users who want to sample individual layers directly.
+         */
+        get arrayTexture(): BABYLON.RawTexture2DArray;
+        /**
+         * Forwards to the internal composite: the render-target texture that composites the layers is
+         * owned by the composite, so the material samples it through here.
+         * @returns The composite's internal texture.
+         */
+        getInternalTexture(): BABYLON.Nullable<BABYLON.InternalTexture>;
+        /**
+         * Forwards to the internal composite: ready once the composite's render-target texture is ready.
+         * @returns True if the composite's render-target texture is ready, otherwise false.
+         */
+        isReady(): boolean;
+        /**
+         * Renders the internal composite, applying the current layer uploads and blend mode.
+         * The composite only draws once its effect is compiled (shaders load asynchronously), so the
+         * first render is deferred to the compiled callback instead of drawing a stale/empty target.
+         */
+        private _renderComposite;
+        /**
+         * Forwards to the composite: the composite render-target is what materials sample.
+         * @returns The composite render-target size.
+         */
+        getSize(): BABYLON.ISize;
+        /**
+         * Forwards to the composite: the composite render-target base size is what materials sample.
+         * @returns The composite render-target base size.
+         */
+        getBaseSize(): BABYLON.ISize;
+        /**
+         * Forwards to the composite's sampling mode.
+         * @returns the composite render-target's sampling mode.
+         */
+        get samplingMode(): number;
+        /**
+         * Forwards to the composite, which owns the render-target texture the material binds.
+         * @param samplingMode the new sampling mode
+         * @param generateMipMaps whether to generate mip maps
+         */
+        updateSamplingMode(samplingMode: number, generateMipMaps?: boolean): void;
+        /**
+         * Forwards to the composite's render-target texture.
+         * @param faceIndex defines the face of the texture to read (in case of cube texture)
+         * @param level defines the LOD level of the texture to read (in case of Mip Maps)
+         * @param buffer defines a user defined buffer to fill with data (can be null)
+         * @param flushRenderer true to flush the renderer from the pending commands before reading the pixels
+         * @param noDataConversion false to convert the data to Uint8Array (if texture type is UNSIGNED_BYTE) or to Float32Array (if texture type is anything but UNSIGNED_BYTE). If true, the type of the generated buffer (if buffer==null) will depend on the type of the texture
+         * @param x defines the region x coordinates to start reading from (default to 0)
+         * @param y defines the region y coordinates to start reading from (default to 0)
+         * @param width defines the region width to read from (default to the texture size at level)
+         * @param height defines the region width to read from (default to the texture size at level)
+         * @returns the composite render-target's pixel buffer promise.
+         */
+        readPixels(faceIndex?: number, level?: number, buffer?: BABYLON.Nullable<ArrayBufferView>, flushRenderer?: boolean, noDataConversion?: boolean, x?: number, y?: number, width?: number, height?: number): BABYLON.Nullable<Promise<ArrayBufferView>>;
+        /**
+         * Forwards to the composite's render-target texture.
+         * @param faceIndex defines the face of the texture to read (in case of cube texture)
+         * @param level defines the LOD level of the texture to read (in case of Mip Maps)
+         * @param buffer defines a user defined buffer to fill with data (can be null)
+         * @param flushRenderer true to flush the renderer from the pending commands before reading the pixels
+         * @param noDataConversion false to convert the data to Uint8Array (if texture type is UNSIGNED_BYTE) or to Float32Array (if texture type is anything but UNSIGNED_BYTE). If true, the type of the generated buffer (if buffer==null) will depend on the type of the texture
+         * @returns the composite render-target's pixel buffer.
+         */
+        _readPixelsSync(faceIndex?: number, level?: number, buffer?: BABYLON.Nullable<ArrayBufferView>, flushRenderer?: boolean, noDataConversion?: boolean): BABYLON.Nullable<ArrayBufferView>;
+        /**
+         * Forwards to the composite render-target's format.
+         * @returns the composite render-target's internal format.
+         */
+        get textureFormat(): number;
+        /**
+         * Forwards to the composite render-target's type.
+         * @returns the composite render-target's internal type.
+         */
+        get textureType(): number;
+        /**
+         * The input URLs, in layer order. Updated by addLayerAsync/insertLayerAsync/removeLayerAsync/updateLayerAsync.
+         */
+        readonly urls: string[];
+        /**
+         * CPU pixel cache. `pixels[i]` is a full `width × height × 4` RGBA (non-premultiplied) copy of
+         * decoded layer i, or `null` if that layer has not loaded (yet) or failed to load. It is
+         * repopulated on every (re)load of a layer (initial load, `updateLayerAsync`, watch reload) and
+         * cleared on dispose. Memory footprint is approximately `width × height × 4` bytes per loaded
+         * layer; skip it if you only need the GPU composite and do not read `pixels`.
+         */
+        readonly pixels: Array<Uint8ClampedArray | null>;
+        /**
+         * Creates a new MultiTexture.
+         * @param name defines the name of the texture
+         * @param urls defines the array of image URLs to load as layers
+         * @param scene defines the hosting scene
+         * @param options defines the creation options (width/height required)
+         */
+        constructor(name: string, urls: string[], scene: BABYLON.Scene, options: IMultiTextureOptions);
+        /**
+         * How the layers combine. Setting it swaps the composite fragment shader and triggers one
+         * re-composite.
+         */
+        get blendMode(): MultiBlendMode;
+        set blendMode(value: MultiBlendMode);
+        /**
+         * Replaces a layer by URL. Fetches, decodes and uploads layer i only.
+         * Exactly one texSubImage3D is issued for the target layer; uLayerCount is unchanged.
+         * @param index defines the layer index to replace
+         * @param url defines the new source for the layer
+         * @returns a promise resolving once the layer has been uploaded
+         */
+        updateLayerAsync(index: number, url: string): Promise<void>;
+        /**
+         * Appends a new layer at the end and returns its index. Grows the underlying array (doubling its
+         * depth and re-uploading the existing layers from their retained bitmaps) when the current depth
+         * is exhausted. Throws a RangeError if the doubled depth would exceed the device's
+         * texture2DArrayMaxLayerCount.
+         * @param url defines the URL of the image to load as the new layer
+         * @returns a promise resolving to the index of the new layer
+         */
+        addLayerAsync(url: string): Promise<number>;
+        /**
+         * Inserts a new layer at the given index and returns it. Layers at index and above shift up by
+         * one: loaded layers are re-uploaded from their retained bitmaps, and a shifted layer that is
+         * still loading lands in its new slot when its in-flight load settles (loads resolve against
+         * their layer entry, never against a stale index). uLayerCount is incremented. Inserting at
+         * `layerCount` appends (addLayerAsync-equivalent). Grows the underlying array (doubling its depth)
+         * when the current depth is exhausted, same as addLayerAsync, and throws a RangeError if the doubled
+         * depth would exceed the device's texture2DArrayMaxLayerCount.
+         * @param index defines the layer index to insert at (0..layerCount, inclusive)
+         * @param url defines the URL of the image to load as the new layer
+         * @returns a promise resolving to the index of the inserted layer
+         */
+        insertLayerAsync(index: number, url: string): Promise<number>;
+        /**
+         * Removes a layer. Higher indices shift down (re-uploaded from their retained bitmaps) and
+         * uLayerCount is decremented.
+         * @param index defines the layer index to remove
+         * @returns a promise resolving once the shift is done
+         */
+        removeLayerAsync(index: number): Promise<void>;
+        /**
+         * Disposes the texture: stops the watch poller, closes every retained bitmap, disposes the layer
+         * array and releases the composite render target through the standard procedural-texture path.
+         */
+        dispose(): void;
+        /**
+         * Clones the texture: builds a fresh MultiTexture in the same scene with the same name, the
+         * current layer urls and the resolved options (layer resolution, current array capacity,
+         * current blend mode, sampling mode, mipmap generation, RTT scale, fit and watch settings).
+         * The clone re-fetches and re-decodes its layers from scratch; it never shares the 2D array
+         * texture, the pixel cache or the load callbacks (onLoad/onError are not inherited).
+         * @returns the cloned texture
+         */
+        clone(): MultiTexture;
+        /**
+         * MultiTexture is intentionally not scene-serializable: the scene loader has no parser for it,
+         * so the payload produced by the inherited base serialization could never be reconstructed
+         * (urls, capacity, blend mode and watch options have no serialized fields). Fails explicitly
+         * instead of returning a misleading JSON object.
+         * @param _allowEmptyName accepted for signature compatibility; ignored
+         * @throws Error always
+         */
+        serialize(_allowEmptyName?: boolean): never;
+        private _buildDefines;
+        private _bitmapOptions;
+        private _reportError;
+        private _createLayerEntry;
+        private _loadEntryOrThrow;
+        private _loadEntryAndReport;
+        private _warnWatchFailure;
+        private _uploadToLayer;
+        private _reuploadSlot;
+        private _clearLayerSlot;
+        private _loadEntry;
+        private _uploadBitmap;
+        private _initialize;
+        private _pushLayerEntry;
+        private _growArray;
+        private _suppressArrayMips;
+        private _generateArrayMips;
+        private _startPolling;
+        private _poll;
+    }
+    /**
+     * Blend modes controlling how the layers of a MultiTexture are combined per pixel.
+     */
+    export enum MultiBlendMode {
+        /**
+         * Default. Composites the layers with standard source-over alpha blending: each layer is drawn
+         * over the accumulated result, so later layers cover earlier ones and a fully opaque layer
+         * (a = 1) completely hides everything below it. With straight-alpha layers (premultiplyAlpha:
+         * false) the fold is `outA = layer.a + outA * (1 - layer.a)`; with premultiplied layers it is
+         * the premultiplied form `out = layer + out * (1 - layer.a)`. The composite always outputs
+         * straight RGBA, so materials see identical pixels regardless of `premultiplyAlpha` (which
+         * only controls the layer storage/fold). Zero active layers output transparent black.
+         */
+        ALPHA_BLEND = 0,
+        /** Keeps the sample with the highest alpha among the layers (ties: highest index wins). Zero active layers output transparent black. */
+        ALPHA_MAX = 1,
+        /** Adds all layers per channel, clamped to 1. */
+        ADD = 2,
+        /** Multiplies all layers per channel (empty product is 1). */
+        MULTIPLY = 3,
+        /** Starts from layer 0 and subtracts every following layer, clamped to 0. */
+        SUBTRACT = 4,
+        /** Screens all layers per channel. */
+        SCREEN = 5
+    }
+
+
+
+
+    /** @internal */
+    export var multiTextureCompositeSubtractPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeScreenPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeMultiplyPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeAlphaMaxPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeAlphaBlendPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeAddPixelShaderWGSL: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeSubtractPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeScreenPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeMultiplyPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeAlphaMaxPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeAlphaBlendPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /** @internal */
+    export var multiTextureCompositeAddPixelShader: {
+        name: string;
+        shader: string;
+    };
+
+
+    /**
      * Abstract Node class from Babylon.js
      */
     export interface INodeLike {
@@ -2818,6 +3244,7 @@ declare namespace ADDONS {
          * The unique ID of this atmosphere instance.
          */
         readonly uniqueId: number;
+        private readonly _materialPluginName;
         /**
          * Called after the atmosphere variables have been updated for the specified camera.
          */

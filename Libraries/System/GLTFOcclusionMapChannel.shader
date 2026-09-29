@@ -3,6 +3,8 @@ Shader "Hidden/Export/OcclusionMapChannel" {
 		_OcclusionMap("Occlusion Map", 2D) = "black" {}
 		_FlipY("Flip texture Y", Int) = 0
 		_SourceChannel("Source channel: 0 red, 1 green", Int) = 0
+		_OcclusionScale("Occlusion remap scale", float) = 1.0
+		_OcclusionBias("Occlusion remap bias", float) = 0.0
 	}
 
 	SubShader {
@@ -29,6 +31,8 @@ Shader "Hidden/Export/OcclusionMapChannel" {
 			 sampler2D _OcclusionMap;
 			 int _FlipY;
 			 int _SourceChannel;
+			 float _OcclusionScale;
+			 float _OcclusionBias;
 
 			 vertOutput vert(vertInput input) {
 				 vertOutput o;
@@ -46,6 +50,10 @@ Shader "Hidden/Export/OcclusionMapChannel" {
 				// terrain caller, except that the output is now explicitly grey - which the runtime reads as R.
 				float4 src = tex2D(_OcclusionMap, output.texcoord);
 				float occ = (_SourceChannel == 1) ? src.g : src.r;
+				// HDRP remaps the mask's occlusion channel by lerp(_AORemapMin, _AORemapMax, g)
+				// (LitDataIndividualLayer.hlsl:260-261), which is `g * scale + bias`. Every other caller
+				// passes scale 1 / bias 0 and is unchanged.
+				occ = saturate(occ * _OcclusionScale + _OcclusionBias);
 				return float4(occ, occ, occ, 1.0);
 			 }
 

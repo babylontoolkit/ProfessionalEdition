@@ -30,8 +30,9 @@ public static class BabylonToolkitCliCommands
 {
     // Every export path must do this first.
     // NOTE: this covers the runtime static only. It does NOT replace the Scene Exporter panel bootstrap
-    // (layers, FreeImage, shader list and root namespace still require the panel to have been opened
-    // once in a GUI session, with the resulting ProjectSettings/ changes committed).
+    // (layers, FreeImage, shader list and root namespace come from CVPanel.OnEnable: open the panel once,
+    // or run its headless equivalent - the UnityTools.Validate* calls - through eval / run_script, then
+    // commit the resulting ProjectSettings/ changes).
     private static void PrepareExporter()
     {
         // Dialogs are suppressed for the DURATION of this call and restored on the way out - see
@@ -105,8 +106,8 @@ public static class BabylonToolkitCliCommands
             "pro        : " + ToolkitManager.IsPro(),
             "exportRoot : " + UnityTools.GetDefaultExportFolder(),
             "sceneDir   : " + info.DefaultScenePath,
-            "sceneFmt   : " + info.ExportFileFormat,   // 0 = GLTF, 2 = GLB
-            "prefabFmt  : " + info.PrefabFileFormat,
+            "sceneFmt   : " + info.ExportFileFormat,   // EditorExportFormat: 0 = GLTF, 1 = GLB
+            "prefabFmt  : " + info.PrefabFileFormat,   // EditorExportFormat: 0 = GLTF, 1 = GLB
             "metadata   : " + info.ExportMetadata,
             "compiling  : " + EditorApplication.isCompiling,
             "baking     : " + Lightmapping.isRunning,
@@ -140,7 +141,7 @@ public static class BabylonToolkitCliCommands
         [CliArg("filename",     "Output name without extension (optional)")] string filename = null,
         [CliArg("folder",       "Absolute output folder (optional)")]        string folder = null,
         [CliArg("geometryOnly", "Skip script/web/PWA emit; export only the scene")] bool geometryOnly = true,
-        [CliArg("compileScripts", "Compile Assets/**/*.ts into the project bundle even when geometryOnly")] bool compileScripts = false)
+        [CliArg("compileScripts", "Compile Assets/**/*.ts into the project bundle even when geometryOnly (default true: generated Shader Graph classes must be in the bundle)")] bool compileScripts = true)
     {
         if (EditorApplication.isCompiling) throw new Exception("Scripts are still compiling.");
         if (Lightmapping.isRunning)        throw new Exception("A lightmap bake is in progress.");
