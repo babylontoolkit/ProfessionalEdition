@@ -2,7 +2,8 @@
     "name": "BabylonToolkit.Editor.CLI",
     "rootNamespace": "",
     "references": [
-        "Unity.Pipeline"
+        "Unity.Pipeline",
+        "Unity.Pipeline.Attributes"
     ],
     "includePlatforms": ["Editor"],
     "excludePlatforms": [],

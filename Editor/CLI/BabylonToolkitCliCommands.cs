@@ -24,7 +24,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
-using Unity.Pipeline.Commands;   // [CliCommand] / [CliArg] - assembly Unity.Pipeline (com.unity.pipeline)
+using Unity.Pipeline.Commands;   // [CliCommand] / [CliArg] - assembly Unity.Pipeline.Attributes (com.unity.pipeline 0.8+)
 
 public static class BabylonToolkitCliCommands
 {
