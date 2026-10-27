@@ -123,9 +123,19 @@ public static class RenderPathTools
         var drawerChanges = CollectDrawerModeChanges(assets);
         if (drawerChanges.Count == 0)
         {
-            EditorUtility.DisplayDialog("GPU Resident Drawer",
-                $"The GPU Resident Drawer is already disabled on all {assets.Count} configured pipeline asset(s).",
-                "OK");
+            // Already disabled, but renderers it claimed earlier this session can still be stuck
+            // invisible - offer the reload that hands them back to the normal draw path.
+            if (EditorUtility.DisplayDialog("GPU Resident Drawer",
+                $"The GPU Resident Drawer is already disabled on all {assets.Count} configured pipeline asset(s).\n\nIf meshes are still invisible, reload the open scenes so their renderers re-register on the normal draw path.",
+                "Reload Scenes", "Close"))
+            {
+                if (!ReloadOpenScenes(true))
+                {
+                    EditorUtility.DisplayDialog("GPU Resident Drawer",
+                        "The open scenes were not reloaded. Reload them by hand (or restart the Editor).",
+                        "OK");
+                }
+            }
             return;
         }
 
@@ -1026,6 +1036,11 @@ public static class RenderPathTools
     /// re-registers them. (Anything created AFTER the drawer is disabled renders fine, which is
     /// what makes this so confusing to diagnose: a fresh test cube appears, the scene does not.)
     ///
+    /// The drawer must be torn down BEFORE the reload. Changing the asset's mode does not stop the
+    /// running drawer - HDRP only checks on its next render - so a reload in the same tick hands the
+    /// fresh renderers straight to the still-live drawer, its registration throws again, and they
+    /// stay invisible. Its Dispose only returns renderers that registered successfully.
+    ///
     /// Refuses to reload when a scene has unsaved changes and the caller is non-interactive,
     /// because reloading would discard them. Returns true only if the reload actually happened.
     /// </summary>
@@ -1033,6 +1048,8 @@ public static class RenderPathTools
     {
         try
         {
+            TearDownResidentDrawer();
+
             if (EditorApplication.isPlaying) return false;
 
             var setup = UnityEditor.SceneManagement.EditorSceneManager.GetSceneManagerSetup();
@@ -1068,6 +1085,24 @@ public static class RenderPathTools
         {
             Debug.LogWarning($"[Babylon Toolkit] Could not reload the open scenes: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Stops a running GPU Resident Drawer now, if the current pipeline settings no longer enable
+    /// it, instead of waiting for the pipeline's next render. Reflection keeps the toolkit free of
+    /// a hard Core RP reference; a no-op on pipelines that predate the drawer.
+    /// </summary>
+    private static void TearDownResidentDrawer()
+    {
+        try
+        {
+            var drawerType = System.Type.GetType("UnityEngine.Rendering.GPUResidentDrawer, Unity.RenderPipelines.Core.Runtime");
+            drawerType?.GetMethod("ReinitializeIfNeeded", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, null);
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"[Babylon Toolkit] Could not tear down the GPU Resident Drawer: {ex.Message}");
         }
     }
 

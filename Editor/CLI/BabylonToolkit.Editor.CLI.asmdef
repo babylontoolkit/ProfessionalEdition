@@ -3,15 +3,20 @@
     "rootNamespace": "",
     "references": [
         "Unity.Pipeline",
-        "Unity.Pipeline.Attributes"
+        "Unity.Pipeline.Attributes",
+        "App"
     ],
-    "includePlatforms": ["Editor"],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": false,
-    "defineConstraints": ["BT_UNITY_PIPELINE"],
+    "defineConstraints": [
+        "BT_UNITY_PIPELINE"
+    ],
     "versionDefines": [
         {
             "name": "com.unity.pipeline",

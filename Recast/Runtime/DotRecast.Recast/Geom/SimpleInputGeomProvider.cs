@@ -137,6 +137,11 @@ namespace DotRecast.Recast.Geom
             throw new NotImplementedException();
         }
 
+        public void AddOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags, int userId)
+        {
+            throw new NotImplementedException();
+        }
+
         public void RemoveOffMeshConnections(Predicate<RcOffMeshConnection> filter)
         {
             throw new NotImplementedException();

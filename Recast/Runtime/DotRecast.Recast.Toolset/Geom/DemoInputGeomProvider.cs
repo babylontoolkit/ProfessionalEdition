@@ -127,6 +127,12 @@ namespace DotRecast.Recast.Toolset.Geom
             _offMeshConnections.Add(new RcOffMeshConnection(start, end, radius, bidir, area, flags));
         }
 
+        // Babylon Toolkit (unity-export-parity-gaps A-b)
+        public void AddOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags, int userId)
+        {
+            _offMeshConnections.Add(new RcOffMeshConnection(start, end, radius, bidir, area, flags, userId));
+        }
+
         public void RemoveOffMeshConnections(Predicate<RcOffMeshConnection> filter)
         {
             //offMeshConnections.RetainAll(offMeshConnections.Stream().Filter(c -> !filter.Test(c)).Collect(ToList()));

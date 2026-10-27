@@ -49,8 +49,11 @@
             const loadingDiv = document.createElement("div");
             loadingDiv.id = "xbabylonjsLoadingDiv";
             loadingDiv.style.backgroundColor = "###SPLASH###";
-            loadingDiv.style.opacity = "1";
+            // Note: 0.995, not 1 - a canvas the splash covers completely is never composited, and the first composite of a
+            // WebGPU canvas when the splash fades stalls the page for 200-1200 ms (looks identical, never stalls)
+            loadingDiv.style.opacity = "0.995";
             loadingDiv.style.transition = "opacity 1.5s ease";
+            loadingDiv.style.willChange = "opacity";
             loadingDiv.style.pointerEvents = "none";
             loadingDiv.style.display = "grid";
             loadingDiv.style.gridTemplateRows = "100%";
@@ -59,21 +62,52 @@
             loadingDiv.style.alignItems = "center";
             loadingDiv.style.zIndex = "10001";
             window._loadingDiv = loadingDiv;
-            // Loading text
+            // Loading details (bottom right corner: asset counts, terrain stages) - same layout as the React framework splash
+            const statusTextDiv = document.createElement("div");
+            statusTextDiv.id = "xbabylonjsStatusTextDiv";
+            statusTextDiv.style.position = "absolute";
+            statusTextDiv.style.right = "18px";
+            statusTextDiv.style.bottom = "12px";
+            statusTextDiv.style.fontFamily = "Arial";
+            statusTextDiv.style.fontSize = "12px";
+            statusTextDiv.style.color = "white";
+            statusTextDiv.style.textAlign = "right";
+            statusTextDiv.style.zIndex = "2";
+            statusTextDiv.style.opacity = "0.9";
+            statusTextDiv.style.letterSpacing = "0.3px";
+            window._splashDetails = statusTextDiv;
+            loadingDiv.appendChild(statusTextDiv);
+            // Loading text and progress bar (under the spinner)
             const loadingTextDiv = document.createElement("div");
             loadingTextDiv.id = "xbabylonjsLoadingTextDiv";
+            loadingTextDiv.setAttribute("role", "progressbar");
+            loadingTextDiv.setAttribute("aria-valuemin", "0");
+            loadingTextDiv.setAttribute("aria-valuemax", "100");
             loadingTextDiv.style.position = "absolute";
-            loadingTextDiv.style.left = "0";
+            loadingTextDiv.style.left = "50%";
             loadingTextDiv.style.top = "50%";
-            loadingTextDiv.style.marginTop = "80px";
-            loadingTextDiv.style.width = "100%";
-            loadingTextDiv.style.height = "20px";
+            loadingTextDiv.style.marginTop = "180px";
+            loadingTextDiv.style.transform = "translateX(-50%)";
+            loadingTextDiv.style.width = "min(320px, calc(100% - 32px))";
             loadingTextDiv.style.fontFamily = "Arial";
             loadingTextDiv.style.fontSize = "14px";
             loadingTextDiv.style.color = "white";
             loadingTextDiv.style.textAlign = "center";
             loadingTextDiv.style.zIndex = "1";
-            loadingTextDiv.innerHTML = "";
+            const statusLine = document.createElement("div");
+            statusLine.style.minHeight = "18px";
+            statusLine.style.marginBottom = "10px";
+            statusLine.style.letterSpacing = "0.3px";
+            statusLine.textContent = "Loading Scene ...";
+            loadingTextDiv.appendChild(statusLine);
+            const progressTrack = document.createElement("div");
+            progressTrack.className = "splash-progress";
+            const progressFill = document.createElement("div");
+            progressFill.className = "splash-progress-fill splash-progress-indeterminate";
+            progressTrack.appendChild(progressFill);
+            loadingTextDiv.appendChild(progressTrack);
+            window._splashStatus = statusLine;
+            window._splashFill = progressFill;
             window._loadingTextDiv = loadingTextDiv;
             loadingDiv.appendChild(loadingTextDiv);
             // Generating keyframes
@@ -85,6 +119,17 @@
                             @keyframes spin1 {\
                                 0% { transform: rotate(0deg);}
                                 100% { transform: rotate(360deg);}
+                            }\
+                            .splash-progress { position: relative; width: 100%; height: 4px; overflow: hidden; border-radius: 2px; background-color: rgba(255, 255, 255, 0.15); }\
+                            .splash-progress-fill { height: 100%; border-radius: 2px; background-color: #E0684B; transition: width 0.25s ease-out; }\
+                            .splash-progress-indeterminate { width: 30%; animation: splash-progress-slide 1.2s infinite ease-in-out; }\
+                            @keyframes splash-progress-slide {\
+                                0% { transform: translateX(-100%);}
+                                100% { transform: translateX(340%);}
+                            }\
+                            @media (prefers-reduced-motion: reduce) {\
+                                .splash-progress-fill { transition: none; }\
+                                .splash-progress-indeterminate { animation: none; width: 100%; opacity: 0.4; }\
                             }`;
             loadingStyle.innerHTML = keyFrames;
             window._loadingStyle = loadingStyle;
@@ -104,7 +149,10 @@
             imgBack.style.position = "absolute";
             // Spinner box
             const imageSpinnerContainer = document.createElement("div");
-            imageSpinnerContainer.style.width = "300px";
+            imageSpinnerContainer.style.width = "320px";
+            imageSpinnerContainer.style.height = "320px";
+            imageSpinnerContainer.style.display = "grid";
+            imageSpinnerContainer.style.placeItems = "center";
             imageSpinnerContainer.style.gridColumn = "1";
             imageSpinnerContainer.style.gridRow = "1";
             imageSpinnerContainer.style.top = "50%";
@@ -117,8 +165,11 @@
             imgSpinner.src = !svgSupport
                 ? "https://cdn.babylonjs.com/Assets/loadingIcon.png"
                 : `data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAzOTIgMzkyIj48ZGVmcz48c3R5bGU+LmNscy0xe2ZpbGw6I2UwNjg0Yjt9LmNscy0ye2ZpbGw6bm9uZTt9PC9zdHlsZT48L2RlZnM+PHRpdGxlPlNwaW5uZXJJY29uPC90aXRsZT48ZyBpZD0iTGF5ZXJfMiIgZGF0YS1uYW1lPSJMYXllciAyIj48ZyBpZD0iU3Bpbm5lciI+PHBhdGggY2xhc3M9ImNscy0xIiBkPSJNNDAuMjEsMTI2LjQzYzMuNy03LjMxLDcuNjctMTQuNDQsMTItMjEuMzJsMy4zNi01LjEsMy41Mi01YzEuMjMtMS42MywyLjQxLTMuMjksMy42NS00LjkxczIuNTMtMy4yMSwzLjgyLTQuNzlBMTg1LjIsMTg1LjIsMCwwLDEsODMuNCw2Ny40M2EyMDgsMjA4LDAsMCwxLDE5LTE1LjY2YzMuMzUtMi40MSw2Ljc0LTQuNzgsMTAuMjUtN3M3LjExLTQuMjgsMTAuNzUtNi4zMmM3LjI5LTQsMTQuNzMtOCwyMi41My0xMS40OSwzLjktMS43Miw3Ljg4LTMuMywxMi00LjY0YTEwNC4yMiwxMDQuMjIsMCwwLDEsMTIuNDQtMy4yMyw2Mi40NCw2Mi40NCwwLDAsMSwxMi43OC0xLjM5QTI1LjkyLDI1LjkyLDAsMCwxLDE5NiwyMS40NGE2LjU1LDYuNTUsMCwwLDEsMi4wNSw5LDYuNjYsNi42NiwwLDAsMS0xLjY0LDEuNzhsLS40MS4yOWEyMi4wNywyMi4wNywwLDAsMS01Ljc4LDMsMzAuNDIsMzAuNDIsMCwwLDEtNS42NywxLjYyLDM3LjgyLDM3LjgyLDAsMCwxLTUuNjkuNzFjLTEsMC0xLjkuMTgtMi44NS4yNmwtMi44NS4yNHEtNS43Mi41MS0xMS40OCwxLjFjLTMuODQuNC03LjcxLjgyLTExLjU4LDEuNGExMTIuMzQsMTEyLjM0LDAsMCwwLTIyLjk0LDUuNjFjLTMuNzIsMS4zNS03LjM0LDMtMTAuOTQsNC42NHMtNy4xNCwzLjUxLTEwLjYsNS41MUExNTEuNiwxNTEuNiwwLDAsMCw2OC41Niw4N0M2Ny4yMyw4OC40OCw2Niw5MCw2NC42NCw5MS41NnMtMi41MSwzLjE1LTMuNzUsNC43M2wtMy41NCw0LjljLTEuMTMsMS42Ni0yLjIzLDMuMzUtMy4zMyw1YTEyNywxMjcsMCwwLDAtMTAuOTMsMjEuNDksMS41OCwxLjU4LDAsMSwxLTMtMS4xNVM0MC4xOSwxMjYuNDcsNDAuMjEsMTI2LjQzWiIvPjxyZWN0IGNsYXNzPSJjbHMtMiIgd2lkdGg9IjM5MiIgaGVpZ2h0PSIzOTIiLz48L2c+PC9nPjwvc3ZnPg==`;
+            imgSpinner.style.width = "320px";
+            imgSpinner.style.height = "320px";
             imgSpinner.style.animation = "spin1 0.75s infinite linear";
             imgSpinner.style.transformOrigin = "50% 50%";
+            imgSpinner.style.willChange = "transform"; // Note: Own compositor layer from the first frame, so the spin never waits on the main thread
             // Is SVG supportted?
             if (!svgSupport) {
                 const logoSize = { w: 16, h: 18.5 };
@@ -142,6 +193,8 @@
             // Handle Hide Loading Div
             // ..
             const onTransitionEnd = (event) => {
+                // only the splash's own fade out ends it (the progress bar's transitions bubble up to here too)
+                if (event == null || event.target !== window._loadingDiv || event.propertyName !== "opacity") return;
                 if (window._loadingDiv) {
                     window._loadingDiv.remove();
                 }
@@ -149,13 +202,38 @@
                     window._loadingTextDiv.remove();
                     window._loadingTextDiv = null;
                 }
+                window._splashStatus = null;
+                window._splashDetails = null;
+                window._splashFill = null;
                 if (window._loadingStyle) {
                     window._loadingStyle.remove();
                     window._loadingStyle = null;
                 }
-                window.removeEventListener("transitionend", onTransitionEnd);
+                event.target.removeEventListener("transitionend", onTransitionEnd);
             };
             window._loadingDiv.addEventListener("transitionend", onTransitionEnd);
+        };
+        // Splash status: main line + progress bar under the spinner, details in the bottom right corner (React framework layout).
+        // progress is a 0-1 fraction or null (indeterminate); the bar only moves forward within one loading state.
+        window._splashState = -1;
+        window._splashProgress = null;
+        window.toSplashText = (text) => {
+            if (text == null || text === "" || text !== text.toUpperCase()) return text;
+            const lower = text.toLowerCase();
+            return lower.charAt(0).toUpperCase() + lower.slice(1);
+        };
+        window.setSplashStatus = (status, details, progress, state) => {
+            if (window._splashStatus && status != null && status !== "") window._splashStatus.textContent = window.toSplashText(status);
+            if (window._splashDetails && details != null) window._splashDetails.textContent = window.toSplashText(details);
+            if (window._splashFill && typeof progress === "number" && isFinite(progress)) {
+                const value = Math.max(0, Math.min(1, progress));
+                const restart = (state !== window._splashState || !(state >= 0)); // Note: the download (state -1) follows the file progress as is
+                window._splashState = state;
+                window._splashProgress = (restart || window._splashProgress == null) ? value : Math.max(window._splashProgress, value);
+                window._splashFill.className = "splash-progress-fill";
+                window._splashFill.style.width = Math.round(window._splashProgress * 100) + "%";
+                if (window._loadingTextDiv) window._loadingTextDiv.setAttribute("aria-valuenow", "" + Math.round(window._splashProgress * 100));
+            }
         };
         window.hideSplashLoadingScreen = () => {
             if (window._loadingDiv) {
@@ -314,7 +392,12 @@
     var sceneurl = "" + (window.getUrlParameter("path") || folder);
     if (sceneurl != null && sceneurl !== "" && !sceneurl.endsWith("/")) sceneurl += "/";
     if (defaultScene != null && defaultScene === "") defaultScene = null;
-    var scenename = "" + (defaultScene || window.getUrlParameter("scene") || null);
+    // A scene change (TOOLKIT.SceneChange) stores the loaded file, which wins over the baked default scene only when it
+    // still matches ?scene= (so a reload stays on the changed scene, while a fresh link keeps the exported default).
+    var requestedScene = window.getUrlParameter("scene");
+    var changedScene = null;
+    try { changedScene = sessionStorage.getItem("__bt_engine_scene"); } catch (storageError) { changedScene = null; }
+    var scenename = "" + (((changedScene != null && changedScene === requestedScene) ? changedScene : null) || defaultScene || requestedScene || null);
     var scenepath = "" + (rooturl + sceneurl);
     var adaptparam = window.getUrlParameter("adaptive");
     if (adaptparam != null && adaptparam !== "") {
@@ -401,13 +484,20 @@
     TOOLKIT.SceneManager.ServerEndPoint = endpoint;
     TOOLKIT.SceneManager.SupportSRGBBuffers = false;
     TOOLKIT.SceneManager.PhysicsCapsuleShape = capsule;
+    // The splash hands its status line and bar to the toolkit once the scene file has downloaded: the runtime then posts its
+    // own build stages (BUILDING SCENE NN%, SETTING UP SCENE) instead of the page's download percent sitting at 100%
+    TOOLKIT.SceneManager.HostDefersSceneStatus = true;
     BABYLON.SceneLoader.OnPluginActivatedObservable.addOnce((loader) => {
         loader.validate = validategltf;
     });
     // ************************************************************************ //
     // PAGE UTILTITIES - General Page Utility Funcitons                         //
     // ************************************************************************ //
+    // The splash screen shows the runtime's loader status through SceneManager.OnLoaderStatusObservable (with progress);
+    // an older runtime without it drives the splash text from these page globals instead.
+    window.splashFollowsGlobals = () => (TOOLKIT.SceneManager.OnLoaderStatusObservable == null);
     window.updateStatus = (status, info, state) => {
+        if (window.splashFollowsGlobals() && window.setSplashStatus) window.setSplashStatus(status, info, null, state);
         if (showlabel) {
             if (label != null && status != null && label.innerHTML !== status) {
                 label.innerHTML = status.toUpperCase();
@@ -420,6 +510,7 @@
         }
     };
     window.updateDetails = (info, state) => {
+        if (window.splashFollowsGlobals() && window.setSplashStatus) window.setSplashStatus(null, info, null, state);
         if (showdetails) {
             if (details != null && info != null && details.innerHTML !== info) {
                 details.innerHTML = info.toUpperCase();
@@ -484,6 +575,16 @@
         });    
     };
     window.handleLoadProgress = (evt) => {
+        // Splash screen: the scene file download (same wording as the React framework splash), until the toolkit posts its own
+        // scene build stages (a loader state from 1 on): later download events would overwrite them
+        if (window.setSplashStatus && evt != null && !(window._splashState >= 1)) {
+            if (evt.lengthComputable && evt.total > 0) {
+                var splashPercent = (evt.loaded / evt.total);
+                window.setSplashStatus("Loading Scene " + Math.round(splashPercent * 100) + "%", null, splashPercent, -1);
+            } else if (evt.loaded > 0) {
+                window.setSplashStatus("Loading Scene " + (evt.loaded / megabyte).toFixed(0) + " MB", null, null, -1);
+            }
+        }
         var defaultDetails = "LOADING";
         var pstatus = "PLEASE WAIT";
         var details = defaultDetails;
@@ -582,12 +683,22 @@
     TOOLKIT.SceneManager.OnAssetManagerProgress = (evt) => {
         window.handleExtraProgress(evt);
     };
+    // Splash screen: the toolkit asset preloader after the download (asset counts, terrain stages, preparing scene view)
+    if (TOOLKIT.SceneManager.OnLoaderStatusObservable != null) {
+        TOOLKIT.SceneManager.OnLoaderStatusObservable.add((data) => {
+            if (data != null && window.setSplashStatus) window.setSplashStatus(data.status, data.details, data.progress, data.state);
+        });
+    }
     // ************************************************************************ //
     // SCENE LOADER - Execute Scene Loading With Progress Information           //
     // ************************************************************************ //
     window.executeSceneLoader = (root, name) => {
         window.updateStatus("PLEASE WAIT", "LOADING", 0);
-        BABYLON.SceneLoader.Load(root, name, engine, (newscene) => {
+        // The promise form reports every failure: a failed load disposes the scene it created, so the callback form has no
+        // scene to pass to its onError callback once the previous scene is disposed (a missing file only logs an error)
+        BABYLON.SceneLoader.LoadAsync(root, name, engine, (evt) => {
+            window.handleLoadProgress(evt);
+        }).then((newscene) => {
             window.scene = newscene;
             //window.scene.blockMaterialDirtyMechanism = true;
             window.scene.executeWhenReady(() => {
@@ -650,10 +761,9 @@
                 //    }, 5000); 
                 // }
             });
-        }, (evt) => {
-            window.handleLoadProgress(evt);
-        }, (scene, message, exception) => {
-            window.showErrorMessage(exception || message || ("Unknown error loading scene:" + name));
+        }, (exception) => {
+            var failureMessage = (exception && exception.message) || ("Unknown error loading scene: " + name);
+            window.showErrorMessage(failureMessage);
         });
     };
     window.loadSceneFile = () => {
@@ -668,6 +778,51 @@
         window.showSceneLoader();
         window.executeSceneLoader(scenepath, scenename);
     };
+    // ************************************************************************ //
+    // SCENE CHANGE - Load A Requested Scene With The Normal Page Load          //
+    // ************************************************************************ //
+    // A SceneLoad message (TOOLKIT.SceneChange.RequestScene, or any same-origin page posting { scene: "file.gltf" })
+    // reloads this frame on ?scene= so the destination loads like any scene, behind the normal splash screen. The
+    // message's title and color are there for a custom splash; the destination reads its entry from TOOLKIT.SceneChange.
+    window.sceneLoadInProgress = false;
+    window.resolveSceneLoadRequest = (request) => {
+        if (request == null) return null;
+        if (typeof request.sceneFile === "string" && request.sceneFile !== "" && typeof request.rootUrl === "string" && request.rootUrl !== "") {
+            return { sceneFile: request.sceneFile, rootUrl: request.rootUrl };
+        }
+        if (typeof request.scene !== "string" || request.scene === "") return null;
+        var currentFolder = new URL(scenepath, window.location.href).href;
+        var address = new URL(request.scene, currentFolder);
+        var sceneFile = address.pathname.substring(address.pathname.lastIndexOf("/") + 1);
+        var rootUrl = address.href.substring(0, address.href.length - address.search.length - address.hash.length - sceneFile.length);
+        return { sceneFile: sceneFile, rootUrl: rootUrl };
+    };
+    window.applySceneToAddress = (pageUrl, destination) => {
+        var address = new URL(pageUrl);
+        address.searchParams.set("scene", destination.sceneFile);
+        // The page's own scene folder needs no parameters; any other folder loads with root + path=./
+        var defaultFolder = new URL(hosturl + folder, window.location.href).href;
+        if (defaultFolder === destination.rootUrl) { address.searchParams.delete("root"); address.searchParams.delete("path"); }
+        else { address.searchParams.set("root", destination.rootUrl); address.searchParams.set("path", "./"); }
+        return address.href;
+    };
+    window.handleSceneLoadRequest = (request, event) => {
+        if (event != null && event.origin !== window.location.origin) return;
+        var destination = window.resolveSceneLoadRequest(request);
+        if (destination == null || window.sceneLoadInProgress === true) return;
+        window.sceneLoadInProgress = true;
+        // Remembered per tab, so the requested scene wins over a baked default scene on the load below
+        try { sessionStorage.setItem("__bt_engine_scene", destination.sceneFile); } catch (storageError) { }
+        // Keep the top page address in step (index.html passes its query to this frame), so a full reload stays here
+        try {
+            if (window.top !== window && window.top.location.origin === window.location.origin) {
+                window.top.history.replaceState(window.top.history.state, "", window.applySceneToAddress(window.top.location.href, destination));
+            }
+        } catch (topError) { }
+        window.location.replace(window.applySceneToAddress(window.location.href, destination));
+    };
+    if (TOOLKIT.SceneChange) TOOLKIT.SceneChange.HostHandlesRequests = true;
+    TOOLKIT.SceneManager.EventBus.OnMessage("SceneLoad", window.handleSceneLoadRequest);
     window.defaultSceneLoader = () => {
         try {
             window.loadSceneFile();
@@ -765,6 +920,9 @@
             var cpuPerformanceProfile = "default";
             if (profile === 1) cpuPerformanceProfile = "low-power";
             else if (profile === 2) cpuPerformanceProfile = "high-performance";
+            // Draco mesh decoder (KHR_draco_mesh_compression), self-hosted beside glslang/twgsl in the scripts folder.
+            // Set before the engine branch so WebGL and WebGPU both use it, and before any scene loads.
+            if (BABYLON.DracoDecoder != null) BABYLON.DracoDecoder.DefaultConfiguration = { wasmUrl: "###SCRIPT###/draco.js", wasmBinaryUrl: "###SCRIPT###/draco.wasm" };
             if (renderengine === 1) {
                 if (navigator.gpu) {
                     engine = new BABYLON.WebGPUEngine(divcvs, { audioEngine: legacyAudio, antialias: antialias, powerPreference: gpuPerformanceProfile, stencil: useStencilBuffer, enableAllFeatures:true, useLargeWorldRendering: useLargeWorlds, setMaximumLimits: true, doNotHandleContextLost: true });

@@ -71,6 +71,7 @@ public static class BabylonToolkitCliCommands
         CanvasTools.CanvasToolsExporter.SuppressDialogs = true;
         try
         {
+            CanvasTools.CanvasToolsExporter.LastBuildResult = -1;
             CanvasTools.CanvasToolsExporter.BuildProject(
                 mode, selection, filename, folder, animationMode, handSystem, meshSystem, metadata);
         }
@@ -112,7 +113,23 @@ public static class BabylonToolkitCliCommands
             "compiling  : " + EditorApplication.isCompiling,
             "baking     : " + Lightmapping.isRunning,
             "devserver  : " + WebServer.IsStarted,
+            "automation : " + (UnityTools.AutomatedEnabled ? "on until " + UnityTools.AutomationExpiresUtc.ToString("o") : "off"),
         });
+    }
+
+    /// unity command bt_automation [--grant <signed grant from the App Builder>]
+    [CliCommand("bt_automation", "Enable App Builder automation mode with a signed grant, or report it",
+                MainThreadRequired = true)]
+    public static string Automation([CliArg("grant", "Signed grant from the App Builder (omit to report)")] string grant = null)
+    {
+        if (!string.IsNullOrWhiteSpace(grant))
+        {
+            string reason = UnityTools.EnableAutomation(grant);
+            if (reason.Length > 0) throw new Exception("Automation grant refused: " + reason);
+        }
+        return UnityTools.AutomatedEnabled
+            ? "automation : on until " + UnityTools.AutomationExpiresUtc.ToString("o")
+            : "automation : off";
     }
 
     /// unity command bt_refresh [--force true]
@@ -141,13 +158,13 @@ public static class BabylonToolkitCliCommands
         [CliArg("filename",     "Output name without extension (optional)")] string filename = null,
         [CliArg("folder",       "Absolute output folder (optional)")]        string folder = null,
         [CliArg("geometryOnly", "Skip script/web/PWA emit; export only the scene")] bool geometryOnly = true,
-        [CliArg("compileScripts", "Compile Assets/**/*.ts into the project bundle even when geometryOnly (default true: generated Shader Graph classes must be in the bundle)")] bool compileScripts = true)
+        [CliArg("compileScripts", "Compile Assets/**/*.ts into the project bundle even when geometryOnly (default true: generated Shader Graph classes must be in the bundle)")] bool compileScripts = true,
+        [CliArg("save", "Save open scenes with unsaved changes before opening --scene (otherwise refuse)")] bool save = false)
     {
         if (EditorApplication.isCompiling) throw new Exception("Scripts are still compiling.");
         if (Lightmapping.isRunning)        throw new Exception("A lightmap bake is in progress.");
 
-        if (!string.IsNullOrWhiteSpace(scene))
-            EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
+        if (!string.IsNullOrWhiteSpace(scene)) OpenSceneWithoutDiscardingChanges(scene, save, "Save them (save_all) or pass --save true.");
 
         PrepareExporter();
         var info = CanvasToolsInfo.Instance;
@@ -178,6 +195,50 @@ public static class BabylonToolkitCliCommands
 
         string root = string.IsNullOrWhiteSpace(folder) ? UnityTools.GetDefaultExportFolder() : folder;
         return Path.Combine(root, info.DefaultScenePath, CanvasTools.CanvasToolsExporter.SceneFilename ?? "");
+    }
+
+    /// unity command bt_bake_timelines --scene Assets/Scenes/Level01.unity --force false
+    /// <summary>
+    /// Bakes (or loads from the cache) every PlayableDirector Timeline in the open or named scene, with no export, and
+    /// returns the bake report (unity-timeline-playback DR-9.7). Fresh bakes reload the scenes from disk, so they never
+    /// leave the scene dirty.
+    /// </summary>
+    [CliCommand("bt_bake_timelines",
+                "Bake (or load from cache) every PlayableDirector Timeline in the open (or named) scene and return the bake report",
+                MainThreadRequired = true)]
+    public static string BakeTimelines(
+        [CliArg("scene", "Scene asset path to open first (optional)")] string scene = null,
+        [CliArg("force", "Ignore the bake cache")] bool force = false)
+    {
+        if (EditorApplication.isCompiling) throw new Exception("Scripts are still compiling.");
+        if (Lightmapping.isRunning)        throw new Exception("A lightmap bake is in progress.");
+
+        if (!string.IsNullOrWhiteSpace(scene)) OpenSceneWithoutDiscardingChanges(scene, false, "Save them (save_all) first.");
+        return CanvasTools.TimelineExportTool.BakeOpenScenes(force);
+    }
+
+    /// <summary>
+    /// Opens a scene in place of the open ones without silently losing work: when any open scene has unsaved changes it
+    /// saves them first (saveDirtyScenes) or refuses with a message ending in refusalAdvice.
+    /// </summary>
+    /// <param name="scene">Scene asset path to open.</param>
+    /// <param name="saveDirtyScenes">Save unsaved scenes instead of refusing.</param>
+    /// <param name="refusalAdvice">The sentence that tells the caller how to proceed.</param>
+    /// <exception cref="Exception">An open scene has unsaved changes and saveDirtyScenes is false.</exception>
+    private static void OpenSceneWithoutDiscardingChanges(string scene, bool saveDirtyScenes, string refusalAdvice)
+    {
+        var dirtyScenes = new List<string>();
+        for (int i = 0; i < EditorSceneManager.sceneCount; i++)
+        {
+            var openScene = EditorSceneManager.GetSceneAt(i);
+            if (openScene.isDirty) dirtyScenes.Add(string.IsNullOrEmpty(openScene.path) ? openScene.name : openScene.path);
+        }
+        if (dirtyScenes.Count > 0)
+        {
+            if (!saveDirtyScenes) throw new Exception("Unity has unsaved changes in " + string.Join(", ", dirtyScenes) + ". Opening " + scene + " would discard them. " + refusalAdvice);
+            EditorSceneManager.SaveOpenScenes();
+        }
+        EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
     }
 
     /// unity command bt_export_prefab --paths "Props/Crate,Props/Barrel" --filename Crates --folder /abs/out
@@ -224,6 +285,7 @@ public static class BabylonToolkitCliCommands
         BuildProjectHeadless(
             EditorBuildType.Scene, targets, outName, outDir, false,
             info.HandedExportSystem, info.MeshExportSystem, metadata);
+        ThrowIfBuildFailed();
 
         return Path.Combine(outDir, CanvasTools.CanvasToolsExporter.SceneFilename ?? outName);
     }
@@ -249,6 +311,7 @@ public static class BabylonToolkitCliCommands
             EditorBuildType.Scene, new[] { go.transform },
             string.IsNullOrWhiteSpace(filename) ? go.name : filename,
             outDir, true, info.HandedExportSystem, 0, false);
+        ThrowIfBuildFailed();
 
         return Path.Combine(outDir, CanvasTools.CanvasToolsExporter.SceneFilename ?? "");
     }
@@ -257,30 +320,69 @@ public static class BabylonToolkitCliCommands
     [CliCommand("bt_devserver_start", "Start the Babylon Toolkit development web server",
                 MainThreadRequired = true)]
     public static string StartDevServer(
-        [CliArg("port", "HTTP port to serve on (default: keep current setting)")] int port = 0)
+        [CliArg("port", "HTTP port to serve on (default: keep current setting)")] int port = 0,
+        [CliArg("auto", "Pick the first free port from 8888 to 8899 and save it")] bool auto = false)
     {
         // The server refuses to start without an export root - same dependency as exporting.
         if (string.IsNullOrWhiteSpace(CanvasToolsInfo.DefaultProjectFolder))
             CanvasToolsInfo.DefaultProjectFolder = UnityTools.GetDefaultExportFolder();
 
         var info = CanvasToolsInfo.Instance;
-        if (port > 0) { info.DefaultServerPort = port; CanvasToolsInfo.SaveSettings(); }
-
-        // Only the InternalWebServer mode runs the built-in listener.
         info.HostPreviewType = (int)EditorHostingType.InternalWebServer;
-
+        string scheme = info.EnableSecureSockets ? "https" : "http";
+        // LAN serving (the default) may report the alias; loopback-only is reachable ONLY as localhost.
+        string alias = UnityTools.ReadServerAliasName();
+        string host = info.ServerListenAllInterfaces && !string.IsNullOrWhiteSpace(alias) ? alias : "localhost";
         if (WebServer.IsStarted)
-            return "already running: http://localhost:" + info.DefaultServerPort + "/ root=" + WebServer.Root;
-
-        // Prefer StartDevelopmentServer() when this Toolkit build exposes it.
+            return "already running: " + scheme + "://" + host + ":" + (info.EnableSecureSockets ? info.DefaultSecurePort : info.DefaultServerPort) + "/ root=" + WebServer.Root;
+        if (auto)
+        {
+            int free = FirstFreePort(8888, 8899);
+            if (free < 0) throw new Exception("No free port between 8888 and 8899 — close another Unity Editor's dev server.");
+            port = free;
+        }
+        if (port > 0) { info.DefaultServerPort = port; CanvasToolsInfo.SaveSettings(); }
         var mi = typeof(CanvasTools.CanvasToolsExporter).GetMethod("StartDevelopmentServer",
-                     System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
-                     null, System.Type.EmptyTypes, null);
+                     System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static, null, System.Type.EmptyTypes, null);
         if (mi != null) mi.Invoke(null, null);
         else UnityTools.StartWebServer(CanvasTools.CVPanel.RelativeHostPath);
+        if (!WebServer.IsStarted)
+            throw new Exception("Development server failed to start on port " + info.DefaultServerPort + ": " + (WebServer.LastError ?? "unknown error") +
+                                ". Another Unity Editor may already be serving it — run bt_devserver_start --auto true.");
+        return scheme + "://" + host + ":" + (info.EnableSecureSockets ? info.DefaultSecurePort : info.DefaultServerPort) + "/ root=" + WebServer.Root;
+    }
 
-        if (!WebServer.IsStarted) throw new Exception("Development server failed to start.");
-        return "http://localhost:" + info.DefaultServerPort + "/ root=" + WebServer.Root;
+    /// <summary>
+    /// D29: the first port in [from, to] that nothing on this machine is bound to, or -1.
+    /// A loopback bind alone is NOT a free-port test on macOS/Linux: Mono sets SO_REUSEADDR on listeners, so
+    /// 127.0.0.1:P binds happily beside another Editor's `*:P` dev server (measured: it returned the very port
+    /// the server held). So a port counts as taken when anything ANSWERS on it, and must also bind on all
+    /// interfaces (which the default LAN-serving listener needs).
+    /// </summary>
+    public static int FirstFreePort(int from, int to)
+    {
+        for (int p = from; p <= to; p++)
+        {
+            if (PortAnswers(p)) continue;
+            try { var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Any, p); l.Start(); l.Stop(); return p; }
+            catch { }
+        }
+        return -1;
+    }
+
+    private static bool PortAnswers(int port)
+    {
+        try
+        {
+            using (var client = new System.Net.Sockets.TcpClient())
+            {
+                var pending = client.BeginConnect(System.Net.IPAddress.Loopback, port, null, null);
+                if (!pending.AsyncWaitHandle.WaitOne(250)) return false;
+                client.EndConnect(pending);
+                return true;
+            }
+        }
+        catch { return false; }
     }
 
     /// unity command bt_devserver_status
@@ -296,6 +398,8 @@ public static class BabylonToolkitCliCommands
             "port      : " + info.DefaultServerPort,
             "securePort: " + (info.EnableSecureSockets ? info.DefaultSecurePort.ToString() : "disabled"),
             "hosting   : " + ((EditorHostingType)info.HostPreviewType),
+            "project   : " + Application.productName,
+            "listen    : " + (info.ServerListenAllInterfaces ? "all" : "loopback"),
         });
     }
 
@@ -312,6 +416,30 @@ public static class BabylonToolkitCliCommands
         return UnityTools.GetDefaultExportFolder();
     }
 
+    /// unity command bt_build_game_assets [--only scripts,containers,levels,<file names>]
+    /// Starts Build All Game Assets (Editor/GameAssets/GameAssetBuilder.cs) from the project's
+    /// Assets/[Config]/assets.json and returns at once: an export can make Unity compile, so the build runs one
+    /// asset per editor update. Follow it with bt_build_game_assets_status.
+    [CliCommand("bt_build_game_assets",
+                "Start building every game asset in Assets/[Config]/assets.json (scripts, asset containers, game levels)",
+                MainThreadRequired = true)]
+    public static string BuildGameAssets(
+        [CliArg("only", "Comma-separated groups (scripts, containers, levels) or output file names; empty = all")] string only = null)
+    {
+        return GameAssetBuilder.StartWithoutDialogs(only);
+    }
+
+    /// unity command bt_build_game_assets_status
+    /// `running <done>/<total> <next asset>` while the build runs, then `idle` followed by its report
+    /// (also in Logs/BuildAllGameAssets.txt; an asset that failed is listed as FAIL).
+    [CliCommand("bt_build_game_assets_status",
+                "Report Build All Game Assets: running with progress, or idle with the last report",
+                MainThreadRequired = true)]
+    public static string BuildGameAssetsStatus()
+    {
+        return GameAssetBuilder.GetStatus();
+    }
+
     /// <summary>
     /// D18: turn a silent stage-01 TypeScript failure into a failed command. BuildProject returns void and
     /// `if (buildResult == 0)` gates the scene export, so a tsc error otherwise looks exactly like success
@@ -322,6 +450,7 @@ public static class BabylonToolkitCliCommands
         int result = CanvasTools.CanvasToolsExporter.LastBuildResult;
         if (result != 0)
         {
+            if (CanvasTools.CanvasToolsExporter.LastBuildResult == -1) throw new Exception("The export did not run — the exporter stopped before building (licence, compiling, baking, or missing project folder). Check the Unity console.");
             throw new Exception("TypeScript compile failed (exit " + result + ") - see Debug/tsc-errors.txt");
         }
     }

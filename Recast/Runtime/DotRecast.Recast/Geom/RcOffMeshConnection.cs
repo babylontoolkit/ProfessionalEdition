@@ -34,6 +34,12 @@ namespace DotRecast.Recast.Geom
         public readonly int userId;
 
         public RcOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags)
+            : this(start, end, radius, bidir, area, flags, 0)
+        {
+        }
+
+        // Babylon Toolkit (unity-export-parity-gaps A-b): the Detour user id carried into the baked connection
+        public RcOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags, int userId)
         {
             verts = new float[6];
             verts[0] = start.X;
@@ -46,6 +52,7 @@ namespace DotRecast.Recast.Geom
             this.bidir = bidir;
             this.area = area;
             this.flags = flags;
+            this.userId = userId;
         }
     }
 }

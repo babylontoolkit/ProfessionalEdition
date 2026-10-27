@@ -1,7 +1,7 @@
 {
   "name": "com.babylontoolkit.editor",
   "displayName": "Babylon Toolkit",
-  "version": "9.28.0",
+  "version": "9.32.0",
   "unity": "2022.3",
   "description": "Babylon Toolkit Professional Edition",
   "keywords": [
@@ -12,6 +12,7 @@
   ],
   "category": "Editor",
   "dependencies": {
+    "com.unity.cloud.draco": "5.4.0",
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
   "author": {

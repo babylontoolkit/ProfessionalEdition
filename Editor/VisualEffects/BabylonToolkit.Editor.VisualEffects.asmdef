@@ -1,0 +1,16 @@
+{
+    "name": "BabylonToolkit.Editor.VisualEffects",
+    "rootNamespace": "",
+    "references": [],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": ["BT_VFX_GRAPH"],
+    "versionDefines": [
+        { "name": "com.unity.visualeffectgraph", "expression": "[17.0.0,18.0.0)", "define": "BT_VFX_GRAPH" }
+    ],
+    "noEngineReferences": false
+}

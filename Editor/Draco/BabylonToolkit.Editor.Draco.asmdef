@@ -1,0 +1,16 @@
+{
+    "name": "BabylonToolkit.Editor.Draco",
+    "rootNamespace": "",
+    "references": [],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": ["BT_DRACO_UNITY"],
+    "versionDefines": [
+        { "name": "com.unity.cloud.draco", "expression": "[5.0.0,6.0.0)", "define": "BT_DRACO_UNITY" }
+    ],
+    "noEngineReferences": false
+}

@@ -254,8 +254,14 @@ namespace UniRecast.Core
                 mesh.SaveUnityMeshFile(heightMesh, sceneFolderPath);
             }
     
+            // Off-mesh links (unity-export-parity-gaps A-a): the collector shared with the exporter, so the bake and
+            // navigation.offmeshlinks always agree on ids, segments, flags and cost areas.
+            var links = CanvasTools.OffMeshLinkCollector.Collect(currentScene, _agentRadius);
+            var offMeshConnections = ToOffMeshConnections(links);
+
             // Build and save NavMesh as binary file
-            var navMesh = mesh.Build(setting);
+            var navMesh = mesh.Build(setting, offMeshConnections);
+            ReportUnattachedOffMeshLinks(navMesh, links);
             navMesh.SaveSerdesNavMeshFile(sceneFolderPath);
             
             // Cache the results
@@ -266,7 +272,88 @@ namespace UniRecast.Core
             UnityEditor.AssetDatabase.Refresh();
 #endif
 
-            Debug.Log("NavMesh baked successfully");
+            Debug.Log("NavMesh baked successfully" + ((offMeshConnections.Count > 0) ? (" (" + offMeshConnections.Count + " off-mesh connections from " + links.Count + " links)") : ""));
+        }
+
+        /// <summary>Every activated link segment as a Recast off-mesh connection (area = cost area when overridden).</summary>
+        public static List<DotRecast.Recast.Geom.RcOffMeshConnection> ToOffMeshConnections(List<CanvasTools.OffMeshLinkRecord> links)
+        {
+            var result = new List<DotRecast.Recast.Geom.RcOffMeshConnection>();
+            if (links == null) return result;
+            foreach (var link in links)
+            {
+                if (link == null || link.activated == false || link.segments == null) continue;
+                foreach (var seg in link.segments)
+                {
+                    var start = new DotRecast.Core.Numerics.RcVec3f(seg.start[0], seg.start[1], seg.start[2]);
+                    var end = new DotRecast.Core.Numerics.RcVec3f(seg.end[0], seg.end[1], seg.end[2]);
+                    result.Add(new DotRecast.Recast.Geom.RcOffMeshConnection(start, end, link.radius, link.bidirectional, link.DetourArea, link.flags, seg.userid));
+                }
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// A-a / A-b: compares the connections given to the bake with those present in the tiles, and warns once per link (by
+        /// owner path) when any of its segments is missing or has an endpoint that did not attach to a polygon.
+        /// Returns the number of links reported.
+        /// </summary>
+        public static int ReportUnattachedOffMeshLinks(DtNavMesh navMesh, List<CanvasTools.OffMeshLinkRecord> links)
+        {
+            if (navMesh == null || links == null || links.Count == 0) return 0;
+            var attached = new Dictionary<int, bool>();
+            for (int i = 0; i < navMesh.GetMaxTiles(); ++i)
+            {
+                DtMeshTile tile = navMesh.GetTile(i);
+                if (tile == null || tile.data == null || tile.data.header == null || tile.data.offMeshCons == null) continue;
+                for (int c = 0; c < tile.data.header.offMeshConCount; ++c)
+                {
+                    var con = tile.data.offMeshCons[c];
+                    var poly = tile.data.polys[con.poly];
+                    bool startLinked = false, endLinked = false;
+                    for (int k = poly.firstLink; k != DtDetour.DT_NULL_LINK; k = tile.links[k].next)
+                    {
+                        if (tile.links[k].edge == 0) startLinked = true;
+                        else if (tile.links[k].edge == 1) endLinked = true;
+                    }
+                    bool ok = startLinked && endLinked;
+                    attached[con.userId] = (attached.TryGetValue(con.userId, out var prev) && prev) || ok;
+                }
+            }
+            int reported = 0;
+            var navParams = navMesh.GetParams();
+            foreach (var link in links)
+            {
+                if (link == null || link.activated == false || link.segments == null) continue;
+                int missing = 0;
+                bool spansTiles = false;
+                foreach (var seg in link.segments)
+                {
+                    if (!attached.TryGetValue(seg.userid, out var ok) || !ok)
+                    {
+                        missing++;
+                        // Detour attaches a link end only inside its start tile or one of the 8 neighbours
+                        if (navParams.tileWidth > 0f && navParams.tileHeight > 0f)
+                        {
+                            int sx = (int)Math.Floor((seg.start[0] - navParams.orig.X) / navParams.tileWidth);
+                            int sz = (int)Math.Floor((seg.start[2] - navParams.orig.Z) / navParams.tileHeight);
+                            int ex = (int)Math.Floor((seg.end[0] - navParams.orig.X) / navParams.tileWidth);
+                            int ez = (int)Math.Floor((seg.end[2] - navParams.orig.Z) / navParams.tileHeight);
+                            if (Math.Abs(ex - sx) > 1 || Math.Abs(ez - sz) > 1) spansTiles = true;
+                        }
+                    }
+                }
+                if (missing > 0)
+                {
+                    reported++;
+                    string reason = spansTiles
+                        ? ("it spans more than one navmesh tile (tile size " + navParams.tileWidth.ToString("0.##") + " m); raise the surface Tile Size or shorten the link")
+                        : "an endpoint is too far from any walkable polygon or outside the tile height range; move its endpoints onto the walkable surface";
+                    Debug.LogWarning("[UniRcNavMeshSurface] Off-mesh link '" + link.owner + "' did not attach to the navmesh ("
+                        + missing + " of " + link.segments.Count + " segment(s)): " + reason + ", then re-bake.");
+                }
+            }
+            return reported;
         }
 
         // =====================================================================

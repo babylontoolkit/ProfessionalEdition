@@ -1,0 +1,33 @@
+{
+    "name": "BabylonToolkit.Editor.Cinematics.Cinemachine3",
+    "rootNamespace": "",
+    "references": [
+        "BabylonToolkit.Editor.Cinematics",
+        "Unity.Cinemachine"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": ["BT_CINEMACHINE_3", "BT_TIMELINE", "BT_UGUI"],
+    "versionDefines": [
+        {
+            "name": "com.unity.cinemachine",
+            "expression": "[3.0.0,4.0.0)",
+            "define": "BT_CINEMACHINE_3"
+        },
+        {
+            "name": "com.unity.timeline",
+            "expression": "",
+            "define": "BT_TIMELINE"
+        },
+        {
+            "name": "com.unity.ugui",
+            "expression": "",
+            "define": "BT_UGUI"
+        }
+    ],
+    "noEngineReferences": false
+}

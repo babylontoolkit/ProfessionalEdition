@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
+using DotRecast.Recast.Geom;
 using System.Text;
 using DotRecast.Core;
 using DotRecast.Core.Numerics;
@@ -62,6 +64,13 @@ namespace UniRecast.Core
 
         public DtNavMesh Build(RcNavMeshBuildSettings setting)
         {
+            return Build(setting, null);
+        }
+
+        // Babylon Toolkit (unity-export-parity-gaps A-a): off-mesh connections from the shared link collector are
+        // added to the Recast input, so every tile bakes them as Detour link polygons.
+        public DtNavMesh Build(RcNavMeshBuildSettings setting, IList<RcOffMeshConnection> offMeshConnections)
+        {
             var vertices = new float[Vertices.Length * 3];
             for (int i = 0; i < Vertices.Length; ++i)
             {
@@ -71,6 +80,16 @@ namespace UniRecast.Core
             }
 
             var geom = new DemoInputGeomProvider(vertices, Faces);
+            if (offMeshConnections != null)
+            {
+                foreach (var con in offMeshConnections)
+                {
+                    if (con == null) continue;
+                    var start = new RcVec3f(con.verts[0], con.verts[1], con.verts[2]);
+                    var end = new RcVec3f(con.verts[3], con.verts[4], con.verts[5]);
+                    geom.AddOffMeshConnection(start, end, con.radius, con.bidir, con.area, con.flags, con.userId);
+                }
+            }
             var builder = new TileNavMeshBuilder();
             var result = builder.Build(geom, setting);
             return result.NavMesh;

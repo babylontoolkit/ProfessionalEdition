@@ -513,6 +513,14 @@ declare namespace BABYLON {
         /** @internal */
         _blockEntityCollection: boolean;
         /**
+         * Executes a synchronous action without allowing it to weaken an existing entity-collection block.
+         * @param blockEntityCollection whether the action requires entity collection to be blocked
+         * @param action the action to execute
+         * @returns the action result
+         * @internal
+         */
+        _executeWithBlockedEntityCollection<T>(blockEntityCollection: boolean, action: () => T): T;
+        /**
          * Gets or sets a boolean that indicates if the scene must clear the render buffer before rendering a frame
          */
         autoClear: boolean;
@@ -1279,10 +1287,21 @@ declare namespace BABYLON {
          * Flag indicating that the frame buffer binding is handled by another component
          */
         get prePass(): boolean;
+        private _needsPreviousWorldMatrices;
+        private _manualPreviousWorldMatrices;
+        private readonly _previousWorldMatricesOwners;
         /**
-         * Flag indicating if we need to store previous matrices when rendering
+         * Flag indicating if we need to store previous matrices when rendering.
+         * Setting it directly controls the manual requirement; renderers can independently request previous matrices.
          */
-        needsPreviousWorldMatrices: boolean;
+        get needsPreviousWorldMatrices(): boolean;
+        set needsPreviousWorldMatrices(value: boolean);
+        /**
+         * @internal
+         * @param owner The renderer or frame graph requesting previous world matrices
+         * @param required Whether that owner still needs previous world matrices
+         */
+        _setPreviousWorldMatricesRequired(owner: object, required: boolean): void;
         private _shadowsEnabled;
         /**
          * Gets or sets a boolean indicating if shadows are enabled on this scene
@@ -5671,7 +5690,8 @@ declare namespace BABYLON {
          */
         ignoreSessionGrantedEvent?: boolean;
         /**
-         * If defined, this function will be executed if the UI encounters an error when entering XR
+         * Called with the error from `enterXRAsync` when entering XR through the UI fails.
+         * The button still displays ERROR; the application decides whether to show a message or rebuild with WebGL.
          */
         onError?: (error: any) => void;
     }
@@ -5795,7 +5815,11 @@ declare namespace BABYLON {
          */
         outputCanvasOptions?: WebXRManagedOutputCanvasOptions;
         /**
-         * optional UI options. This can be used among other to change session mode and reference space type
+         * Options for the default enter/exit UI, including session mode and reference space type.
+         * Set `onError` here to receive XR entry failures (including WebGPU session negotiation failures)
+         * when the default button is used. The application can then notify the user or create a new
+         * WebGL engine and scene; Babylon.js cannot switch an existing scene's rendering backend.
+         * When `disableDefaultUI` is true, handle rejections from `baseExperience.enterXRAsync()` instead.
          */
         uiOptions?: Partial<WebXREnterExitUIOptions>;
         /**
@@ -37195,6 +37219,8 @@ declare namespace BABYLON {
         updateFunction: (particles: Particle[]) => void;
         /** @internal */
         _emitterWorldMatrix: Matrix;
+        /** Owned translation matrix for the vector-emitter path, so a live mesh world matrix is never overwritten in place */
+        private _emitterTranslationMatrix;
         /** @internal */
         _emitterInverseWorldMatrix: Matrix;
         private _startDirectionFunction;
@@ -37236,6 +37262,10 @@ declare namespace BABYLON {
         _noiseTextureSize: Nullable<ISize>;
         /** @internal */
         _noiseTextureData: Nullable<Uint8Array>;
+        private _noiseTextureFetchInFlight;
+        private _noiseTextureFetchInternalTexture;
+        private _noiseTextureFetchToken;
+        private _noiseTextureReadbackFailureLogged;
         private _particles;
         private _epsilon;
         private _capacity;
@@ -37753,6 +37783,11 @@ declare namespace BABYLON {
     }
 
 
+    /**
+     * Callback-free equivalent of GradientHelper.GetCurrentGradient; stores the result in _GradCurrent/_GradNext/_GradScale.
+     * @internal
+     */
+    export function _GetCurrentGradientToRef(ratio: number, gradients: IValueGradient[]): void;
     /** Color */
     /** @internal */
     export function _CreateColorData(particle: Particle, system: ThinParticleSystem): void;
@@ -39836,6 +39871,8 @@ declare namespace BABYLON {
          * Limited by the fixed-size uniform arrays in the update shaders.
          */
         readonly maxAttractors: number;
+        /** Precomputed per-slot uniform names, avoiding per-attractor string concatenation every frame. */
+        private readonly _attractorUniformNames;
         /**
          * Add an attractor to the particle system. Attractors are used to change the direction of the particles in the system.
          * @param attractor - The attractor to add to the particle system
@@ -49775,6 +49812,7 @@ declare namespace BABYLON {
         protected _gatherImports(useWebGPU: boolean, list: Promise<any>[]): void;
         textureWidth: number;
         textureHeight: number;
+        useIntegerTextureSize: boolean;
         constructor(name: string, engine?: Nullable<AbstractEngine>, defines?: string, options?: EffectWrapperCreationOptions);
         bind(noDefaultBindings?: boolean): void;
     }
@@ -49787,8 +49825,22 @@ declare namespace BABYLON {
             max: number;
         }>;
         readonly reductionSteps: Array<ThinMinMaxReducerPostProcess>;
+        /**
+         * Wait for WebGPU readback before notifying observers (default: false).
+         * Notifications are asynchronous in this mode; WebGL readback remains synchronous.
+         */
+        waitForReadback: boolean;
         private _depthRedux;
         private _depthTextureType;
+        private _sourceIsDepthTexture;
+        private _waitBufferFloat?;
+        private _waitBufferUint8?;
+        private _waitMinMax?;
+        private _defaultBufferFloat?;
+        private _defaultBufferUint8?;
+        private _defaultMinMax?;
+        private _readbackPending;
+        private _readbackGeneration;
         get depthRedux(): boolean;
         set depthRedux(value: boolean);
         protected readonly _scene: Scene;
@@ -49797,8 +49849,10 @@ declare namespace BABYLON {
         get textureWidth(): number;
         get textureHeight(): number;
         constructor(scene: Scene, depthRedux?: boolean);
-        setTextureDimensions(width: number, height: number, depthTextureType?: DepthTextureType): boolean;
-        readMinMax(texture: InternalTexture): void;
+        setTextureDimensions(width: number, height: number, depthTextureType?: DepthTextureType, sourceIsDepthTexture?: boolean): boolean;
+        readMinMax(texture: InternalTexture, fallbackToFullRange?: boolean): void;
+        private _completeReadbackAsync;
+        private _notifyMinMax;
         dispose(disposeAll?: boolean): void;
         private _recreatePostProcesses;
     }
@@ -51943,6 +51997,12 @@ declare namespace BABYLON {
             min: number;
             max: number;
         }>;
+        /**
+         * Wait for WebGPU texture readback before notifying observers (default: false).
+         * This delays the notification; it does not block the render loop.
+         */
+        get waitForReadback(): boolean;
+        set waitForReadback(value: boolean);
         protected readonly _camera: Camera;
         protected readonly _thinMinMaxReducer: ThinMinMaxReducer;
         protected _sourceTexture: Nullable<RenderTargetTexture>;
@@ -57654,7 +57714,7 @@ declare namespace BABYLON {
         _distanceToCamera: number;
         /** @internal */
         _id: number;
-        private _currentMaterial;
+        private _currentMaterials;
         /**
          * Add a new submesh to a mesh
          * @param materialIndex defines the material index to use
@@ -57730,9 +57790,10 @@ declare namespace BABYLON {
         /**
          * Returns the submesh material
          * @param getDefaultMaterial Defines whether or not to get the default material if nothing has been defined.
+         * @param passId Optional render pass id to get the material with. If undefined, the engine's current render pass id is used.
          * @returns null or the current material
          */
-        getMaterial(getDefaultMaterial?: boolean): Nullable<Material>;
+        getMaterial(getDefaultMaterial?: boolean, passId?: number): Nullable<Material>;
         private _isMultiMaterial;
         /**
          * Sets a new updated BoundingInfo object to the submesh
@@ -73980,6 +74041,7 @@ declare namespace BABYLON {
      * * The mesh can be set to updatable with the boolean parameter `updatable` (default false) if its internal geometry is supposed to change once created
      * * If you create a double-sided mesh, you can choose what parts of the texture image to crop and stick respectively on the front and the back sides with the parameters `frontUVs` and `backUVs` (Vector4)
      * * Remember you can only change the shape positions, not their number when updating a polygon
+     * * The `smoothingThreshold` option defines the dot product threshold for smoothing the normals of adjacent side faces. The default value of 2 disables smoothing
      * @param name defines the name of the mesh
      * @param options defines the options used to create the mesh
      * @param scene defines the hosting scene
@@ -74002,7 +74064,9 @@ declare namespace BABYLON {
     /**
      * Creates an extruded polygon mesh, with depth in the Y direction.
      * * You can set different colors and different images to the top, bottom and extruded side by using the parameters `faceColors` (an array of 3 Color3 elements) and `faceUV` (an array of 3 Vector4 elements)
+     * * The `smoothingThreshold` option defines the dot product threshold for smoothing the normals of adjacent side faces. The default value of 2 disables smoothing
      * @see https://doc.babylonjs.com/features/featuresDeepDive/materials/using/texturePerBoxFace
+     * @see https://playground.babylonjs.com/#TJLZLN#0
      * @param name defines the name of the mesh
      * @param options defines the options used to create the mesh
      * @param scene defines the hosting scene
@@ -74013,6 +74077,7 @@ declare namespace BABYLON {
         shape: Vector3[];
         holes?: Vector3[][];
         depth?: number;
+        smoothingThreshold?: number;
         faceUV?: Vector4[];
         faceColors?: Color4[];
         updatable?: boolean;
@@ -84214,6 +84279,7 @@ declare namespace BABYLON {
         REFRACTIONMAP_3D: boolean;
         REFLECTIONOVERALPHA: boolean;
         TWOSIDEDLIGHTING: boolean;
+        SKIP_OUT_OF_RANGE_LIGHTING: boolean;
         SHADOWFLOAT: boolean;
         MORPHTARGETS: boolean;
         MORPHTARGETS_POSITION: boolean;
@@ -84513,6 +84579,13 @@ declare namespace BABYLON {
          * Defines the maximum number of lights that can be used in the material
          */
         accessor maxSimultaneousLights: number;
+        private _skipOutOfRangeLighting;
+        /**
+         * If set to true, point and spot lights skip their lighting computations for fragments beyond the light range, where they
+         * contribute nothing. Only lights with a finite range are affected. The extra per-fragment test costs time when most fragments
+         * are within range of most lights, so only enable it for sparse lighting measured on the target devices (default: false).
+         */
+        accessor skipOutOfRangeLighting: boolean;
         private _invertNormalMapX;
         /**
          * If sets to true, x component of normal map value will invert (x = 1.0 - x).
@@ -89674,6 +89747,10 @@ declare namespace BABYLON {
          */
         onCompiled?: Nullable<(effect: Effect) => void>;
         /**
+         * Callback when there is an error compiling the effect
+         */
+        onError?: (effect: Effect, errors: string) => void;
+        /**
          * The friendly name of the effect (default: "effectWrapper")
          */
         name?: string;
@@ -93287,7 +93364,7 @@ declare namespace BABYLON {
          * @param depth defines the depth of the texture
          * @param format defines the texture format to use
          * @param scene defines the hosting scene
-         * @param generateMipMaps defines a boolean indicating if mip levels should be generated (true by default)
+         * @param generateMipMaps defines whether mip levels should be generated across width, height, and depth (true by default)
          * @param invertY defines if texture must be stored with Y axis inverted
          * @param samplingMode defines the sampling mode to use (Texture.TRILINEAR_SAMPLINGMODE by default)
          * @param textureType defines the texture Type (Engine.TEXTURETYPE_UNSIGNED_BYTE, Engine.TEXTURETYPE_FLOAT...)
@@ -94415,7 +94492,7 @@ declare namespace BABYLON {
         /**
          * Gets the number of mip levels for this texture.
          * Note: This property has the correct value only if the texture was created through
-         * `createRawTexture` or `createRawTexture2DArray`.
+         * `createRawTexture`, `createRawTexture2DArray`, or (on WebGPU) `createRawTexture3D`.
          */
         mipLevelCount: number;
         /**
@@ -94438,6 +94515,11 @@ declare namespace BABYLON {
          * Observable called when the texture load is raising an error
          */
         onErrorObservable: Observable<Partial<{
+            message: string;
+            exception: any;
+        }>>;
+        /** @internal */
+        _loadError: Nullable<Partial<{
             message: string;
             exception: any;
         }>>;
@@ -94577,6 +94659,8 @@ declare namespace BABYLON {
          * Increments the number of references (ie. the number of Texture that point to it)
          */
         incrementReferences(): void;
+        /** @internal */
+        _setError(message?: string, exception?: any): void;
         /**
          * Change the size of the texture (not the size of the content)
          * @param width defines the new width
@@ -96090,6 +96174,7 @@ declare namespace BABYLON {
          * @returns an ArrayBufferView promise (Uint8Array or Float32Array)
          */
         getContent(): Nullable<Promise<ArrayBufferView>>;
+        private _readContent;
         private _createIndexBuffer;
         /** @internal */
         _rebuild(): void;
@@ -102117,7 +102202,7 @@ declare namespace BABYLON {
         /**
          * @internal
          */
-        _getShaderType(type: NodeMaterialBlockConnectionPointTypes): "" | "float" | "i32" | "int" | "f32" | "vec2f" | "vec2" | "vec3f" | "vec3" | "vec4f" | "vec4" | "mat4x4f" | "mat4";
+        _getShaderType(type: NodeMaterialBlockConnectionPointTypes): "" | "float" | "i32" | "f32" | "int" | "vec2f" | "vec2" | "vec3f" | "vec3" | "vec4f" | "vec4" | "mat4x4f" | "mat4";
         /**
          * @internal
          */
@@ -111473,6 +111558,7 @@ declare namespace BABYLON {
     export class ImageSourceBlock extends NodeMaterialBlock {
         private static _DefaultTextureByEngine;
         private _samplerName;
+        private _dimensionsUniformName;
         protected _texture: Nullable<Texture>;
         private static _GetDefaultTexture;
         /**
@@ -124445,6 +124531,7 @@ declare namespace BABYLON {
         private _currentProcessedTask;
         private _whenReadyAsyncCancel;
         private _importPromise;
+        private _needsPreviousWorldMatrices;
         /**
          * Name of the frame graph
          */
@@ -124523,6 +124610,9 @@ declare namespace BABYLON {
          * @param task Task to add
          */
         addTask(task: FrameGraphTask): void;
+        /** @internal */
+        _requestPreviousWorldMatrices(): void;
+        private _updateSceneNeedsPreviousWorldMatrices;
         /**
          * Adds a pass to a task. This method can only be called during a Task.record execution.
          * @param name The name of the pass
@@ -126856,6 +126946,67 @@ declare namespace BABYLON {
 
 
     /**
+     * Task which computes the minimum and maximum values in the red channel of a frame graph texture,
+     * or in the depth aspect of a WebGPU depth/stencil attachment.
+     * Set sourceTexture to a handle from an earlier task (for example, a geometry renderer's geometryNormViewDepthTexture)
+     * to reuse its output without rendering another depth map. The reduction is performed on each graph execution.
+     */
+    export class FrameGraphMinMaxReducerTask extends FrameGraphTask {
+        /**
+         * The 2D texture to reduce. If generated by a graph task, that task must execute before this one.
+         * WebGPU can reduce the depth aspect of a single-sampled depth/stencil attachment; backbuffer depth,
+         * stencil-only attachments and integer color formats are not supported.
+         */
+        sourceTexture: FrameGraphTextureHandle;
+        /**
+         * Whether to ignore the clear value of a depth-as-color texture during reduction (default: false).
+         * For normalized view or forward screen depth, the clear value is 1; for view depth or reverse screen depth, it is 0.
+         * Always enabled for a depth/stencil attachment, which stores screen depth.
+         */
+        depthRedux: boolean;
+        /**
+         * The type of depth values stored in the source texture when depthRedux is true (default: normalized view depth).
+         */
+        depthTextureType: DepthTextureType;
+        /**
+         * The type of the intermediate and output textures (default: half float).
+         * Supported types are FLOAT, HALF_FLOAT, and UNSIGNED_BYTE.
+         */
+        textureType: number;
+        /**
+         * Wait for WebGPU texture readback before notifying observers (default: false).
+         * This delays the notification; it does not block graph execution.
+         */
+        get waitForReadback(): boolean;
+        set waitForReadback(value: boolean);
+        /**
+         * The 1x1 RG texture containing the minimum in red and maximum in green.
+         */
+        readonly outputTexture: FrameGraphTextureHandle;
+        /**
+         * Observable triggered after the reduced texture has been read back.
+         * With depthRedux enabled, an empty or equal-valued depth range falls back to [0, 1].
+         */
+        get onAfterReductionPerformed(): Observable<{
+            min: number;
+            max: number;
+        }>;
+        private readonly _reducer;
+        private _stepCount;
+        /**
+         * Creates a min/max reduction task.
+         * @param name The name of the task.
+         * @param frameGraph The frame graph to add the task to.
+         */
+        constructor(name: string, frameGraph: FrameGraph);
+        getClassName(): string;
+        isReady(): boolean;
+        record(): void;
+        dispose(): void;
+    }
+
+
+    /**
      * Task used to create a lighting volume from a directional light's shadow generator.
      */
     export class FrameGraphLightingVolumeTask extends FrameGraphTask {
@@ -128664,6 +128815,60 @@ declare namespace BABYLON {
 
 
     /** Pure barrel — re-exports only side-effect-free modules */
+
+
+    /** This file must only contain pure code and pure imports */
+    /**
+     * Block that reduces a color texture's red channel to its minimum and maximum values.
+     * When using a geometry depth-as-color output, enable depthRedux and select the matching depthTextureType.
+     * WebGPU depth/stencil attachments are reduced as screen depth automatically.
+     * Connect the output to a downstream texture input or a dependency so the block is included in the graph.
+     */
+    export class NodeRenderGraphMinMaxReducerBlock extends NodeRenderGraphBlock {
+        protected _frameGraphTask: FrameGraphMinMaxReducerTask;
+        /**
+         * Gets the frame graph task associated with this block.
+         */
+        get task(): FrameGraphMinMaxReducerTask;
+        /**
+         * Creates a min/max reducer block.
+         * @param name The block name.
+         * @param frameGraph The hosting frame graph.
+         * @param scene The hosting scene.
+         */
+        constructor(name: string, frameGraph: FrameGraph, scene: Scene);
+        /** Whether to ignore the depth clear value of a depth-as-color source. Depth/stencil attachments are handled automatically. */
+        get depthRedux(): boolean;
+        set depthRedux(value: boolean);
+        /** The kind of depth values stored in a depth-as-color source when depth reduction is enabled. */
+        get depthTextureType(): DepthTextureType;
+        set depthTextureType(value: DepthTextureType);
+        /** The texture type used for the reduction steps and the 1x1 result. */
+        get textureType(): number;
+        set textureType(value: number);
+        /** Wait for WebGPU readback before notifying observers, without blocking the render loop. */
+        get waitForReadback(): boolean;
+        set waitForReadback(value: boolean);
+        /**
+         * Gets the source texture input.
+         */
+        get source(): NodeRenderGraphConnectionPoint;
+        /**
+         * Gets the 1x1 RG texture containing the minimum in red and maximum in green.
+         */
+        get output(): NodeRenderGraphConnectionPoint;
+        getClassName(): string;
+        protected _buildBlock(state: NodeRenderGraphBuildState): void;
+        protected _dumpPropertiesCode(): string;
+        serialize(): any;
+        _deserialize(serializationObject: any): void;
+    }
+    /**
+     * Registers the min/max reducer block for node render graph deserialization.
+     */
+    export function RegisterMinMaxReducerBlock(): void;
+
+
 
 
     /** This file must only contain pure code and pure imports */
@@ -140165,6 +140370,17 @@ declare namespace BABYLON {
          */
         swapChainFormat?: GPUTextureFormat;
         /**
+         * Defines the canvas presentation tone mapping. Default: `{ mode: "standard" }`.
+         * Extended mode allows HDR presentation with swapChainFormat: "rgba16float" on supported browsers and displays.
+         * This does not replace material or post-process tone mapping; the rendering pipeline must preserve values above 1 for HDR output.
+         */
+        canvasToneMapping?: GPUCanvasToneMapping;
+        /**
+         * Defines the canvas output color space. Default: "srgb".
+         * Selecting "display-p3" changes how output colors are interpreted; it does not convert the rendering pipeline's colors to Display P3.
+         */
+        canvasColorSpace?: PredefinedColorSpace;
+        /**
          * Defines whether we should generate debug markers in the gpu command lists (can be seen with PIX for eg). Default: false
          */
         enableGPUDebugMarkers?: boolean;
@@ -142016,6 +142232,7 @@ declare namespace BABYLON {
         private _currentBufferPointers;
         private _currentInstanceLocations;
         private _currentInstanceBuffers;
+        private _cachedVertexBuffersSetInstanceDivisors;
         private _textureUnits;
         /** @internal */
         _workingCanvas: Nullable<ICanvas>;
@@ -148360,6 +148577,7 @@ declare namespace BABYLON {
         private _device;
         private _bufferManager;
         private _mipmapSampler;
+        private _mipmap3DSampler;
         private _videoSampler;
         private _ubCopyWithOfst;
         private _pipelines;
@@ -148386,6 +148604,7 @@ declare namespace BABYLON {
         }, hasMipmaps?: boolean, generateMipmaps?: boolean, invertY?: boolean, premultiplyAlpha?: boolean, format?: GPUTextureFormat, sampleCount?: number, commandEncoder?: GPUCommandEncoder, usage?: number, additionalUsages?: number, label?: string): GPUTexture;
         generateCubeMipmaps(gpuOrHdwTexture: GPUTexture | WebGPUHardwareTexture, mipLevelCount: number, commandEncoder?: GPUCommandEncoder): void;
         generateMipmaps(gpuOrHdwTexture: GPUTexture | WebGPUHardwareTexture, mipLevelCount: number, faceIndex?: number, commandEncoder?: GPUCommandEncoder): void;
+        generate3DMipmaps(gpuOrHdwTexture: GPUTexture | WebGPUHardwareTexture, mipLevelCount: number, commandEncoder?: GPUCommandEncoder): void;
         createGPUTextureForInternalTexture(texture: InternalTexture, width?: number, height?: number, depth?: number, creationFlags?: number): WebGPUHardwareTexture;
         createMSAATexture(gpuTexture: GPUTexture, format: GPUTextureFormat, samples: number): GPUTexture;
         resolveMSAADepthTexture(msaaTexture: GPUTexture, outputTexture: GPUTexture, commandEncoder?: GPUCommandEncoder): void;
@@ -148400,7 +148619,7 @@ declare namespace BABYLON {
 
     /** @internal */
     export class WebGPUTextureHelper {
-        static ComputeNumMipmapLevels(width: number, height: number): number;
+        static ComputeNumMipmapLevels(width: number, height: number, depth?: number): number;
         static GetTextureTypeFromFormat(format: GPUTextureFormat): number;
         static GetBlockInformationFromFormat(format: GPUTextureFormat): {
             width: number;
@@ -158435,6 +158654,8 @@ declare namespace BABYLON {
          * (for example ArcRotateCamera uses ArcRotateCameraMovement).
          */
         movement: CameraMovement;
+        /** @internal */
+        protected _processMovementAsTargetCamera: boolean;
         private _targetInertia;
         /**
          * Defines the inertia (decay coefficient applied per reference frame at 60fps) of the camera.
@@ -161412,6 +161633,8 @@ declare namespace BABYLON {
          * See {@link InputMapper} for the full inputMap API (e.g. `setInteraction`, `getEntry`, `addEntry`).
          */
         movement: ArcRotateCameraMovement;
+        /** @internal */
+        protected _processMovementAsTargetCamera: boolean;
         /**
          * Gets or sets whether ctrl+keyboard triggers panning.
          * Setting this updates the keyboard→pan inputMap entry.

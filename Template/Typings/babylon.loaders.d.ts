@@ -7670,6 +7670,27 @@ declare namespace BABYLON {
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
+     * Creates the scene reference used by KHR node events. A glTF node with one
+     * primitive loads as a Mesh; one with multiple primitives loads as a
+     * TransformNode whose child meshes carry the pointer events.
+     * @param node The loaded glTF node.
+     * @returns A reference to its actual Babylon runtime node.
+     */
+    export function GetInteractivityNodeRuntimeReference(node: BABYLON.GLTF2.Loader.INode | undefined): {
+        className?: string;
+        id?: string;
+        uniqueId?: number;
+    };
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
      * Supplies the KHR_interactivity representation of opaque `ref` values to the FlowGraph engine.
      *
      * The engine itself has no notion of the glTF object model: it asks this resolver how to represent
@@ -8179,7 +8200,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
          * Builds the canonical extension after glTF entity indices are finalized.
          * @param context final serializer remapping context
-         * @returns ratified KHR_interactivity extension payload
+         * @returns KHR_interactivity extension payload
          */
         build(context: IKHRInteractivitySerializerContext): BABYLON.GLTF2.IKHRInteractivity;
     }
@@ -8191,6 +8212,12 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         document?: BABYLON.GLTF2.Loader.Extensions.IKHRInteractivityDocument;
         /** Loader glTF tree used to resolve original entity references. */
         sourceGLTF?: BABYLON.GLTF2.Loader.IGLTF;
+        /**
+         * Whether export patches the retained source document instead of reserializing the scene.
+         * Preserves source entity indices, extension-backed pointers, and imported compatibility flow sockets.
+         * Requires sourceGLTF and buildWithSourceIndices; runtime scene changes are not exported.
+         */
+        preserveSourceDocument?: boolean;
         /** Root default graph index. Defaults to the canonical document selection or zero. */
         defaultGraphIndex?: number;
         /** Target animation frame rate used by imported animation composites. Defaults to 60. */
@@ -8221,6 +8248,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         private _additionalExtensionsUsed;
         private readonly _rootDiagnostics;
         private _isPreflight;
+        private _sourceIndexContext?;
         /** Whether KHR_interactivity is required in the exported asset. */
         readonly required: boolean;
         /** Additional operation/companion extensions referenced by the exported graphs. */
@@ -8245,7 +8273,14 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          * @returns canonical KHR_interactivity payload
          */
         build(context: IKHRInteractivitySerializerContext): BABYLON.GLTF2.IKHRInteractivity;
+        /**
+         * Builds a graph for patching the original glTF document using its existing entity indices.
+         * Companion node extensions are already present in that document and are retained by the patcher.
+         * @returns canonical KHR_interactivity payload with source glTF indices
+         */
+        buildWithSourceIndices(): BABYLON.GLTF2.IKHRInteractivity;
         private _getSourceGraph;
+        private _createSourceIndexContext;
         private _validateBuildWithSourceIndices;
         private _analyzeGraphs;
         private _classifyStandaloneBlock;
@@ -10206,6 +10241,7 @@ declare namespace BABYLON {
          * @returns The loaded asset container
          */
         loadAssetContainer(scene: Scene, data: string, rootUrl: string): AssetContainer;
+        private _isMeshRequested;
         private _isBinary;
         private _parseBinary;
         private _parseASCII;

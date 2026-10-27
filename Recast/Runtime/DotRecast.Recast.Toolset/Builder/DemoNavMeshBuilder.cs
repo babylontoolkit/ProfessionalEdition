@@ -62,7 +62,7 @@ namespace DotRecast.Recast.Toolset.Builder
                 option.offMeshConDir[i] = offMeshCon.bidir ? 1 : 0;
                 option.offMeshConAreas[i] = offMeshCon.area;
                 option.offMeshConFlags[i] = offMeshCon.flags;
-                // option.offMeshConUserID[i] = offMeshCon.userId;
+                option.offMeshConUserID[i] = offMeshCon.userId; // Babylon Toolkit (unity-export-parity-gaps A-b)
             }
 
             return option;
@@ -73,6 +73,13 @@ namespace DotRecast.Recast.Toolset.Builder
             // Update poly flags from areas.
             for (int i = 0; i < meshData.polys.Length; ++i)
             {
+                // Babylon Toolkit (unity-export-parity-gaps A-a): off-mesh link polys keep the area and flags the link
+                // collector gave them (runtime area model: flags = 1 << area), never the sample remap.
+                if (meshData.polys[i].GetPolyType() == DtPolyTypes.DT_POLYTYPE_OFFMESH_CONNECTION)
+                {
+                    continue;
+                }
+
                 if (meshData.polys[i].GetArea() == SampleAreaModifications.SAMPLE_POLYAREA_TYPE_WALKABLE)
                 {
                     meshData.polys[i].SetArea(SampleAreaModifications.SAMPLE_POLYAREA_TYPE_GROUND);

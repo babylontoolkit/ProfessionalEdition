@@ -40,6 +40,8 @@ namespace DotRecast.Recast.Geom
         // off mesh connections
         public List<RcOffMeshConnection> GetOffMeshConnections();
         public void AddOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags);
+        // Babylon Toolkit (unity-export-parity-gaps A-b): overload carrying the Detour user id
+        public void AddOffMeshConnection(RcVec3f start, RcVec3f end, float radius, bool bidir, int area, int flags, int userId);
         public void RemoveOffMeshConnections(Predicate<RcOffMeshConnection> filter);
 
     }

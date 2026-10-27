@@ -1,0 +1,11 @@
+# Draco Mesh Compression
+
+You need to ship two files, placed in your app's scripts/ folder next to glslang and twgsl:
+
+File	Size	What it is
+draco.js	58 KB	Babylon's draco_wasm_wrapper_gltf.js, renamed. One edit inside it: the default wasm name changed to var P="draco.wasm".
+draco.wasm	192 KB	Babylon's draco_decoder_gltf.wasm, renamed and otherwise unchanged.
+You don't need anything else:
+
+No new toolkit runtime file. Babylon's own KHR_draco_mesh_compression loader does the decoding. It's already inside babylon.gltf.min.js and babylon.min.js (or @babylonjs/core for ESM builds).
+Not the 512 KB asm.js fallback (draco_decoder_gltf.js). Every browser that runs WebGL2 or WebGPU has WebAssembly, so that file stays out.

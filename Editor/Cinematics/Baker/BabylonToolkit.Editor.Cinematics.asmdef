@@ -1,0 +1,28 @@
+{
+    "name": "BabylonToolkit.Editor.Cinematics",
+    "rootNamespace": "",
+    "references": [
+        "Unity.Timeline",
+        "UnityEngine.UI"
+    ],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": ["BT_TIMELINE", "BT_UGUI"],
+    "versionDefines": [
+        {
+            "name": "com.unity.timeline",
+            "expression": "",
+            "define": "BT_TIMELINE"
+        },
+        {
+            "name": "com.unity.ugui",
+            "expression": "",
+            "define": "BT_UGUI"
+        }
+    ],
+    "noEngineReferences": false
+}
