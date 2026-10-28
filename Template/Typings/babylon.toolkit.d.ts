@@ -7,7 +7,7 @@ declare namespace TOOLKIT {
     * @class SceneManager - All rights reserved (c) 2024 Mackey Kinard
     */
     class SceneManager {
-        /** Gets the toolkit framework version string (9.30.1 - R1) */
+        /** Gets the toolkit framework version string (9.32.0 - R1) */
         static get Version(): string;
         /** Gets the toolkit framework copyright notice */
         static get Copyright(): string;
@@ -21578,9 +21578,11 @@ declare namespace TOOLKIT {
     const ANTIGRAVITY_FLAT_ROAD_END_SECONDS: number;
     /**
      * At or above this ground-normal height (about 41 degrees of bank or slope) a road is ordinary road the kart holds
-     * without anti-gravity, with a wide margin to the probe's 60 degree limit. Measured on the shipped tracks (run 4): no
-     * anti-gravity section has a stretch this flat between two walls, and Mario Circuit's glide landing reads 0.78-0.82,
-     * so the mode ends on the landing rather than on the finish straight 90 m later.
+     * without anti-gravity, with a wide margin to the probe's 60 degree limit. Mario Circuit's glide landing reads
+     * 0.78-0.82, so the mode ends on the landing rather than on the finish straight 90 m later. An anti-gravity section
+     * CAN have a stretch this flat between two walls: Rainbow Road's final section runs about 12 s of upright road
+     * between `AntiGravityEnter (3)`'s banks and the spiral, so the road watch ends the latch there and the spiral's
+     * steeper banks take it back through `isSmoothBankOntoAntiGravityRoad` (mario-kart-rainbow-stuck T4).
      */
     const ANTIGRAVITY_UPRIGHT_NORMAL_Y: number;
     /** Seconds grounded on upright road, after riding anti-gravity road, that end the mode. */
@@ -21590,6 +21592,41 @@ declare namespace TOOLKIT {
      * again (an entry box on plain road just before the section's own exit box, as Mario Circuit's finish straight has).
      */
     const ANTIGRAVITY_REENTRY_GUARD_SECONDS: number;
+    /** Lowest `kart up · road normal` at which an unlatched kart counts as riding the steeper face it meets (about 18 degrees apart). */
+    const ANTIGRAVITY_BANK_MIN_ALIGN_DOT: number;
+    /** Lowest `last accepted ground normal · road normal` at which the steeper face is the same road banking further (20 degrees). */
+    const ANTIGRAVITY_BANK_MIN_TURN_DOT: number;
+    /** One ground-probe hit the probe rejected, and what the bank latch needs to judge it. */
+    interface IKartBankLatchSample {
+        /** The anti-gravity latch is already on. */
+        latched: boolean;
+        /** Anti-gravity is enabled for this kart (its profile and the `AntiGravity` volume gate). */
+        enabled: boolean;
+        /** The probe accepted ground on the previous step. */
+        wasGrounded: boolean;
+        /** The hit is on the body the probe last accepted as ground. */
+        sameBody: boolean;
+        /** World normal of the rejected hit. */
+        hitNormal: BABYLON.Vector3;
+        /** World normal of the ground the probe last accepted. */
+        lastGroundNormal: BABYLON.Vector3;
+        /** The kart's up axis. */
+        kartUp: BABYLON.Vector3;
+    }
+    /**
+     * Whether a grounded kart with the latch off is riding smoothly onto road too steep for the probe's 60 degree limit,
+     * so it takes the anti-gravity latch as an entry volume would (mario-kart-rainbow-stuck T4, A7). The mirror image of the
+     * road-end rule: anti-gravity is a property of the road both ways. A smooth ride is all of: the same road body, the
+     * kart aligned with the steeper face (ANTIGRAVITY_BANK_MIN_ALIGN_DOT) and the road normal turned by no more than about
+     * 20 degrees since the last accepted ground normal. A wall met head on fails both (it is far from the kart's up and
+     * far from the road it rode), and another body never latches.
+     *
+     * The turn is deliberately not required to be about the kart's forward axis: Rainbow Road's spiral climbs as it banks,
+     * and its first face past the limit turns only 38% about the forward axis (traced, T4) — a bank-only gate rejected it.
+     * @param sample The rejected hit and the kart.
+     * @returns True when the latch must come on.
+     */
+    function isSmoothBankOntoAntiGravityRoad(sample: IKartBankLatchSample): boolean;
     /** One frame of what the anti-gravity road watch needs to know about a kart. */
     interface IKartAntiGravityRoadSample {
         /** The anti-gravity latch is on. */
@@ -22300,6 +22337,8 @@ declare namespace TOOLKIT {
          * kart's rescue placement once with `wedgeAnchor`.
          */
         private wedgeSkipsObstacle;
+        /** Whether the kart was auto-driving (a Bullet Bill) last frame, so the frame the ride ends picks the gate back up. */
+        private wasAutoDriving;
         /** Handler on the kart's trigger observable, kept so `destroy()` can remove it. */
         private triggerObserver;
         /**
@@ -22413,6 +22452,19 @@ declare namespace TOOLKIT {
          * @returns Its index.
          */
         private static nearestGateIndex;
+        /**
+         * Watches the kit's auto-drive (a Bullet Bill ride). The ride follows the item path, not this driver's gates, so it
+         * can pass a gate without entering its trigger and leave the driver aiming at a gate far behind the kart. On the
+         * frame the ride ends, the driver resumes at the gate ahead of where the kart really is.
+         */
+        private followAutoDrive;
+        /** @returns True while the kit auto-drives the kart (a Bullet Bill ride); false for a kart without auto-drive. */
+        private isKartAutoDriving;
+        /**
+         * Resumes at the gate ahead of the kart on the current path: the end of the gate-to-gate segment nearest to the
+         * kart (the gate after it when the kart is at or past that end), with the segment's start as the last gate passed.
+         */
+        private resumeAheadOfKart;
         /** Treats the current gate as passed (a recovery that skips an obstacle); holds the last gate on autopilot. */
         private skipToNextGate;
         /**
@@ -25647,12 +25699,12 @@ declare namespace TOOLKIT {
         Boost = 3
     }
     /**
-     * The ten vehicle profile switches (FR-5, and the Mario Kart feature flags), as a property set.
+     * The eleven vehicle profile switches (FR-5, and the Mario Kart feature flags), as a property set.
      *
      * The complete list of what a profile is allowed to change. Anything else about how the kart
      * drives — the pace table, the yaw table, the drift machine, the tier boundaries, the boost
      * economy, the lean — is identical in every profile, which is what makes a profile a *capability*
-     * set rather than a handling tune. Every switch is `true` by default; with all ten off the
+     * set rather than a handling tune. Every switch is `true` by default; with all eleven off the
      * controller is a plain arcade kart.
      */
     interface IKartVehicleProfile {
@@ -25674,6 +25726,8 @@ declare namespace TOOLKIT {
         tiltEnabled: boolean;
         /** Allow the Bullet Bill ride (the auto-drive). `false` refuses it and ends a running one. */
         bulletBillEnabled: boolean;
+        /** Show the Bullet Bill model during a ride. `false` keeps the kart on screen with its exhaust flames burning. */
+        useBulletBillModel: boolean;
         /** Let items trail behind and circle the kart. `false` makes a back press drop or throw at once; the game obeys it. */
         trailingItemsEnabled: boolean;
     }
@@ -26018,6 +26072,13 @@ declare namespace TOOLKIT {
          */
         bulletBillEnabled: boolean;
         /**
+         * Show the Bullet Bill model during a ride. `true` (the default) swaps the kart for the bullet, as in Unity.
+         * `false` keeps the kart and driver on screen with the exhaust flames burning for the whole ride; the ride
+         * itself (speed, length, path, sounds) is unchanged. No effect while `bulletBillEnabled` is off. The kit lights
+         * the flames by it; the game's ride reads it to choose the model.
+         */
+        useBulletBillModel: boolean;
+        /**
          * Let items trail behind the kart and circle it (a held banana or shell, triple items). `false` makes a back
          * press drop or throw at once and fires triple items one per press with nothing circling. Stored here beside
          * the other switches and read by the game's item system, which owns the items; the kit itself has no item.
@@ -26119,7 +26180,7 @@ declare namespace TOOLKIT {
          *
          * **Anti-gravity, jump panels and tilt stay ON.** A Crazy Taxi style track may still want a
          * ramp and a wall-ride, neither mechanism assumes a kart, and a car body still rolls in a
-         * water drift. **The Bullet Bill and the trailing items stay ON** too: the ride is an
+         * water drift. **The Bullet Bill, its model and the trailing items stay ON** too: the ride is an
          * auto-drive, not a kart part, and items are items.
          */
         static readonly ARCADE_CAR_PROFILE: Readonly<IKartVehicleProfile>;
@@ -26512,14 +26573,14 @@ declare namespace TOOLKIT {
         /**
          * Writes one of the two named profiles, or an explicit property set, onto the LIVE component.
          *
-         * Only the ten switches are touched — never a speed, a rate or a state — so calling this
+         * Only the eleven switches are touched — never a speed, a rate or a state — so calling this
          * mid-run changes what the kart is CAPABLE of and nothing about what it is currently doing.
          * That is what lets the bench A/B a profile on a run already in progress, and what lets FR-5's
          * "identical trace" acceptance be a real assertion instead of two separate runs compared by
          * eye. A partial property set leaves the unnamed switches alone.
          */
         applyVehicleProfile(profile: KartVehicleProfileName | Partial<IKartVehicleProfile>): void;
-        /** The ten switches as they stand right now. A fresh object, so a caller cannot alias the kart. */
+        /** The eleven switches as they stand right now. A fresh object, so a caller cannot alias the kart. */
         getVehicleProfile(): IKartVehicleProfile;
         /**
          * The name of the preset the switches currently match, or `null` for a custom set.
@@ -26531,7 +26592,7 @@ declare namespace TOOLKIT {
         getVehicleProfileName(): KartVehicleProfileName | null;
         /**
          * Do the switches match a property set exactly?
-         * @param preset The full set to compare against; each of its ten switches is compared.
+         * @param preset The full set to compare against; each of its eleven switches is compared.
          * @returns True when every switch equals the set's.
          */
         private matchesVehicleProfile;
@@ -27143,6 +27204,8 @@ declare namespace TOOLKIT {
         protected updateKartState(): void;
         /** Reusable probe result. Allocating one of these per step would allocate 60 a second. */
         private readonly rayResult;
+        /** The body the ground probe last accepted as road, so the bank latch can tell the same road from another one. */
+        private groundBody;
         /**
          * Whether the ground probe's RAW hit this step was an `AntiGravity`-tagged surface.
          *
@@ -28290,9 +28353,11 @@ declare namespace TOOLKIT {
          * and found **zero** probe misses. Two seconds of continuous nothing while flagged anti-gravity
          * does not describe a kart on a wall; it describes a kart that is no longer on anything.
          *
-         * The other three stay because each is SELF-LIMITING — a trick, a panel flight and a glide all
-         * end on their own — whereas anti-gravity ends only when a volume says so, which is the whole
-         * difference.
+         * The other four stay because each is SELF-LIMITING — a trick, a panel flight, a glide and a
+         * Bullet Bill ride all end on their own — whereas anti-gravity ends only when a volume says so,
+         * which is the whole difference. The ride flies like Unity's bullet (`Player.cs:346-386` sets its
+         * velocity every frame), so a lip it leaves at 130 — Water Park's glider ramp — is not a fall; the
+         * fall net's floor test still catches a ride that drops below the track.
          */
         protected hasGroundlessExcuse(): boolean;
         /** Advances the stuck timer and rights the kart when it expires. Inert while the delay is 0. */
@@ -28391,11 +28456,14 @@ declare namespace TOOLKIT {
          */
         private commitVelocity;
         /**
-         * Ports Unity's state table for the probe length (`Player.cs:247-259`, `569-574`).
+         * Ports Unity's state table for the probe length (`Player.cs:247-259`, `569-574`), plus the Bullet Bill's
+         * own ray (`Player.cs:360`).
          *
          * The 247-259 branch READS as a state table and is not one — the `JUMP_PANEL || antiGravity`
          * arm and the `else` arm both assign **2** (Analysis §E.6). So there are only ever three real
-         * cases, and they are the three below.
+         * cases, and they are the three below. A ride is a fourth: Unity's bullet branch probes
+         * `BULLET_GROUND_RAY_DIST` instead, so it keeps its velocity along the road over a crest it would
+         * otherwise leave at 130.
          */
         private updateGroundRayDistance;
         /**
@@ -28418,6 +28486,18 @@ declare namespace TOOLKIT {
          * lateral axis), never for a side wall or a bridge side it runs into. That is one of the three conditionals FR-7 turns out to be.
          */
         private probeGround;
+        /**
+         * Latches anti-gravity for a grounded kart that rides smoothly onto road steeper than the probe's 60 degree limit
+         * (`isSmoothBankOntoAntiGravityRoad`, mario-kart-rainbow-stuck T4, A7): the same road body, the kart aligned with
+         * the face and the normal turned no more than about 20 degrees. The latch comes on as
+         * an entry volume's does, and the road-end watch ends it where the road comes back upright. Without it a section
+         * whose banks start after an upright stretch (Rainbow Road's spiral) was rejected as a wall, airborne leveling
+         * turned the kart upright and it fell.
+         * @param hitNormal World normal of the hit the probe rejected.
+         * @param hitBody The body the probe hit.
+         * @returns True when the latch came on and the face is now road, so the probe accepts it this step.
+         */
+        protected latchAntiGravityOnBank(hitNormal: BABYLON.Vector3, hitBody: BABYLON.PhysicsBody | null | undefined): boolean;
         /**
          * The SEPARATE, shorter drift-entry probe (`Player.cs:1642-1645`).
          *
@@ -28608,6 +28688,8 @@ declare namespace TOOLKIT {
         private static readonly ANTIGRAVITY_BUMP_BOOST_BELOW;
         /** Unity's `Rotate(y / 6)` divider for path steering (`Player.cs:346-386`). */
         private static readonly AUTO_DRIVE_TURN_DIVIDER;
+        /** The ground probe's length during a ride, units: Unity's bullet ray (`Player.cs:360`, `Physics.Raycast(ground, out hit, 10, mask)`). */
+        static readonly BULLET_GROUND_RAY_DIST: number;
         /** `Player.cs:1451` — decreed speed above which accelerate (Unity's Space) at a standstill arms the skid. */
         private static readonly REVERSE_SKID_ARM_SPEED;
         /** `Player.cs:1451` — real speed at or below which the kart counts as stalled. */
@@ -29240,6 +29322,11 @@ declare namespace TOOLKIT {
         isBrakeHeld?(): boolean;
         /** Auto-driving (Bullet Bill). Optional. */
         isAutoDriving?(): boolean;
+        /**
+         * The kart's `useBulletBillModel` switch. Optional; `false` keeps the kart on screen during a ride, so its
+         * exhaust flames burn for the whole ride. Missing counts as the model on (Unity's ride, flames off).
+         */
+        useBulletBillModel?: boolean;
         /** The reverse skid is playing. Optional. */
         isReverseSkidding?(): boolean;
         /** Star power runs. Optional. */
@@ -29492,6 +29579,12 @@ declare namespace TOOLKIT {
          * and it is labelled so that nobody mistakes it for the mechanism.
          */
         protected tickBoostEffects(): void;
+        /**
+         * Whether a Bullet Bill ride runs with the kart itself on screen: auto-driving with `useBulletBillModel` off. With
+         * the model on (or the switch missing) the bullet hides the kart, as in Unity, so its flames stay off.
+         * @returns True while the kart rides with no bullet model.
+         */
+        protected isFlameRideRunning(): boolean;
         /**
          * `Player.cs:1526-1546` — the anti-gravity spin trails.
          *
