@@ -53,8 +53,11 @@ public static class GameAssetBuilder
     /** Where the last build report is written. */
     public const string REPORT_PATH = "Logs/BuildAllGameAssets.txt";
 
-    /** Session key that holds the running build, so it survives domain reloads. */
-    private const string STATE_KEY = "GameAssetBuilder.State";
+    /**
+     * Session key that holds the running build, so it survives domain reloads. The exporter reads the same key to know a
+     * build is running and leave the manifest to Finish (content-manifest-always-current D4).
+     */
+    private const string STATE_KEY = CanvasTools.ContentManifestExport.BUILD_ALL_STATE_KEY;
 
     /** How many times one asset is retried when the exporter refused it because a compile had just started. */
     private const int MAXIMUM_COMPILE_RETRIES = 20;
@@ -89,6 +92,9 @@ public static class GameAssetBuilder
 
         /** True to refuse a build whose exporter settings do not write .gltf for scenes and containers. */
         public bool requireGltf;
+
+        /** Extra files or folders (relative to scenes/) for the manifest's "extras" group. */
+        public string[] contentManifestInclude = Array.Empty<string>();
 
         /** Asset containers, built in this order. */
         public ContainerEntry[] containers = Array.Empty<ContainerEntry>();
@@ -330,7 +336,10 @@ public static class GameAssetBuilder
         return $"started: {assets.Count} assets ({string.Join(", ", state.pendingNames)})";
     }
 
-    /** Subscribes the build step to the editor update loop, once. */
+    /**
+     * Subscribes the build step to the editor update loop, once. The saved state alone tells the exporter a build is
+     * running, so per-export manifest refreshes wait for Finish without any flag to reset.
+     */
     private static void ScheduleTicks()
     {
         EditorApplication.update -= Tick;
@@ -338,8 +347,8 @@ public static class GameAssetBuilder
     }
 
     /**
-     * One build step per editor update: waits while Unity compiles or imports, otherwise exports the next asset.
-     * An asset the exporter refused because a compile had just started is retried on a later update.
+     * One build step per editor update. An unexpected error ends the build (and its saved state) with a FAIL line naming
+     * it, so a broken build never keeps the exporter's manifest refreshes waiting.
      */
     private static void Tick()
     {
@@ -349,6 +358,25 @@ public static class GameAssetBuilder
             EditorApplication.update -= Tick;
             return;
         }
+        try
+        {
+            AdvanceBuild(state);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogException(exception);
+            state.results.Add(new AssetResult { name = state.pendingNames.FirstOrDefault() ?? BUILD_TITLE, detail = "build stopped by an error: " + exception.Message });
+            if (LoadState() != null) Finish(state);
+        }
+    }
+
+    /**
+     * Does one build step: waits while Unity compiles or imports, finishes when nothing is pending, otherwise exports the
+     * next asset. An asset the exporter refused because a compile had just started is retried on a later update.
+     * @param state The running build.
+     */
+    private static void AdvanceBuild(BuildState state)
+    {
         if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
         if (state.pendingNames.Count == 0)
         {
@@ -393,7 +421,7 @@ public static class GameAssetBuilder
         if (!Application.isBatchMode) EditorUtility.ClearProgressBar();
         RestoreOpenScenes(state);
 
-        string report = FormatReport(state);
+        string report = FormatReport(state) + WriteContentManifestLine() + Environment.NewLine;
         Debug.Log("[GameAssetBuilder] " + report);
         Directory.CreateDirectory(Path.GetDirectoryName(REPORT_PATH));
         File.WriteAllText(REPORT_PATH, report);
@@ -801,6 +829,25 @@ public static class GameAssetBuilder
      * @returns The absolute path.
      */
     private static string ScenesFolder() => Path.Combine(UnityTools.GetDefaultExportFolder(), CanvasToolsInfo.Instance.DefaultScenePath);
+
+    /**
+     * Writes the content manifest once for the whole build, re-reading only the files that changed
+     * (content-manifest-always-current D1, D2). A failure removes the manifest (D3).
+     * @returns The manifest's summary line for the report, or a "FAILED" line naming the rebuild command.
+     */
+    private static string WriteContentManifestLine()
+    {
+        string scenesFolder = ScenesFolder();
+        try
+        {
+            return CanvasTools.ContentManifestExport.FormatSummary(CanvasTools.ContentManifestExport.WriteForProject(scenesFolder, false));
+        }
+        catch (Exception exception)
+        {
+            string reason = CanvasTools.ContentManifestExport.RemoveAfterFailedRefresh(scenesFolder, exception);
+            return "Content manifest: FAILED " + reason + " — removed; rebuild with unity command bt_build_content_manifest";
+        }
+    }
 
     /**
      * Formats the build report: one line per asset, then the totals and the active compression settings.

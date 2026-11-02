@@ -336,25 +336,190 @@
         return result;
     };
     ///////////////////////////////////////////////////////////
-    // Babylon Service Worker Hooks
+    // Babylon Content Installer (Progressive Web App)
     ///////////////////////////////////////////////////////////
-    window.versionStamp = '###VERSION###';
+    // A Progressive Web App export sets window.useServiceWorker and window.contentInstallerOptions here: the page then starts
+    // TOOLKIT.ContentInstaller (which registers bt-content-worker.js) before its scene loads, so installed scene files load
+    // from this device. Every other export keeps window.useServiceWorker false, sets no options and loads exactly as before.
     window.autoStartLoader = false;
     window.useServiceWorker = false;###WORK###
-    window.onServiceWorker = () => {
-        if (window.autoStartLoader === true) {
-            window.startSceneLoader();
+    /** Bytes per megabyte in the installer's splash and toast texts. */
+    const CONTENT_BYTES_PER_MEGABYTE = 1048576;
+    /** The update toast rounds its download size up to this fraction of a megabyte (tenths). */
+    const DOWNLOAD_SIZE_STEPS_PER_MEGABYTE = 10;
+    /** How long a content toast stays on screen, in milliseconds (0 keeps it until a button closes it). */
+    const CONTENT_TOAST_TIMEOUT_MS = 0;
+    /** The content toasts this page has shown, by kind: each shows at most once per page. */
+    window.shownContentToasts = { updateAvailable: false, updateReady: false, shellUpdateReady: false, contentChangedOnServer: false };
+    /**
+     * Formats a byte count as megabytes with one decimal, e.g. 12950000 -> "12.4".
+     * @param {number} byteCount - Bytes.
+     * @returns {string} The megabytes text.
+     */
+    window.formatContentMegabytes = (byteCount) => (byteCount / CONTENT_BYTES_PER_MEGABYTE).toFixed(1);
+    /**
+     * Formats a download size for the update toast: megabytes rounded up to one decimal, so a small update never reads
+     * "0.0 MB", e.g. 2733 -> "0.1".
+     * @param {number} byteCount - Bytes to download.
+     * @returns {string} The megabytes text.
+     */
+    window.formatDownloadMegabytes = (byteCount) => {
+        const megabyteSteps = Math.ceil(byteCount / CONTENT_BYTES_PER_MEGABYTE * DOWNLOAD_SIZE_STEPS_PER_MEGABYTE);
+        return (megabyteSteps / DOWNLOAD_SIZE_STEPS_PER_MEGABYTE).toFixed(1);
+    };
+    /**
+     * Builds the TOOLKIT.ContentInstaller options from the exported window.contentInstallerOptions: the scene folder's
+     * content manifest, plus the app shell manifest beside this page when the export installs the entire project.
+     * @param {string} sceneFolderUrl - Absolute URL of the scene folder (ends with "/").
+     * @returns {TOOLKIT.IContentInstallerOptions} The Initialize options.
+     */
+    window.createContentInstallerOptions = (sceneFolderUrl) => {
+        const exportedOptions = window.contentInstallerOptions;
+        const roots = [{ manifestUrl: new URL(exportedOptions.contentManifestName, sceneFolderUrl).href }];
+        if (exportedOptions.appShell === true) roots.push({ manifestUrl: new URL("bt-shell-manifest.json", window.location.href).href, isAppShell: true });
+        return {
+            roots: roots,
+            workerUrl: "bt-content-worker.js",
+            installPolicy: exportedOptions.installPolicy,
+            updatePolicy: exportedOptions.updatePolicy,
+            enableOnLocalHost: exportedOptions.enableOnLocalHost
+        };
+    };
+    /**
+     * Shows the scene group's install progress on the splash status line and bar (the installer emits it at most every
+     * 250 ms, so this is event-driven, never a frame loop). Falls back to the whole install when the group has no entry.
+     * @param {string} sceneGroupId - The scene's group id.
+     * @param {TOOLKIT.IContentInstallProgress} progress - The installer's progress report.
+     */
+    window.showContentInstallProgress = (sceneGroupId, progress) => {
+        const groupProgress = (progress.groupProgress != null) ? progress.groupProgress[sceneGroupId] : null;
+        const completedBytes = (groupProgress != null) ? groupProgress.completedBytes : progress.completedBytes;
+        const totalBytes = (groupProgress != null) ? groupProgress.totalBytes : progress.totalBytes;
+        const fraction = (totalBytes > 0) ? Math.min(1, completedBytes / totalBytes) : progress.fraction;
+        const transferText = window.formatContentMegabytes(completedBytes) + " of " + window.formatContentMegabytes(totalBytes) + " MB";
+        const speedText = window.formatContentMegabytes(progress.bytesPerSecond) + " MB/s";
+        window.setSplashStatus("INSTALLING", transferText + " · " + speedText, fraction, 0);
+    };
+    /**
+     * Installs the scene's own group before the scene loads, with splash progress, then lets every other group install
+     * during play (pwa-content-installer D33: the page never waits for more than the scene's files).
+     * @param {string} sceneGroupId - The scene's group id.
+     * @returns {Promise<void>} Resolves once the scene's group is installed or has failed.
+     */
+    window.installSceneGroupFirst = async (sceneGroupId) => {
+        const installer = TOOLKIT.ContentInstaller;
+        const sceneGroupStatus = installer.GetGroupStatus([sceneGroupId])[0];
+        if (sceneGroupStatus != null && sceneGroupStatus.installed === true) return;
+        const progressObserver = installer.OnProgressObservable.add((progress) => { window.showContentInstallProgress(sceneGroupId, progress); });
+        try {
+            await installer.Install([sceneGroupId]);
+        } finally {
+            installer.OnProgressObservable.remove(progressObserver);
+        }
+        void installer.Install(null);
+    };
+    /**
+     * Starts the content installer before the scene loads (pwa-content-installer D22): registers the content worker, checks
+     * for content updates, installs the scene's group first under the "everything" policy, and prepares the scene load so
+     * installed files come from this device. Never blocks the game: any failure is one console warning and the scene then
+     * loads from the network as before.
+     * @param {string} scenepath - The scene folder URL the scene loader uses.
+     * @param {string} scenename - The scene file name the scene loader uses.
+     * @returns {Promise<void>} Resolves when the scene may load.
+     */
+    window.startContentInstaller = async (scenepath, scenename) => {
+        if (window.contentInstallerOptions == null || typeof TOOLKIT === "undefined" || TOOLKIT.ContentInstaller == null) return;
+        try {
+            const installer = TOOLKIT.ContentInstaller;
+            const sceneFolderUrl = new URL(scenepath, window.location.href).href;
+            const sceneUrl = new URL(scenename, sceneFolderUrl).href;
+            installer.OnStateChangedObservable.add(window.showContentToasts);
+            await installer.Initialize(window.createContentInstallerOptions(sceneFolderUrl));
+            window.showContentToasts(installer.GetState());
+            if (installer.GetState().availability === "available" && window.contentInstallerOptions.installPolicy === "everything") {
+                await window.installSceneGroupFirst(installer.GroupIdFromSceneFile(scenename));
+            }
+            const installed = await installer.PrepareSceneLoad(sceneUrl);
+            if (installed === true) window.setSplashStatus("LOADING FROM THIS DEVICE", "", null, null);
+        } catch (error) {
+            console.warn("[ContentInstaller] " + error);
         }
     };
-    window.updateAvailable = () => {
-        var msg = "A new version is available";
-        console.warn(msg);
+    /**
+     * Runs an action once the scene has loaded, so an update never reloads the page while a scene is mid-load.
+     * @param {() => void} action - The action, e.g. a page reload.
+     */
+    window.runWhenSceneLoaded = (action) => {
+        if (loaded === true) {
+            action();
+            return;
+        }
+        TOOLKIT.SceneManager.OnLoadCompleteObservable.addOnce(() => { action(); });
+    };
+    /**
+     * Downloads the content update the player asked for. DownloadUpdate queues it as background work, which waits while
+     * the page is busy (it is from PrepareSceneLoad on, so the rest of the content installs one file at a time during
+     * play), so the page is idle until the update's files are stored, then busy again. Runs after the scene has loaded,
+     * so the update never competes with the scene's own files.
+     */
+    window.downloadContentUpdate = () => {
+        const installer = TOOLKIT.ContentInstaller;
+        window.runWhenSceneLoaded(() => {
+            installer.SetBusy(false);
+            installer.DownloadUpdate().finally(() => { installer.SetBusy(true); });
+        });
+    };
+    /**
+     * Shows a content toast with buttons; each button closes the toast before it runs its action.
+     * @param {string} message - The toast message.
+     * @param {Array<{label: string, action: () => void}>} buttons - The buttons, first one focused.
+     */
+    window.showContentToast = (message, buttons) => {
         iziToast.show({
             title: "UPDATE:",
-            message: msg,
-            timeout: 30000,
-            buttons: [['<button>Reload</button>', (instance, toast) => { window.location.reload(true); }, true]]
-        });    
+            message: message,
+            timeout: CONTENT_TOAST_TIMEOUT_MS,
+            buttons: buttons.map((button, index) => ['<button>' + button.label + '</button>', (instance, toast) => {
+                instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+                button.action();
+            }, index === 0])
+        });
+    };
+    /**
+     * Shows the installer's update toasts from its state (each kind once per page): new game content to download, a
+     * downloaded update to apply (on reload, since this page loads one scene), a new app version to reload into, and game
+     * content that changed on the server while this page loaded it (a reload is offered, never forced).
+     * @param {TOOLKIT.IContentInstallerState} state - The installer's state.
+     */
+    window.showContentToasts = (state) => {
+        if (state == null) return;
+        const installer = TOOLKIT.ContentInstaller;
+        const shown = window.shownContentToasts;
+        const later = { label: "Later", action: () => { } };
+        // An update whose files are all stored already is ready at once: it skips straight to the Apply toast
+        if (state.updateAvailable != null && state.updateReady !== true && shown.updateAvailable === false) {
+            shown.updateAvailable = true;
+            const updateMessage = "New game content — " + window.formatDownloadMegabytes(state.updateAvailable.downloadBytes) + " MB";
+            window.showContentToast(updateMessage, [{ label: "Update", action: window.downloadContentUpdate }, later]);
+        }
+        if (state.updateReady === true && state.applyOnNextLoad !== true && shown.updateReady === false) {
+            shown.updateReady = true;
+            const applyUpdate = () => {
+                installer.AcceptUpdate();
+                window.runWhenSceneLoaded(() => { window.location.reload(); });
+            };
+            window.showContentToast("Game content updated", [{ label: "Apply", action: applyUpdate }, later]);
+        }
+        if (state.shellUpdateReady === true && shown.shellUpdateReady === false) {
+            shown.shellUpdateReady = true;
+            const reloadShell = () => { window.runWhenSceneLoaded(() => { installer.ApplyShellUpdate(); }); };
+            window.showContentToast("A new version of the game is ready", [{ label: "Reload", action: reloadShell }]);
+        }
+        if (state.contentChangedOnServer === true && shown.contentChangedOnServer === false) {
+            shown.contentChangedOnServer = true;
+            const reloadPage = () => { window.location.reload(); };
+            window.showContentToast("Game content changed on the server", [{ label: "Reload", action: reloadPage }]);
+        }
     };
     ///////////////////////////////////////////////////////////
     window.ktx2 = ###KTX2###;
@@ -1023,8 +1188,9 @@
             BABYLON.KhronosTextureContainer2.URLConfig.wasmUASTCToRG8_UNORM = path + "###SCRIPT###/uastc_rg8_unorm.wasm";
         }
         if (window.useServiceWorker === true) {
-            window.autoStartLoader = true; // Note: Allow Service Worker To Start The Scene Loader After Page Is Fully Loaded
-            window.updateStatus("PLEASE WAIT", "STARTING SERVICE", 0);
+            // The content installer starts first (it never throws), so installed scene files load from this device
+            window.updateStatus("PLEASE WAIT", "STARTING CONTENT", 0);
+            window.startContentInstaller(scenepath, scenename).then(() => { window.startSceneLoader(); });
         } else {
             window.startSceneLoader();
         }

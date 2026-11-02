@@ -300,7 +300,6 @@
 
   <!-- Default Script -->
   <script type="text/javascript" nonce="###HASH###">
-  window.versionStamp = '###VERSION###';
   window.avatarHub = ("###AVATAREDITOR###" + "/hub");
   window.avatarEditor = ("###AVATAREDITOR###" + "/avatar?frameApi");
   window.generatedPhotos = "https://generated.photos/faces";
@@ -333,29 +332,9 @@
     return result;
   };
   ///////////////////////////////////////////////////////////
-  // Babylon Service Worker Hooks
+  // Babylon Content Installer Options (engine.html starts the installer; the play button is never held)
   ///////////////////////////////////////////////////////////
   window.useServiceWorker = false;###WORK###
-  if (window.useServiceWorker === true) {
-    if (playButton) playButton.disabled = true;
-  };
-  window.onServiceWorker = () => {
-    if (playButton) playButton.disabled = false;
-  };
-  window.updateAvailable = () => {
-    var msg = "A new version is available";
-    console.warn(msg);
-    iziToast.show({
-      title: "UPDATE:",
-      message: msg,
-      timeout: 30000,
-      buttons: [
-        ['<button>Reload</button>', (instance, toast) => {
-          window.location.reload(true);
-        }, true]      
-      ]
-    });    
-  };
   window.showToastMessage = (message, timeout) => {
       console.log(message);
       iziToast.success({

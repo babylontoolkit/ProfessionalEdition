@@ -440,6 +440,27 @@ public static class BabylonToolkitCliCommands
         return GameAssetBuilder.GetStatus();
     }
 
+    /// unity command bt_build_content_manifest [--folder <scenes folder>] [--check true]
+    /// Writes scenes/content-manifest.json (pwa-content-installer D13, D29) for an export folder as it stands, with no
+    /// re-export and every file re-read, so an older export can be back-filled. Returns the manifest's one-line summary.
+    /// With --check true it writes nothing and compares the manifest with the folder instead (content-manifest-always-current
+    /// D6): it returns the check JSON when they match and throws with the same JSON as its message when they do not, so
+    /// `--format json` gives success true or false plus every changed, missing and unlisted file.
+    [CliCommand("bt_build_content_manifest",
+                "Write scenes/content-manifest.json for the export folder as it stands, with no re-export; --check true compares instead",
+                MainThreadRequired = true)]
+    public static string BuildContentManifest(
+        [CliArg("folder", "Scenes folder to scan; empty = this project's export scenes folder")] string folder = null,
+        [CliArg("check", "Compare the manifest with the folder and write nothing")] bool check = false)
+    {
+        string scenesFolder = string.IsNullOrEmpty(folder) ? null : folder;
+        if (!check) return CanvasTools.ContentManifestExport.FormatSummary(CanvasTools.ContentManifestExport.WriteForProject(scenesFolder));
+        CanvasTools.ContentManifestCheckResult result = CanvasTools.ContentManifestExport.CheckForProject(scenesFolder);
+        string checkJson = CanvasTools.ContentManifestExport.FormatCheck(result);
+        if (!result.Matches) throw new Exception(checkJson);
+        return checkJson;
+    }
+
     /// <summary>
     /// D18: turn a silent stage-01 TypeScript failure into a failed command. BuildProject returns void and
     /// `if (buildResult == 0)` gates the scene export, so a tsc error otherwise looks exactly like success
