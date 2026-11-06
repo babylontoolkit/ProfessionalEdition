@@ -675,6 +675,12 @@ declare namespace BABYLON.GLTF2 {
     export class PBRMaterialLoadingAdapter implements BABYLON.GLTF2.IMaterialLoadingAdapter {
         private _material;
         private _specWorkflow;
+        private _volumetricScatterStrengthFactor;
+        private _volumetricScatterStrengthTexture;
+        private _thinWalledScatterStrengthFactor;
+        private _thinWalledScatterStrengthTexture;
+        private _transmissionScatterTexture;
+        private _subsurfaceColorTexture;
         /**
          * Creates a new instance of the PBRMaterialLoadingAdapter.
          * @param material - The PBR material to adapt.
@@ -685,10 +691,39 @@ declare namespace BABYLON.GLTF2 {
          */
         get material(): PBRMaterial;
         /**
-         * No-op: PBRMaterial has no deferred finalization.
-         * @param _loader Unused.
+         * Finalizes material properties after all loading is complete.
+         * @param loader The glTF loader that created the material.
          */
-        finalizeAsync(_loader: BABYLON.GLTF2.GLTFLoader): Promise<void>;
+        finalizeAsync(loader: BABYLON.GLTF2.GLTFLoader): Promise<void>;
+        /**
+         * Converts volumetric scatter strength S into the PBR translucency intensity. Volumetric scatter only
+         * acts on the transmitted fraction T of the surface, so per texel the intensity blends from any
+         * independently configured diffuse transmission D (where T = 0) to S (where T = 1): D + T * (S - D).
+         * The staged strength texture isn't disposed here.
+         * @param loader The glTF loader that created the material
+         * @param scatterStrength The scatter strength factor
+         * @param strengthTex The scatter strength texture (alpha channel) or null
+         */
+        private _applyVolumetricScatterAsync;
+        /**
+         * Converts thin-walled scatter strength S into PBR refraction and translucency intensities.
+         * S turns a fraction of the transmission T into diffuse transmission, so per texel the coherent
+         * transmission is T * (1 - S). PBR applies translucency to the surface left over by refraction, so
+         * the translucency intensity is T * S / (1 - T * (1 - S)), which keeps the diffusely transmitted
+         * light at T * S and the reflected diffuse at 1 - T.
+         * @param loader The glTF loader that created the material
+         * @param scatterStrength The scatter strength factor
+         * @param scatterTex The scatter strength texture (alpha channel) or null
+         */
+        private _applyThinWalledScatterAsync;
+        /**
+         * Disposes a texture that has been replaced on this material, unless another slot on this
+         * material (or on any other material created by the loader) still references it.
+         * Must be called after the texture has been removed from the slot being replaced.
+         * @param loader The glTF loader that created the materials
+         * @param texture The replaced texture
+         */
+        private _disposeTextureIfUnused;
         /**
          * Whether the material should be treated as unlit
          */
@@ -1101,16 +1136,57 @@ declare namespace BABYLON.GLTF2 {
          */
         get transmissionColor(): Color3;
         /**
-         * Sets the transmission scatter coefficient.
-         * @param value The scatter coefficient as a Color3
+         * Sets the transmission scatter coefficient, scaled by transmissionDepth.
+         * @param value The scatter coefficient * transmissionDepth as a Color3
          */
         set transmissionScatter(value: Color3);
         /**
-         * Sets the transmission scatter coefficient.
-         * @returns The scatter coefficient as a Color3
+         * Gets the transmission scatter coefficient, scaled by transmissionDepth.
+         * @returns The scatter coefficient * transmissionDepth as a Color3
          */
         get transmissionScatter(): Color3;
+        /**
+         * Sets the transmission scatter texture.
+         * Staged and applied to subSurface.translucencyColorTexture in finalizeAsync.
+         * @param value The multiscatter color texture or null
+         */
         set transmissionScatterTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the staged transmission scatter texture.
+         * @returns The staged multiscatter color texture or null
+         */
+        get transmissionScatterTexture(): Nullable<BaseTexture>;
+        /** @internal */
+        set volumetricScatterStrengthFactor(value: Nullable<number>);
+        /** @internal */
+        get volumetricScatterStrengthFactor(): Nullable<number>;
+        /**
+         * Sets the volumetric scatter strength texture.
+         * Staged and applied to subSurface.translucencyIntensityTexture in finalizeAsync.
+         * @param value The scatter strength texture (alpha channel) or null
+         */
+        set volumetricScatterStrengthTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the staged volumetric scatter strength texture.
+         * @returns The staged scatter strength texture or null
+         */
+        get volumetricScatterStrengthTexture(): Nullable<BaseTexture>;
+        /**
+         * Sets the thin-walled scatter strength.
+         * Staged and converted, together with the transmission weight, in finalizeAsync.
+         * @internal
+         */
+        set thinWalledScatterStrengthFactor(value: Nullable<number>);
+        /** @internal */
+        get thinWalledScatterStrengthFactor(): Nullable<number>;
+        /**
+         * Sets the thin-walled scatter strength texture (alpha channel).
+         * Staged and converted, together with the transmission weight, in finalizeAsync.
+         * @internal
+         */
+        set thinWalledScatterStrengthTexture(value: Nullable<BaseTexture>);
+        /** @internal */
+        get thinWalledScatterStrengthTexture(): Nullable<BaseTexture>;
         /**
          * Sets the transmission scattering anisotropy.
          * @param value The anisotropy intensity value (-1 to 1)
@@ -1189,9 +1265,15 @@ declare namespace BABYLON.GLTF2 {
         set subsurfaceColor(value: Color3);
         /**
          * Sets the subsurface color texture.
+         * Staged and applied to subSurface.translucencyColorTexture in finalizeAsync.
          * @param value The subsurface tint texture or null
          */
         set subsurfaceColorTexture(value: Nullable<BaseTexture>);
+        /**
+         * Gets the staged subsurface color texture.
+         * @returns The staged subsurface tint texture or null
+         */
+        get subsurfaceColorTexture(): Nullable<BaseTexture>;
         /**
          * Sets the surface tint of the material (when using subsurface scattering)
          */
@@ -1805,13 +1887,13 @@ declare namespace BABYLON.GLTF2 {
          */
         get transmissionWeight(): number;
         /**
-         * Sets the transmission scatter coefficient.
-         * @param value The scatter coefficient as a Vector3
+         * Sets the transmission scatter coefficient, scaled by transmissionDepth.
+         * @param value The scatter coefficient * transmissionDepth as a Vector3
          */
         set transmissionScatter(value: Color3);
         /**
-         * Gets the transmission scatter coefficient.
-         * @returns The scatter coefficient as a Vector3
+         * Gets the transmission scatter coefficient, scaled by transmissionDepth.
+         * @returns The scatter coefficient * transmissionDepth as a Vector3
          */
         get transmissionScatter(): Color3;
         /**
@@ -1824,6 +1906,24 @@ declare namespace BABYLON.GLTF2 {
          * @returns The transmission scatter texture or null
          */
         get transmissionScatterTexture(): Nullable<BaseTexture>;
+        private _volumetricScatterStrengthFactor;
+        /** @internal */
+        set volumetricScatterStrengthFactor(value: Nullable<number>);
+        /** @internal */
+        get volumetricScatterStrengthFactor(): Nullable<number>;
+        private _volumetricScatterStrengthTexture;
+        set volumetricScatterStrengthTexture(value: Nullable<BaseTexture>);
+        get volumetricScatterStrengthTexture(): Nullable<BaseTexture>;
+        private _thinWalledScatterStrengthFactor;
+        /** @internal */
+        set thinWalledScatterStrengthFactor(value: Nullable<number>);
+        /** @internal */
+        get thinWalledScatterStrengthFactor(): Nullable<number>;
+        private _thinWalledScatterStrengthTexture;
+        /** @internal */
+        set thinWalledScatterStrengthTexture(value: Nullable<BaseTexture>);
+        /** @internal */
+        get thinWalledScatterStrengthTexture(): Nullable<BaseTexture>;
         /**
          * Sets the transmission scattering anisotropy.
          * @param value The anisotropy intensity value (-1 to 1)
@@ -2107,6 +2207,14 @@ declare namespace BABYLON.GLTF2 {
          * @param loader The glTF loader; `loader._disposed` is polled between texture passes to bail early on dispose.
          */
         finalizeAsync(loader: BABYLON.GLTF2.GLTFLoader): Promise<void>;
+        /**
+         * Disposes a texture that has been replaced on this material, unless another slot on this
+         * material (or on any other material created by the loader) still references it.
+         * Must be called after the texture has been removed from the slot being replaced.
+         * @param loader The glTF loader that created the materials
+         * @param texture The replaced texture
+         */
+        private _disposeTextureIfUnused;
         private copySurfaceToCoatAsync;
     }
 
@@ -2332,6 +2440,29 @@ declare namespace BABYLON.GLTF2 {
          * Sets the transmission scatter texture
          */
         transmissionScatterTexture: Nullable<BaseTexture>;
+        /**
+         * Staging: the constant scatter strength for volumetric mode.
+         * Set by KHR_materials_scatter and consumed by the adapter during finalization.
+         */
+        volumetricScatterStrengthFactor: Nullable<number>;
+        /**
+         * Staging: scatter strength texture for volumetric mode (non-thin-walled).
+         * Set by KHR_materials_scatter when scatterStrengthTexture is present; applied together with
+         * transmissionScatterTexture in finalizeAsync and then cleared.
+         */
+        volumetricScatterStrengthTexture: Nullable<BaseTexture>;
+        /**
+         * Staging: the constant scatter strength for thin-walled mode.
+         * Set by KHR_materials_scatter and consumed by the material adapter during finalization.
+         * Null means no thin-walled scatter has been staged.
+         */
+        thinWalledScatterStrengthFactor: Nullable<number>;
+        /**
+         * Staging: scatter strength texture for thin-walled mode.
+         * Set by KHR_materials_scatter when scatterStrengthTexture is present; combined with
+         * the transmission weight in finalizeAsync and then cleared.
+         */
+        thinWalledScatterStrengthTexture: Nullable<BaseTexture>;
         /**
          * Sets the scattering anisotropy (-1 to 1)
          */
@@ -2679,6 +2810,8 @@ declare namespace BABYLON.GLTF2.Loader {
         _primitiveBabylonMeshes?: AbstractMesh[];
         /** @internal */
         _numMorphTargets?: number;
+        /** @internal */
+        _morphTargetWeights?: number[];
         /** @internal */
         _isJoint?: boolean;
     }
@@ -3179,6 +3312,13 @@ declare namespace BABYLON.GLTF2 {
          * @internal
          */
         constructor(parent: GLTFFileLoader);
+        /**
+         * Checks whether a texture is still referenced by any material created by this loader.
+         * @param texture The texture to check
+         * @returns True if at least one loaded material still references the texture
+         * @internal
+         */
+        _isTextureUsedByMaterials(texture: BaseTexture): boolean;
         /**
          * Creates or gets a cached material loading adapter with dynamic imports
          * @param material The material to adapt
@@ -3746,11 +3886,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
             weights: {
                 /** When true, the path converter skips objectTree traversal for this property, keeping the parent target. */
                 __passThroughTarget__?: boolean;
-                length: IObjectAccessor<GLTFTargetType, BabylonTargetType, FlowGraphInteger>;
+                length: IObjectAccessor<GLTFTargetType, BabylonTargetType | number[] | undefined, FlowGraphInteger>;
                 __array__: {
                     __target__: boolean;
                 } & IObjectAccessor<GLTFTargetType, any, number>;
-            } & IObjectAccessor<GLTFTargetType, BabylonTargetType, number[]>;
+            } & IObjectAccessor<GLTFTargetType, BabylonTargetType | number[], number[]>;
             extensions: {
                 EXT_lights_ies?: {
                     multiplier: IObjectAccessor<BABYLON.GLTF2.Loader.INode, Light, number>;
@@ -3765,6 +3905,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
     /**
      * Accessor tree describing the `/cameras` section of the glTF Object Model.
      * Exposes orthographic and perspective camera properties.
+     * Accessor inputs are glTF records; their runtime targets are Babylon cameras.
      */
     export interface IGLTFObjectModelTreeCamerasObject {
         /** Number of cameras in the array. */
@@ -3772,16 +3913,16 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         __array__: {
             __target__: boolean;
             orthographic: {
-                xmag: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, Vector2>;
-                ymag: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, Vector2>;
-                zfar: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, number>;
-                znear: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, number>;
+                xmag: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
+                ymag: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
+                zfar: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
+                znear: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
             };
             perspective: {
-                yfov: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, number>;
-                zfar: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, number>;
-                znear: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, number>;
-                aspectRatio: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, BABYLON.GLTF2.Loader.ICamera, Nullable<number>>;
+                yfov: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
+                zfar: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
+                znear: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, number>;
+                aspectRatio: IObjectAccessor<BABYLON.GLTF2.Loader.ICamera, Camera, Nullable<number>>;
             };
         };
     }
@@ -4034,7 +4175,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
                 };
             };
         };
-        /** Accessor tree for `/extensions/EXT_lights_area`. */
+        /** Accessor tree for `/extensions/EXT_lights_area`. Size/aspect use a loader-local semantic animation target. */
         EXT_lights_area: {
             lights: {
                 length: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light[], Light[], FlowGraphInteger>;
@@ -4042,9 +4183,9 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
                     __target__: boolean;
                     color: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, Color3>;
                     intensity: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, number>;
-                    size: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, number>;
+                    size: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, IAnimatable, number>;
                     rect: {
-                        aspect: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, Light, number>;
+                        aspect: IObjectAccessor<BABYLON.GLTF2.Loader.IEXTLightsArea_Light, IAnimatable, number>;
                     };
                 };
             };
@@ -4155,7 +4296,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      *    presented with.
      *  - `/extensions/KHR_interactivity/asset/extensions/<EXTENSION_NAME>/enabled` — whether the extension is both
      *    listed in `extensionsUsed` and supported by this loader. Reading an extension that is not used or not
-     *    supported resolves successfully and yields `false`, so a behavior graph can branch on extension support.
+     *    supported does not create a virtual property, so `pointer/get` reports `isValid = false`.
      *  - `/extensions/KHR_interactivity/limits/<LIMIT_NAME>` — the implementation-specific runtime limits.
      *
      * All of these are read-only.
@@ -4237,6 +4378,36 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         convert(path: string): IObjectInfo<IObjectAccessor<T, BabylonType, BabylonValue>>;
     }
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        class GLTFAreaLightDimensions implements IAnimatable {
+        private readonly _light;
+        /** Animations operating on the semantic dimensions. */
+        animations: Animation[];
+        private _aspect;
+        private readonly _sizeScale;
+        constructor(_light: RectAreaLight, source: BABYLON.GLTF2.Loader.IEXTLightsArea_Light);
+        /** glTF size, independent of the disk's equal-area rectangle conversion. */
+        get size(): number;
+        set size(value: number);
+        /** The shape survives zero dimensions and tracks positive runtime dimensions. */
+        get aspect(): number;
+        set aspect(value: number);
+    }
+    /**
+     * Gets the shared loader-local animation target for semantic area-light dimensions.
+     * @param source glTF area-light record containing its loaded Babylon light
+     * @returns the size/aspect target, or undefined when the light was not loaded
+     * @internal
+     */
+    export function _GetAreaLightDimensions(source: BABYLON.GLTF2.Loader.IEXTLightsArea_Light): GLTFAreaLightDimensions | undefined;
 
 
 
@@ -5804,6 +5975,77 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
 declare namespace BABYLON {
     interface GLTFLoaderExtensionOptions {
         /**
+         * Defines options for the KHR_materials_scatter extension.
+         */
+        ["KHR_materials_scatter"]: {};
+    }
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * [Proposed Specification](https://github.com/KhronosGroup/glTF/pull/2579)
+     * !!! Experimental Extension Subject to Changes !!!
+     */
+    export class KHR_materials_scatter implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        /**
+         * The name of this extension.
+         */
+        readonly name = "KHR_materials_scatter";
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         */
+        order: number;
+        private _loader;
+        /**
+         * @internal
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        loadMaterialPropertiesAsync(context: string, material: BABYLON.GLTF2.Loader.IMaterial, babylonMaterial: Material): Nullable<Promise<void>>;
+        private _loadScatterPropertiesAsync;
+    }
+    /**
+     * Registers the KHR_materials_scatter glTF loader extension.
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_materials_scatter(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_materials_scatter.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
          * Defines options for the KHR_materials_pbrSpecularGlossiness extension.
          */
         ["KHR_materials_pbrSpecularGlossiness"]: {};
@@ -6783,6 +7025,108 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
      * Re-exports the pure implementation and applies the runtime registration side effect.
      * Import "./KHR_interactivity.pure" for tree-shakeable, side-effect-free usage.
+     */
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+    
+
+
+}
+declare namespace BABYLON {
+    interface GLTFLoaderExtensionOptions {
+        /**
+         * Defines options for the KHR_gaussian_splatting_compression_spz_2 extension.
+         */
+        ["KHR_gaussian_splatting_compression_spz_2"]: {
+            /**
+             * URL of the Adobe spz WASM library used to decode the SPZ payload.
+             * Set to undefined to use the built-in gzip decoder (SPZ V2/V3 only).
+             */
+            spzLibraryUrl?: string;
+        };
+        /**
+         * Defines options for the KHR_gaussian_splatting_compression_spz extension (earlier draft name).
+         */
+        ["KHR_gaussian_splatting_compression_spz"]: {
+            /**
+             * URL of the Adobe spz WASM library used to decode the SPZ payload.
+             * Set to undefined to use the built-in gzip decoder (SPZ V2/V3 only).
+             */
+            spzLibraryUrl?: string;
+        };
+    }
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Converts packed splat data from the SPZ coordinate system (RUB) to the glTF one (LUF), in place.
+     * This rotates the data by 180 degrees around the Y axis: x and z are negated.
+     * @param data Packed splats (32 bytes per splat: position, scale, color, quaternion wxyz)
+     * @param sh Spherical harmonics textures (16 bytes per splat in each texture), if any
+     * @param shDegree Spherical harmonics degree of `sh`
+     * @internal
+     */
+    export function _ConvertSpzRubToLuf(data: ArrayBuffer, sh: Nullable<Uint8Array[]> | undefined, shDegree: number): void;
+    /**
+     * [Specification](https://github.com/KhronosGroup/glTF/pull/2531)
+     * Loads a KHR_gaussian_splatting primitive whose splat data is stored as an SPZ file, as a {@link GaussianSplattingMesh}.
+     */
+    export class KHR_gaussian_splatting_compression_spz implements BABYLON.GLTF2.IGLTFLoaderExtension {
+        readonly name: string;
+        /**
+         * Defines a number that determines the order the extensions are applied.
+         * Must run before KHR_gaussian_splatting, which would otherwise try to read the (possibly missing) accessors.
+         */
+        order: number;
+        /**
+         * Defines whether this extension is enabled.
+         */
+        enabled: boolean;
+        private _loader;
+        /**
+         * @internal
+         * @param loader The glTF loader
+         * @param name The extension name this instance handles
+         */
+        constructor(loader: BABYLON.GLTF2.GLTFLoader, name?: string);
+        /** @internal */
+        dispose(): void;
+        /**
+         * @internal
+         */
+        _loadMeshPrimitiveAsync(context: string, name: string, node: BABYLON.GLTF2.Loader.INode, mesh: BABYLON.GLTF2.Loader.IMesh, primitive: BABYLON.GLTF2.Loader.IMeshPrimitive, assign: (babylonMesh: AbstractMesh) => void): Nullable<Promise<AbstractMesh>>;
+        private _loadSpzPrimitiveAsync;
+        /**
+         * The splat textures are created during the asynchronous upload, outside of any blocked entity collection scope,
+         * so they land in the scene. Move them into the asset container (if any) and report them to the loader.
+         * @param mesh The Gaussian splatting mesh whose data was just uploaded
+         */
+        private _reportGeneratedTextures;
+    }
+    /**
+     * Registers the KHR_gaussian_splatting_compression_spz_2 glTF loader extension (and its earlier draft name).
+     * Safe to call multiple times; only the first call has an effect.
+     */
+    export function RegisterKHR_gaussian_splatting_compression_spz(): void;
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
+     * Re-exports the pure implementation and applies the runtime registration side effect.
+     * Import "./KHR_gaussian_splatting_compression_spz.pure" for tree-shakeable, side-effect-free usage.
      */
 
 
@@ -7861,6 +8205,15 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         getVariableName(index: number): string;
         /**
+         * Gets the serialized type-default value for a graph type.
+         * @param type graph-local type index
+         * @returns serialized runtime value
+         */
+        getTypeDefault(type: number): {
+            type: FlowGraphTypes;
+            value: any;
+        };
+        /**
          * Serializes the parsed interactivity graph into the {@link ISerializedFlowGraph}
          * payload consumed by `ParseFlowGraphAsync`. Performs node-connection wiring
          * and seeds the execution context with the graph's static variables.
@@ -8048,9 +8401,10 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
      * @param graph source graph
      * @param declarations canonical declarations
      * @param assetNodeCount number of glTF nodes in the containing asset
+     * @param preserveCompatibilityConfiguration allow independent optional configuration properties and legacy fractional for-loop initial indices
      * @returns normalized executable graph
      */
-    export function CreateEffectiveKHRInteractivityGraph(graph: BABYLON.GLTF2.IKHRInteractivity_Graph, declarations: readonly IKHRInteractivityDeclarationModel[], assetNodeCount?: number): BABYLON.GLTF2.IKHRInteractivity_Graph;
+    export function CreateEffectiveKHRInteractivityGraph(graph: BABYLON.GLTF2.IKHRInteractivity_Graph, declarations: readonly IKHRInteractivityDeclarationModel[], assetNodeCount?: number, preserveCompatibilityConfiguration?: boolean): BABYLON.GLTF2.IKHRInteractivity_Graph;
     /**
      * Creates and validates a canonical copy of one KHR_interactivity graph.
      * @param graph source graph
@@ -8507,6 +8861,37 @@ declare namespace BABYLON {
 }
 declare namespace BABYLON.GLTF2.Loader.Extensions {
         /**
+     * Configuration for adapting runtime delay indices to opaque references.
+     */
+    export interface IFlowGraphDelayReferenceBlockConfiguration extends IFlowGraphBlockConfiguration {
+        /** Whether to decode a reference into an index rather than encode an index. */
+        decode?: boolean;
+    }
+    /**
+     * Loader-local conversion between FlowGraph delay indices and KHR_interactivity references.
+     */
+    export class FlowGraphDelayReferenceBlock extends FlowGraphBlock {
+        config: IFlowGraphDelayReferenceBlockConfiguration;
+        /** Delay index or reference to convert. */
+        readonly input: FlowGraphDataConnection<unknown>;
+        /** Converted reference or delay index; invalid references decode to -1. */
+        readonly value: FlowGraphDataConnection<string | FlowGraphInteger>;
+        constructor(config: IFlowGraphDelayReferenceBlockConfiguration);
+        /** @internal */
+        _updateOutputs(context: FlowGraphContext): void;
+        /** @returns the serialized class name */
+        getClassName(): string;
+    }
+
+
+
+}
+declare namespace BABYLON {
+
+
+}
+declare namespace BABYLON.GLTF2.Loader.Extensions {
+        /**
      * Describes how one KHR_interactivity configuration or socket property maps to FlowGraph.
      *
      * The same contract is used for fixed sockets, wildcard sockets, configuration validation,
@@ -8604,7 +8989,7 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
          */
         invalidUsesDefault?: boolean;
         /**
-         * Allowed KHR type signatures for a type-index configuration.
+         * Allowed KHR type signatures for a type-index configuration or an input value socket.
          */
         allowedSignatures?: readonly ("bool" | "float" | "float2" | "float3" | "float4" | "float2x2" | "float3x3" | "float4x4" | "int" | "ref" | "custom")[];
         /** Allowed literal values for this configuration property. */
@@ -8659,6 +9044,11 @@ declare namespace BABYLON.GLTF2.Loader.Extensions {
             inputValueSockets: Record<string, "bool" | "float" | "float2" | "float3" | "float4" | "float2x2" | "float3x3" | "float4x4" | "int" | "ref" | "custom">;
             outputValueSockets: Record<string, "bool" | "float" | "float2" | "float3" | "float4" | "float2x2" | "float3x3" | "float4x4" | "int" | "ref" | "custom">;
         };
+        /**
+         * Additional exact declaration contracts supported for published legacy socket layouts.
+         * Other mismatched declarations still lower to typed no-ops.
+         */
+        declarationSchemaVariants?: IGLTFToFlowGraphMapping["declarationSchema"][];
         /**
          * The inputs of the glTF node mapped to the FlowGraph block.
          */
@@ -10275,6 +10665,10 @@ declare namespace BABYLON {
 
 
     /**
+     * Default URL of the Adobe spz WASM library, used when WebAssembly is available.
+     */
+    export const DefaultSpzLibraryUrl = "https://unpkg.com/@adobe/spz@0.2.2/dist/spz.js";
+    /**
      * Parses SPZ data and returns a promise resolving to an IParsedSplat object.
      * @param data The ArrayBuffer containing SPZ data.
      * @param scene The Babylon.js scene.
@@ -10715,7 +11109,7 @@ declare namespace BABYLON {
      *
      * MRT layout: 0 = center (x,y,z,1), 1 = covA (Sigma00,01,02,11), 2 = covB (Sigma12,22,0,0), 3 = color (rgba).
      */
-    export const GaussianSplattingWorkBufferFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogMeansLTex;\nuniform sampler2D sogMeansUTex;\nuniform sampler2D sogScalesTex;\nuniform sampler2D sogQuatsTex;\nuniform sampler2D sogSh0Tex;\nuniform sampler2D sogCodebookTex;\n\nuniform vec3 sogMeansMin;\nuniform vec3 sogMeansMax;\nuniform vec3 sogScalesMin;\nuniform vec3 sogScalesMax;\nuniform vec4 sogSh0Min;\nuniform vec4 sogSh0Max;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\n\nlayout(location = 0) out vec4 glFragData[4];\n\nmat3 transposeM(mat3 m) {\n    return mat3(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]);\n}\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int k = global - uOffset;\n    ivec2 src = ivec2(k - (k / uSrcWidth) * uSrcWidth, k / uSrcWidth);\n\n    vec3 mL = texelFetch(sogMeansLTex, src, 0).xyz;\n    vec3 mU = texelFetch(sogMeansUTex, src, 0).xyz;\n    vec3 sRaw = texelFetch(sogScalesTex, src, 0).xyz;\n    vec4 qRaw = texelFetch(sogQuatsTex, src, 0);\n    vec4 c0 = texelFetch(sogSh0Tex, src, 0);\n\n    // Position: q16 = (u<<8)|l normalized; n = lerp(min,max,q16); pos = sign(n)*(exp(|n|)-1)\n    vec3 q16 = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    vec3 nPos = mix(sogMeansMin, sogMeansMax, q16);\n    vec3 center = sign(nPos) * (exp(abs(nPos)) - vec3(1.0));\n\n    // Scale (v1: lerp+exp ; v2: codebook lookup)\n    vec3 splatScale;\n    if (uVersion == 2) {\n        vec3 sIdx = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.x), 0), 0).r);\n        splatScale.y = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.y), 0), 0).r);\n        splatScale.z = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(sogScalesMin, sogScalesMax, sRaw));\n    }\n\n    // Quaternion (largest-omitted, mode in alpha as 252 + omitted-index)\n    const float invSqrt2 = 0.70710678118;\n    vec3 qabc = (qRaw.xyz - vec3(0.5)) * 2.0 * invSqrt2;\n    int qMode = int(qRaw.w * 255.0 + 0.5) - 252;\n    float qd = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    vec4 quat;\n    if (qMode == 0) {\n        quat = vec4(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    float qw = quat.x, qx = quat.y, qy = quat.z, qz = quat.w;\n    mat3 R = mat3(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    mat3 S2 = mat3(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    mat3 Sigma = R * S2 * transposeM(R);\n\n    // Color (sh0)\n    const float SH_C0 = 0.28209479177387814;\n    vec3 colRgb;\n    float colA;\n    if (uVersion == 2) {\n        vec3 c3;\n        c3.x = texelFetch(sogCodebookTex, ivec2(256 + int(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = texelFetch(sogCodebookTex, ivec2(256 + int(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = texelFetch(sogCodebookTex, ivec2(256 + int(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        vec4 cLerp = mix(sogSh0Min, sogSh0Max, c0);\n        colRgb = vec3(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    glFragData[0] = vec4(center, 1.0);\n    glFragData[1] = vec4(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    glFragData[2] = vec4(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    glFragData[3] = vec4(colRgb, colA);\n}\n";
+    export const GaussianSplattingWorkBufferFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogMeansLTex;\nuniform sampler2D sogMeansUTex;\nuniform sampler2D sogScalesTex;\nuniform sampler2D sogQuatsTex;\nuniform sampler2D sogSh0Tex;\nuniform sampler2D sogCodebookTex;\n\nuniform vec3 sogMeansMin;\nuniform vec3 sogMeansMax;\nuniform vec3 sogScalesMin;\nuniform vec3 sogScalesMax;\nuniform vec4 sogSh0Min;\nuniform vec4 sogSh0Max;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uSourceOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\n\nlayout(location = 0) out vec4 glFragData[4];\n\nmat3 transposeM(mat3 m) {\n    return mat3(m[0][0], m[1][0], m[2][0], m[0][1], m[1][1], m[2][1], m[0][2], m[1][2], m[2][2]);\n}\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int k = global - uOffset + uSourceOffset;\n    ivec2 src = ivec2(k - (k / uSrcWidth) * uSrcWidth, k / uSrcWidth);\n\n    vec3 mL = texelFetch(sogMeansLTex, src, 0).xyz;\n    vec3 mU = texelFetch(sogMeansUTex, src, 0).xyz;\n    vec3 sRaw = texelFetch(sogScalesTex, src, 0).xyz;\n    vec4 qRaw = texelFetch(sogQuatsTex, src, 0);\n    vec4 c0 = texelFetch(sogSh0Tex, src, 0);\n\n    // Position: q16 = (u<<8)|l normalized; n = lerp(min,max,q16); pos = sign(n)*(exp(|n|)-1)\n    vec3 q16 = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    vec3 nPos = mix(sogMeansMin, sogMeansMax, q16);\n    vec3 center = sign(nPos) * (exp(abs(nPos)) - vec3(1.0));\n\n    // Scale (v1: lerp+exp ; v2: codebook lookup)\n    vec3 splatScale;\n    if (uVersion == 2) {\n        vec3 sIdx = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.x), 0), 0).r);\n        splatScale.y = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.y), 0), 0).r);\n        splatScale.z = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(sogScalesMin, sogScalesMax, sRaw));\n    }\n\n    // Quaternion (largest-omitted, mode in alpha as 252 + omitted-index)\n    const float invSqrt2 = 0.70710678118;\n    vec3 qabc = (qRaw.xyz - vec3(0.5)) * 2.0 * invSqrt2;\n    int qMode = int(qRaw.w * 255.0 + 0.5) - 252;\n    float qd = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    vec4 quat;\n    if (qMode == 0) {\n        quat = vec4(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    float qw = quat.x, qx = quat.y, qy = quat.z, qz = quat.w;\n    mat3 R = mat3(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    mat3 S2 = mat3(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    mat3 Sigma = R * S2 * transposeM(R);\n\n    // Color (sh0)\n    const float SH_C0 = 0.28209479177387814;\n    vec3 colRgb;\n    float colA;\n    if (uVersion == 2) {\n        vec3 c3;\n        c3.x = texelFetch(sogCodebookTex, ivec2(256 + int(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = texelFetch(sogCodebookTex, ivec2(256 + int(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = texelFetch(sogCodebookTex, ivec2(256 + int(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        vec4 cLerp = mix(sogSh0Min, sogSh0Max, c0);\n        colRgb = vec3(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    glFragData[0] = vec4(center, 1.0);\n    glFragData[1] = vec4(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    glFragData[2] = vec4(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    glFragData[3] = vec4(colRgb, colA);\n}\n";
     /**
      * Pass-through vertex shader (WGSL).
      */
@@ -10723,7 +11117,7 @@ declare namespace BABYLON {
     /**
      * Fragment shader (WGSL/WebGPU) — same decode as the GLSL variant, writing 4 MRT attachments.
      */
-    export const GaussianSplattingWorkBufferFragmentShaderWGSL = "\nvar sogMeansLTexSampler : sampler;\nvar sogMeansLTex : texture_2d<f32>;\nvar sogMeansUTexSampler : sampler;\nvar sogMeansUTex : texture_2d<f32>;\nvar sogScalesTexSampler : sampler;\nvar sogScalesTex : texture_2d<f32>;\nvar sogQuatsTexSampler : sampler;\nvar sogQuatsTex : texture_2d<f32>;\nvar sogSh0TexSampler : sampler;\nvar sogSh0Tex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogMeansMin : vec3<f32>;\nuniform sogMeansMax : vec3<f32>;\nuniform sogScalesMin : vec3<f32>;\nuniform sogScalesMax : vec3<f32>;\nuniform sogSh0Min : vec4<f32>;\nuniform sogSh0Max : vec4<f32>;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let k : i32 = global - uniforms.uOffset;\n    let src : vec2<i32> = vec2<i32>(k - (k / uniforms.uSrcWidth) * uniforms.uSrcWidth, k / uniforms.uSrcWidth);\n\n    let mL : vec3<f32> = textureLoad(sogMeansLTex, src, 0).xyz;\n    let mU : vec3<f32> = textureLoad(sogMeansUTex, src, 0).xyz;\n    let sRaw : vec3<f32> = textureLoad(sogScalesTex, src, 0).xyz;\n    let qRaw : vec4<f32> = textureLoad(sogQuatsTex, src, 0);\n    let c0 : vec4<f32> = textureLoad(sogSh0Tex, src, 0);\n\n    let q16 : vec3<f32> = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    let nPos : vec3<f32> = mix(uniforms.sogMeansMin, uniforms.sogMeansMax, q16);\n    let center : vec3<f32> = sign(nPos) * (exp(abs(nPos)) - vec3<f32>(1.0));\n\n    var splatScale : vec3<f32>;\n    if (uniforms.uVersion == 2) {\n        let sIdx : vec3<f32> = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.x), 0), 0).r);\n        splatScale.y = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.y), 0), 0).r);\n        splatScale.z = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(uniforms.sogScalesMin, uniforms.sogScalesMax, sRaw));\n    }\n\n    let invSqrt2 : f32 = 0.70710678118;\n    let qabc : vec3<f32> = (qRaw.xyz - vec3<f32>(0.5)) * 2.0 * invSqrt2;\n    let qMode : i32 = i32(qRaw.w * 255.0 + 0.5) - 252;\n    let qd : f32 = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    var quat : vec4<f32>;\n    if (qMode == 0) {\n        quat = vec4<f32>(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4<f32>(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4<f32>(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4<f32>(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    let qw : f32 = quat.x;\n    let qx : f32 = quat.y;\n    let qy : f32 = quat.z;\n    let qz : f32 = quat.w;\n    let R : mat3x3<f32> = mat3x3<f32>(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    let S2 : mat3x3<f32> = mat3x3<f32>(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    let Sigma : mat3x3<f32> = R * S2 * transpose(R);\n\n    let SH_C0 : f32 = 0.28209479177387814;\n    var colRgb : vec3<f32>;\n    var colA : f32;\n    if (uniforms.uVersion == 2) {\n        var c3 : vec3<f32>;\n        c3.x = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3<f32>(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        let cLerp : vec4<f32> = mix(uniforms.sogSh0Min, uniforms.sogSh0Max, c0);\n        colRgb = vec3<f32>(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    fragmentOutputs.fragData0 = vec4<f32>(center, 1.0);\n    fragmentOutputs.fragData1 = vec4<f32>(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    fragmentOutputs.fragData2 = vec4<f32>(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    fragmentOutputs.fragData3 = vec4<f32>(colRgb, colA);\n}\n";
+    export const GaussianSplattingWorkBufferFragmentShaderWGSL = "\nvar sogMeansLTexSampler : sampler;\nvar sogMeansLTex : texture_2d<f32>;\nvar sogMeansUTexSampler : sampler;\nvar sogMeansUTex : texture_2d<f32>;\nvar sogScalesTexSampler : sampler;\nvar sogScalesTex : texture_2d<f32>;\nvar sogQuatsTexSampler : sampler;\nvar sogQuatsTex : texture_2d<f32>;\nvar sogSh0TexSampler : sampler;\nvar sogSh0Tex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogMeansMin : vec3<f32>;\nuniform sogMeansMax : vec3<f32>;\nuniform sogScalesMin : vec3<f32>;\nuniform sogScalesMax : vec3<f32>;\nuniform sogSh0Min : vec4<f32>;\nuniform sogSh0Max : vec4<f32>;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uSourceOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let k : i32 = global - uniforms.uOffset + uniforms.uSourceOffset;\n    let src : vec2<i32> = vec2<i32>(k - (k / uniforms.uSrcWidth) * uniforms.uSrcWidth, k / uniforms.uSrcWidth);\n\n    let mL : vec3<f32> = textureLoad(sogMeansLTex, src, 0).xyz;\n    let mU : vec3<f32> = textureLoad(sogMeansUTex, src, 0).xyz;\n    let sRaw : vec3<f32> = textureLoad(sogScalesTex, src, 0).xyz;\n    let qRaw : vec4<f32> = textureLoad(sogQuatsTex, src, 0);\n    let c0 : vec4<f32> = textureLoad(sogSh0Tex, src, 0);\n\n    let q16 : vec3<f32> = (mU * 256.0 + mL) * (255.0 / 65535.0);\n    let nPos : vec3<f32> = mix(uniforms.sogMeansMin, uniforms.sogMeansMax, q16);\n    let center : vec3<f32> = sign(nPos) * (exp(abs(nPos)) - vec3<f32>(1.0));\n\n    var splatScale : vec3<f32>;\n    if (uniforms.uVersion == 2) {\n        let sIdx : vec3<f32> = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.x), 0), 0).r);\n        splatScale.y = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.y), 0), 0).r);\n        splatScale.z = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(uniforms.sogScalesMin, uniforms.sogScalesMax, sRaw));\n    }\n\n    let invSqrt2 : f32 = 0.70710678118;\n    let qabc : vec3<f32> = (qRaw.xyz - vec3<f32>(0.5)) * 2.0 * invSqrt2;\n    let qMode : i32 = i32(qRaw.w * 255.0 + 0.5) - 252;\n    let qd : f32 = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    var quat : vec4<f32>;\n    if (qMode == 0) {\n        quat = vec4<f32>(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4<f32>(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4<f32>(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4<f32>(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    let qw : f32 = quat.x;\n    let qx : f32 = quat.y;\n    let qy : f32 = quat.z;\n    let qz : f32 = quat.w;\n    let R : mat3x3<f32> = mat3x3<f32>(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n    let S2 : mat3x3<f32> = mat3x3<f32>(\n        4.0 * splatScale.x * splatScale.x, 0.0, 0.0,\n        0.0, 4.0 * splatScale.y * splatScale.y, 0.0,\n        0.0, 0.0, 4.0 * splatScale.z * splatScale.z\n    );\n    let Sigma : mat3x3<f32> = R * S2 * transpose(R);\n\n    let SH_C0 : f32 = 0.28209479177387814;\n    var colRgb : vec3<f32>;\n    var colA : f32;\n    if (uniforms.uVersion == 2) {\n        var c3 : vec3<f32>;\n        c3.x = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.x * 255.0 + 0.5), 0), 0).r;\n        c3.y = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.y * 255.0 + 0.5), 0), 0).r;\n        c3.z = textureLoad(sogCodebookTex, vec2<i32>(256 + i32(c0.z * 255.0 + 0.5), 0), 0).r;\n        colRgb = vec3<f32>(0.5) + c3 * SH_C0;\n        colA = c0.w;\n    } else {\n        let cLerp : vec4<f32> = mix(uniforms.sogSh0Min, uniforms.sogSh0Max, c0);\n        colRgb = vec3<f32>(0.5) + cLerp.xyz * SH_C0;\n        colA = 1.0 / (1.0 + exp(-cLerp.w));\n    }\n\n    fragmentOutputs.fragData0 = vec4<f32>(center, 1.0);\n    fragmentOutputs.fragData1 = vec4<f32>(Sigma[0][0], Sigma[0][1], Sigma[0][2], Sigma[1][1]);\n    fragmentOutputs.fragData2 = vec4<f32>(Sigma[1][2], Sigma[2][2], 0.0, 0.0);\n    fragmentOutputs.fragData3 = vec4<f32>(colRgb, colA);\n}\n";
     /**
      * Shader name for the rotation/scale decode pass (the three half-float textures voxel-IBL shadowing consumes).
      */
@@ -10736,12 +11130,12 @@ declare namespace BABYLON {
      *   rotB     = (R col1.yz, R col2.xy)
      *   rotScale = (R col2.z, 2*scale.x, 2*scale.y, 2*scale.z)
      */
-    export const GaussianSplattingWorkBufferRotationDecodeFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogScalesTex;\nuniform sampler2D sogQuatsTex;\nuniform sampler2D sogCodebookTex;\n\nuniform vec3 sogScalesMin;\nuniform vec3 sogScalesMax;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\n\nlayout(location = 0) out vec4 glFragData[3];\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int k = global - uOffset;\n    ivec2 src = ivec2(k - (k / uSrcWidth) * uSrcWidth, k / uSrcWidth);\n\n    vec3 sRaw = texelFetch(sogScalesTex, src, 0).xyz;\n    vec4 qRaw = texelFetch(sogQuatsTex, src, 0);\n\n    vec3 splatScale;\n    if (uVersion == 2) {\n        vec3 sIdx = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.x), 0), 0).r);\n        splatScale.y = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.y), 0), 0).r);\n        splatScale.z = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(sogScalesMin, sogScalesMax, sRaw));\n    }\n\n    const float invSqrt2 = 0.70710678118;\n    vec3 qabc = (qRaw.xyz - vec3(0.5)) * 2.0 * invSqrt2;\n    int qMode = int(qRaw.w * 255.0 + 0.5) - 252;\n    float qd = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    vec4 quat;\n    if (qMode == 0) {\n        quat = vec4(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    float qw = quat.x, qx = quat.y, qy = quat.z, qz = quat.w;\n    mat3 R = mat3(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n\n    glFragData[0] = vec4(R[0], R[1].x);\n    glFragData[1] = vec4(R[1].y, R[1].z, R[2].x, R[2].y);\n    glFragData[2] = vec4(R[2].z, 2.0 * splatScale.x, 2.0 * splatScale.y, 2.0 * splatScale.z);\n}\n";
+    export const GaussianSplattingWorkBufferRotationDecodeFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogScalesTex;\nuniform sampler2D sogQuatsTex;\nuniform sampler2D sogCodebookTex;\n\nuniform vec3 sogScalesMin;\nuniform vec3 sogScalesMax;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uSourceOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\n\nlayout(location = 0) out vec4 glFragData[3];\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int k = global - uOffset + uSourceOffset;\n    ivec2 src = ivec2(k - (k / uSrcWidth) * uSrcWidth, k / uSrcWidth);\n\n    vec3 sRaw = texelFetch(sogScalesTex, src, 0).xyz;\n    vec4 qRaw = texelFetch(sogQuatsTex, src, 0);\n\n    vec3 splatScale;\n    if (uVersion == 2) {\n        vec3 sIdx = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.x), 0), 0).r);\n        splatScale.y = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.y), 0), 0).r);\n        splatScale.z = exp(texelFetch(sogCodebookTex, ivec2(int(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(sogScalesMin, sogScalesMax, sRaw));\n    }\n\n    const float invSqrt2 = 0.70710678118;\n    vec3 qabc = (qRaw.xyz - vec3(0.5)) * 2.0 * invSqrt2;\n    int qMode = int(qRaw.w * 255.0 + 0.5) - 252;\n    float qd = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    vec4 quat;\n    if (qMode == 0) {\n        quat = vec4(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    float qw = quat.x, qx = quat.y, qy = quat.z, qz = quat.w;\n    mat3 R = mat3(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n\n    glFragData[0] = vec4(R[0], R[1].x);\n    glFragData[1] = vec4(R[1].y, R[1].z, R[2].x, R[2].y);\n    glFragData[2] = vec4(R[2].z, 2.0 * splatScale.x, 2.0 * splatScale.y, 2.0 * splatScale.z);\n}\n";
     /**
      * Rotation/scale decode fragment shader (WGSL/WebGPU) — same decode as the GLSL variant, writing 3 half-float MRT
      * attachments.
      */
-    export const GaussianSplattingWorkBufferRotationDecodeFragmentShaderWGSL = "\nvar sogScalesTexSampler : sampler;\nvar sogScalesTex : texture_2d<f32>;\nvar sogQuatsTexSampler : sampler;\nvar sogQuatsTex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogScalesMin : vec3<f32>;\nuniform sogScalesMax : vec3<f32>;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let k : i32 = global - uniforms.uOffset;\n    let src : vec2<i32> = vec2<i32>(k - (k / uniforms.uSrcWidth) * uniforms.uSrcWidth, k / uniforms.uSrcWidth);\n\n    let sRaw : vec3<f32> = textureLoad(sogScalesTex, src, 0).xyz;\n    let qRaw : vec4<f32> = textureLoad(sogQuatsTex, src, 0);\n\n    var splatScale : vec3<f32>;\n    if (uniforms.uVersion == 2) {\n        let sIdx : vec3<f32> = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.x), 0), 0).r);\n        splatScale.y = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.y), 0), 0).r);\n        splatScale.z = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(uniforms.sogScalesMin, uniforms.sogScalesMax, sRaw));\n    }\n\n    let invSqrt2 : f32 = 0.70710678118;\n    let qabc : vec3<f32> = (qRaw.xyz - vec3<f32>(0.5)) * 2.0 * invSqrt2;\n    let qMode : i32 = i32(qRaw.w * 255.0 + 0.5) - 252;\n    let qd : f32 = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    var quat : vec4<f32>;\n    if (qMode == 0) {\n        quat = vec4<f32>(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4<f32>(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4<f32>(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4<f32>(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    let qw : f32 = quat.x;\n    let qx : f32 = quat.y;\n    let qy : f32 = quat.z;\n    let qz : f32 = quat.w;\n    let R : mat3x3<f32> = mat3x3<f32>(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n\n    fragmentOutputs.fragData0 = vec4<f32>(R[0], R[1].x);\n    fragmentOutputs.fragData1 = vec4<f32>(R[1].y, R[1].z, R[2].x, R[2].y);\n    fragmentOutputs.fragData2 = vec4<f32>(R[2].z, 2.0 * splatScale.x, 2.0 * splatScale.y, 2.0 * splatScale.z);\n}\n";
+    export const GaussianSplattingWorkBufferRotationDecodeFragmentShaderWGSL = "\nvar sogScalesTexSampler : sampler;\nvar sogScalesTex : texture_2d<f32>;\nvar sogQuatsTexSampler : sampler;\nvar sogQuatsTex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogScalesMin : vec3<f32>;\nuniform sogScalesMax : vec3<f32>;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uSourceOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let k : i32 = global - uniforms.uOffset + uniforms.uSourceOffset;\n    let src : vec2<i32> = vec2<i32>(k - (k / uniforms.uSrcWidth) * uniforms.uSrcWidth, k / uniforms.uSrcWidth);\n\n    let sRaw : vec3<f32> = textureLoad(sogScalesTex, src, 0).xyz;\n    let qRaw : vec4<f32> = textureLoad(sogQuatsTex, src, 0);\n\n    var splatScale : vec3<f32>;\n    if (uniforms.uVersion == 2) {\n        let sIdx : vec3<f32> = floor(sRaw * 255.0 + 0.5);\n        splatScale.x = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.x), 0), 0).r);\n        splatScale.y = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.y), 0), 0).r);\n        splatScale.z = exp(textureLoad(sogCodebookTex, vec2<i32>(i32(sIdx.z), 0), 0).r);\n    } else {\n        splatScale = exp(mix(uniforms.sogScalesMin, uniforms.sogScalesMax, sRaw));\n    }\n\n    let invSqrt2 : f32 = 0.70710678118;\n    let qabc : vec3<f32> = (qRaw.xyz - vec3<f32>(0.5)) * 2.0 * invSqrt2;\n    let qMode : i32 = i32(qRaw.w * 255.0 + 0.5) - 252;\n    let qd : f32 = sqrt(max(0.0, 1.0 - dot(qabc, qabc)));\n    var quat : vec4<f32>;\n    if (qMode == 0) {\n        quat = vec4<f32>(qd, qabc.x, qabc.y, qabc.z);\n    } else if (qMode == 1) {\n        quat = vec4<f32>(qabc.x, qd, qabc.y, qabc.z);\n    } else if (qMode == 2) {\n        quat = vec4<f32>(qabc.x, qabc.y, qd, qabc.z);\n    } else {\n        quat = vec4<f32>(qabc.x, qabc.y, qabc.z, qd);\n    }\n\n    let qw : f32 = quat.x;\n    let qx : f32 = quat.y;\n    let qy : f32 = quat.z;\n    let qz : f32 = quat.w;\n    let R : mat3x3<f32> = mat3x3<f32>(\n        1.0 - 2.0 * (qy * qy + qz * qz), 2.0 * (qx * qy + qw * qz), 2.0 * (qx * qz - qw * qy),\n        2.0 * (qx * qy - qw * qz), 1.0 - 2.0 * (qx * qx + qz * qz), 2.0 * (qy * qz + qw * qx),\n        2.0 * (qx * qz + qw * qy), 2.0 * (qy * qz - qw * qx), 1.0 - 2.0 * (qx * qx + qy * qy)\n    );\n\n    fragmentOutputs.fragData0 = vec4<f32>(R[0], R[1].x);\n    fragmentOutputs.fragData1 = vec4<f32>(R[1].y, R[1].z, R[2].x, R[2].y);\n    fragmentOutputs.fragData2 = vec4<f32>(R[2].z, 2.0 * splatScale.x, 2.0 * splatScale.y, 2.0 * splatScale.z);\n}\n";
     /**
      * Shader name for the SOG higher-order SH decode pass (bakes one packed-u32 SH texture per pass).
      */
@@ -10753,12 +11147,12 @@ declare namespace BABYLON {
      * (`uShTextureIndex` selects the 16 scalars written this pass). Coefficients this file lacks are written neutral
      * (128 == 0 after `decompose`), so a lower-band file mixes correctly with higher-band ones.
      */
-    export const GaussianSplattingWorkBufferShDecodeFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogShLabelsTex;\nuniform sampler2D sogShCentroidsTex;\nuniform sampler2D sogCodebookTex;\nuniform float sogShnMin;\nuniform float sogShnMax;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\nuniform int uCoeffs;\nuniform int uShTextureIndex;\n\nlayout(location = 0) out uvec4 outSh;\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int kLocal = global - uOffset;\n\n    // 16-bit label for this source splat (LSB in r, MSB in g), indexed over the labels texture's own width.\n    ivec2 lsz = textureSize(sogShLabelsTex, 0);\n    ivec2 lsrc = ivec2(kLocal - (kLocal / lsz.x) * lsz.x, kLocal / lsz.x);\n    vec4 labelRaw = texelFetch(sogShLabelsTex, lsrc, 0);\n    int n = int(labelRaw.r * 255.0 + 0.5) + int(labelRaw.g * 255.0 + 0.5) * 256;\n    int u = (n - (n / 64) * 64) * uCoeffs;\n    int v = n / 64;\n\n    uint packed0 = 0u;\n    uint packed1 = 0u;\n    uint packed2 = 0u;\n    uint packed3 = 0u;\n\n    for (int b = 0; b < 16; b++) {\n        int s = uShTextureIndex * 16 + b; // flat SH scalar index\n        int kc = s / 3;                    // higher-order coefficient (0-based)\n        int j = s - kc * 3;                // channel (0=r,1=g,2=b)\n        float byteVal = 128.0;             // neutral (decompose(128) ~= 0)\n        if (kc < uCoeffs) {\n            vec4 centroidRaw = texelFetch(sogShCentroidsTex, ivec2(u + kc, v), 0);\n            float ch = (j == 0) ? centroidRaw.r : ((j == 1) ? centroidRaw.g : centroidRaw.b);\n            float coeff;\n            if (uVersion == 2) {\n                int cidx = int(ch * 255.0 + 0.5);\n                coeff = texelFetch(sogCodebookTex, ivec2(512 + cidx, 0), 0).r;\n            } else {\n                coeff = mix(sogShnMin, sogShnMax, ch);\n            }\n            byteVal = clamp(coeff * 127.5 + 127.5, 0.0, 255.0);\n        }\n        uint bv = uint(byteVal + 0.5);\n        int comp = b / 4;\n        uint contrib = bv << uint((b - comp * 4) * 8);\n        if (comp == 0) { packed0 |= contrib; }\n        else if (comp == 1) { packed1 |= contrib; }\n        else if (comp == 2) { packed2 |= contrib; }\n        else { packed3 |= contrib; }\n    }\n    outSh = uvec4(packed0, packed1, packed2, packed3);\n}\n";
+    export const GaussianSplattingWorkBufferShDecodeFragmentShaderGLSL = "precision highp float;\nprecision highp int;\n\nuniform sampler2D sogShLabelsTex;\nuniform sampler2D sogShCentroidsTex;\nuniform sampler2D sogCodebookTex;\nuniform float sogShnMin;\nuniform float sogShnMax;\nuniform int uVersion;\nuniform int uOffset;\nuniform int uSourceOffset;\nuniform int uCount;\nuniform int uDestWidth;\nuniform int uSrcWidth;\nuniform int uCoeffs;\nuniform int uShTextureIndex;\n\nlayout(location = 0) out uvec4 outSh;\n\nvoid main() {\n    ivec2 p = ivec2(gl_FragCoord.xy);\n    int global = p.y * uDestWidth + p.x;\n    if (global < uOffset || global >= uOffset + uCount) {\n        discard;\n    }\n    int kLocal = global - uOffset + uSourceOffset;\n\n    // 16-bit label for this source splat (LSB in r, MSB in g), indexed over the labels texture's own width.\n    ivec2 lsz = textureSize(sogShLabelsTex, 0);\n    ivec2 lsrc = ivec2(kLocal - (kLocal / lsz.x) * lsz.x, kLocal / lsz.x);\n    vec4 labelRaw = texelFetch(sogShLabelsTex, lsrc, 0);\n    int n = int(labelRaw.r * 255.0 + 0.5) + int(labelRaw.g * 255.0 + 0.5) * 256;\n    int u = (n - (n / 64) * 64) * uCoeffs;\n    int v = n / 64;\n\n    uint packed0 = 0u;\n    uint packed1 = 0u;\n    uint packed2 = 0u;\n    uint packed3 = 0u;\n\n    for (int b = 0; b < 16; b++) {\n        int s = uShTextureIndex * 16 + b; // flat SH scalar index\n        int kc = s / 3;                    // higher-order coefficient (0-based)\n        int j = s - kc * 3;                // channel (0=r,1=g,2=b)\n        float byteVal = 128.0;             // neutral (decompose(128) ~= 0)\n        if (kc < uCoeffs) {\n            vec4 centroidRaw = texelFetch(sogShCentroidsTex, ivec2(u + kc, v), 0);\n            float ch = (j == 0) ? centroidRaw.r : ((j == 1) ? centroidRaw.g : centroidRaw.b);\n            float coeff;\n            if (uVersion == 2) {\n                int cidx = int(ch * 255.0 + 0.5);\n                coeff = texelFetch(sogCodebookTex, ivec2(512 + cidx, 0), 0).r;\n            } else {\n                coeff = mix(sogShnMin, sogShnMax, ch);\n            }\n            byteVal = clamp(coeff * 127.5 + 127.5, 0.0, 255.0);\n        }\n        uint bv = uint(byteVal + 0.5);\n        int comp = b / 4;\n        uint contrib = bv << uint((b - comp * 4) * 8);\n        if (comp == 0) { packed0 |= contrib; }\n        else if (comp == 1) { packed1 |= contrib; }\n        else if (comp == 2) { packed2 |= contrib; }\n        else { packed3 |= contrib; }\n    }\n    outSh = uvec4(packed0, packed1, packed2, packed3);\n}\n";
     /**
      * SH decode fragment shader (WGSL/WebGPU) — same as the GLSL variant. The integer output (`vec4<u32>` fragData)
      * requires the WGSL processor's integer-fragData support.
      */
-    export const GaussianSplattingWorkBufferShDecodeFragmentShaderWGSL = "\nvar sogShLabelsTexSampler : sampler;\nvar sogShLabelsTex : texture_2d<f32>;\nvar sogShCentroidsTexSampler : sampler;\nvar sogShCentroidsTex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogShnMin : f32;\nuniform sogShnMax : f32;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\nuniform uCoeffs : i32;\nuniform uShTextureIndex : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let kLocal : i32 = global - uniforms.uOffset;\n\n    let lsz : vec2<i32> = vec2<i32>(textureDimensions(sogShLabelsTex, 0));\n    let lsrc : vec2<i32> = vec2<i32>(kLocal - (kLocal / lsz.x) * lsz.x, kLocal / lsz.x);\n    let labelRaw : vec4<f32> = textureLoad(sogShLabelsTex, lsrc, 0);\n    let n : i32 = i32(labelRaw.r * 255.0 + 0.5) + i32(labelRaw.g * 255.0 + 0.5) * 256;\n    let u : i32 = (n - (n / 64) * 64) * uniforms.uCoeffs;\n    let v : i32 = n / 64;\n\n    var packed : array<u32, 4> = array<u32, 4>(0u, 0u, 0u, 0u);\n\n    for (var b : i32 = 0; b < 16; b = b + 1) {\n        let s : i32 = uniforms.uShTextureIndex * 16 + b;\n        let kc : i32 = s / 3;\n        let j : i32 = s - kc * 3;\n        var byteVal : f32 = 128.0;\n        if (kc < uniforms.uCoeffs) {\n            let centroidRaw : vec4<f32> = textureLoad(sogShCentroidsTex, vec2<i32>(u + kc, v), 0);\n            var ch : f32 = centroidRaw.b;\n            if (j == 0) { ch = centroidRaw.r; } else if (j == 1) { ch = centroidRaw.g; }\n            var coeff : f32;\n            if (uniforms.uVersion == 2) {\n                let cidx : i32 = i32(ch * 255.0 + 0.5);\n                coeff = textureLoad(sogCodebookTex, vec2<i32>(512 + cidx, 0), 0).r;\n            } else {\n                coeff = mix(uniforms.sogShnMin, uniforms.sogShnMax, ch);\n            }\n            byteVal = clamp(coeff * 127.5 + 127.5, 0.0, 255.0);\n        }\n        let bv : u32 = u32(byteVal + 0.5);\n        let comp : i32 = b / 4;\n        packed[comp] = packed[comp] | (bv << u32((b - comp * 4) * 8));\n    }\n    fragmentOutputs.fragData0 = vec4<u32>(packed[0], packed[1], packed[2], packed[3]);\n}\n";
+    export const GaussianSplattingWorkBufferShDecodeFragmentShaderWGSL = "\nvar sogShLabelsTexSampler : sampler;\nvar sogShLabelsTex : texture_2d<f32>;\nvar sogShCentroidsTexSampler : sampler;\nvar sogShCentroidsTex : texture_2d<f32>;\nvar sogCodebookTexSampler : sampler;\nvar sogCodebookTex : texture_2d<f32>;\n\nuniform sogShnMin : f32;\nuniform sogShnMax : f32;\nuniform uVersion : i32;\nuniform uOffset : i32;\nuniform uSourceOffset : i32;\nuniform uCount : i32;\nuniform uDestWidth : i32;\nuniform uSrcWidth : i32;\nuniform uCoeffs : i32;\nuniform uShTextureIndex : i32;\n\n@fragment\nfn main(input : FragmentInputs) -> FragmentOutputs {\n    let p : vec2<i32> = vec2<i32>(i32(fragmentInputs.position.x), i32(fragmentInputs.position.y));\n    let global : i32 = p.y * uniforms.uDestWidth + p.x;\n    if (global < uniforms.uOffset || global >= uniforms.uOffset + uniforms.uCount) {\n        discard;\n    }\n    let kLocal : i32 = global - uniforms.uOffset + uniforms.uSourceOffset;\n\n    let lsz : vec2<i32> = vec2<i32>(textureDimensions(sogShLabelsTex, 0));\n    let lsrc : vec2<i32> = vec2<i32>(kLocal - (kLocal / lsz.x) * lsz.x, kLocal / lsz.x);\n    let labelRaw : vec4<f32> = textureLoad(sogShLabelsTex, lsrc, 0);\n    let n : i32 = i32(labelRaw.r * 255.0 + 0.5) + i32(labelRaw.g * 255.0 + 0.5) * 256;\n    let u : i32 = (n - (n / 64) * 64) * uniforms.uCoeffs;\n    let v : i32 = n / 64;\n\n    var packed : array<u32, 4> = array<u32, 4>(0u, 0u, 0u, 0u);\n\n    for (var b : i32 = 0; b < 16; b = b + 1) {\n        let s : i32 = uniforms.uShTextureIndex * 16 + b;\n        let kc : i32 = s / 3;\n        let j : i32 = s - kc * 3;\n        var byteVal : f32 = 128.0;\n        if (kc < uniforms.uCoeffs) {\n            let centroidRaw : vec4<f32> = textureLoad(sogShCentroidsTex, vec2<i32>(u + kc, v), 0);\n            var ch : f32 = centroidRaw.b;\n            if (j == 0) { ch = centroidRaw.r; } else if (j == 1) { ch = centroidRaw.g; }\n            var coeff : f32;\n            if (uniforms.uVersion == 2) {\n                let cidx : i32 = i32(ch * 255.0 + 0.5);\n                coeff = textureLoad(sogCodebookTex, vec2<i32>(512 + cidx, 0), 0).r;\n            } else {\n                coeff = mix(uniforms.sogShnMin, uniforms.sogShnMax, ch);\n            }\n            byteVal = clamp(coeff * 127.5 + 127.5, 0.0, 255.0);\n        }\n        let bv : u32 = u32(byteVal + 0.5);\n        let comp : i32 = b / 4;\n        packed[comp] = packed[comp] | (bv << u32((b - comp * 4) * 8));\n    }\n    fragmentOutputs.fragData0 = vec4<u32>(packed[0], packed[1], packed[2], packed[3]);\n}\n";
     /**
      * Shader name for the work-buffer relayout (defrag/compaction) copy pass.
      */
@@ -10986,8 +11380,10 @@ declare namespace BABYLON {
          * dispose the source pack textures after this resolves.
          * @param pack the SOG texture pack (GPU source textures + per-file decode parameters)
          * @param offset first splat index (pixel offset) for this file in the work buffer
+         * @param sourceOffset first splat of the pack to decode, defaults to 0
+         * @param count number of splats to decode, defaults to the rest of the pack
          */
-        decodeAsync(pack: ISogTexturePack, offset: number): Promise<void>;
+        decodeAsync(pack: ISogTexturePack, offset: number, sourceOffset?: number, count?: number): Promise<void>;
         /**
          * Whether the relayout copy shader is compiled and ready. Lazily creates the copy material on first call.
          * Callers should poll this before {@link relayoutSync} (which must only run when ready).
@@ -11080,9 +11476,9 @@ declare namespace BABYLON {
      * A single LOD variant of a tree node: a contiguous splat range inside one streamed SOG file.
      */
     interface ISOGLODEntry {
-        /** Index into {@link ISOGLODMetadata.filenames}. */
+        /** Initially an index into {@link ISOGLODMetadata.filenames}; remapped to a residency page ID when range residency is enabled. */
         file: number;
-        /** First splat index inside that file. */
+        /** First splat index inside the source file, or relative to the residency page after remapping. */
         offset: number;
         /** Number of splats. */
         count: number;
@@ -11119,11 +11515,11 @@ declare namespace BABYLON {
         inFrustum?: boolean;
         /** Cached local-space bounding info used for the per-node frustum test (created once per leaf). */
         cullBounds?: BoundingInfo;
-        /** File index this node currently has an in-flight/queued decode request for (its not-yet-decoded target),
+        /** Allocation ID (source file or residency page) this node has an in-flight/queued decode request for,
          * or undefined when the node's target is already decoded. Drives pending-download reference counting. */
         pendingFile?: number;
-        /** File index this node's current {@link activeLod} renders from, or undefined before any LOD is active.
-         * Drives the resident reference count that keeps a file in the work buffer. */
+        /** Allocation ID (source file or residency page) this node's current {@link activeLod} renders from,
+         * or undefined before any LOD is active. Drives the work-buffer resident reference count. */
         activeFile?: number;
     }
     /**
@@ -11132,7 +11528,7 @@ declare namespace BABYLON {
     export interface ISOGLODMetadata {
         /** Number of LOD levels (0 = highest detail). */
         lodLevels: number;
-        /** SOG `meta.json` paths, relative to the metadata file, indexed by `ISOGLODEntry.file`. */
+        /** SOG `meta.json` paths, relative to the metadata file, indexed by the original source file ID of each LOD entry. */
         filenames: string[];
         /** Optional always-on environment `.sog` bundle, relative to the metadata file. */
         environment?: string;
@@ -11155,6 +11551,46 @@ declare namespace BABYLON {
     }> | Readonly<{
         status: "unavailable";
     }>;
+    /**
+     * A contiguous splat interval inside one streamed source file.
+     * @experimental
+     */
+    export interface IGaussianSplattingStreamSourceRange {
+        /** Index of the source file in the LOD metadata `filenames`. */
+        file: number;
+        /** First splat of the interval inside the source file. */
+        offset: number;
+        /** Number of splats in the interval. */
+        count: number;
+    }
+    /**
+     * A separately packed copy of exactly one residency page interval, see {@link IGaussianSplattingStreamOptions.rangePack}.
+     * @experimental
+     */
+    export interface IGaussianSplattingStreamRangePack {
+        /** SOG metadata of the split pack; its splat count must equal the page interval count. */
+        sogData: SOGRootData;
+        /** URL prefix prepended to every image file name listed in {@link sogData}. */
+        subRootUrl: string;
+    }
+    /**
+     * Counters describing range residency activity. They are not memory measurements.
+     * @experimental
+     */
+    export interface IGaussianSplattingStreamRangeResidencyStats {
+        /** Whether range residency is enabled for the stream. */
+        enabled: boolean;
+        /** Number of residency pages created. */
+        pages: number;
+        /** Number of source packs downloaded and cached for source pages. */
+        sourcePackLoads: number;
+        /** Number of times a cached source pack served another page of the same source. */
+        sourcePackReuses: number;
+        /** Number of split packs loaded successfully. */
+        splitPackLoads: number;
+        /** Splat count of the currently cached source pack, or 0 when none is cached. */
+        cachedSourceSplats: number;
+    }
     /**
      * Options for {@link GaussianSplattingStream}.
      */
@@ -11257,6 +11693,24 @@ declare namespace BABYLON {
          * the stream decodes into. Defaults to `false`.
          */
         needsRotationScale?: boolean;
+        /**
+         * When true, finer (non-coarse) source files are split into residency pages: each LOD leaf's interval becomes its
+         * own work-buffer allocation, sized to the interval rather than the whole source file. Overlapping intervals share
+         * a page; adjacent ones do not. Files of the pinned coarse layer stay whole. Pages of the same source share one
+         * download of the source textures, cached until no page needs it, so source pages load one at a time.
+         * Defaults to `false` (whole-file residency, unchanged behavior).
+         * Playground example: https://playground.babylonjs.com/#7AZH52#1
+         * @experimental
+         */
+        rangeResidency?: boolean;
+        /**
+         * Optional resolver returning a separately packed copy of exactly one residency page interval, so the page downloads
+         * and decodes only its own textures instead of its whole source pack. Called at most once per page, when the page
+         * is created. Return `null` to use the source pack. A result whose splat count differs from `source.count`, or a
+         * resolver that throws, is ignored with a warning. Requires {@link rangeResidency}.
+         * @experimental
+         */
+        rangePack?: (source: Readonly<IGaussianSplattingStreamSourceRange>, sourceData: SOGRootData) => Nullable<IGaussianSplattingStreamRangePack>;
     }
     /**
      * Streams a PlayCanvas-style SOG LOD scene (`lod-meta.json`) into a single Gaussian Splatting mesh.
@@ -11306,6 +11760,14 @@ declare namespace BABYLON {
         private _residency;
         private readonly _fileCounts;
         private readonly _fileMeta;
+        private readonly _residencyPages;
+        private readonly _splitPacks;
+        private _nextPageId;
+        private _rangeSourcePack;
+        private _activeRangeSource;
+        private _rangeSourcePackLoads;
+        private _rangeSourcePackReuses;
+        private _rangeSplitPackLoads;
         private readonly _baseFileIds;
         private readonly _decodedFiles;
         private readonly _loadingFiles;
@@ -11468,6 +11930,35 @@ declare namespace BABYLON {
          * @experimental
          */
         get lod0SplatCount(): GaussianSplattingStreamLod0SplatCount;
+        /**
+         * The source interval represented by a residency page allocation.
+         * @param fileId allocation ID as used for LOD entries (a source file index or a page ID)
+         * @returns the page's source interval, or null when the ID is a whole source file or range residency is off
+         * @experimental
+         */
+        getSourceRange(fileId: number): Nullable<Readonly<IGaussianSplattingStreamSourceRange>>;
+        /**
+         * Whether a residency page loads from its own split pack, see {@link IGaussianSplattingStreamOptions.rangePack}.
+         * @param fileId allocation ID
+         * @returns true when the page downloads only its own textures
+         * @experimental
+         */
+        isSplitPage(fileId: number): boolean;
+        /**
+         * Cancels in-flight residency page loads, e.g. pages that lost priority. Only pages currently loading are affected,
+         * queued pages are untouched. A split page's own downloads are aborted. A shared source download is aborted only
+         * when no other non-cancelled, non-split loading page of that source and no entry of `keepSources` still needs it.
+         * Cancelled pages that are still referenced by a node are re-queued at the end of the decode queue.
+         * @param files allocation IDs to cancel; whole-file IDs and IDs that are not loading are ignored
+         * @param keepSources source file indices whose download must be kept (e.g. needed by queued pages), defaults to none
+         * @experimental
+         */
+        cancelRangeLoads(files: readonly number[], keepSources?: readonly number[]): void;
+        /**
+         * Range residency counters for diagnostics. A new object is created on each call, so avoid reading it every frame.
+         * @experimental
+         */
+        get rangeResidencyStats(): Readonly<IGaussianSplattingStreamRangeResidencyStats>;
         /**
          * Resolves the raw {@link splatBudget} option to a concrete cap: `undefined` ⇒ 0 (disabled), `"auto"` ⇒ a
          * device-tiered default, a positive number ⇒ itself (floored).
@@ -11642,8 +12133,9 @@ declare namespace BABYLON {
          */
         private _bytesPerResidentSplat;
         /**
-         * Collects the unique set of source file indices referenced by any LOD of any leaf, sorted ascending.
-         * @returns sorted unique file indices
+         * Collects sorted allocation IDs referenced by leaf LODs: source file IDs before range remapping, and
+         * source file or residency page IDs afterwards.
+         * @returns sorted unique allocation IDs
          */
         private _collectAllFileIds;
         /**
@@ -11670,6 +12162,46 @@ declare namespace BABYLON {
          * @returns the environment splat count (0 when there is no environment)
          */
         private _gatherCountsAsync;
+        /**
+         * Splits the gathered source files into residency pages sized to the LOD leaf intervals they serve, and rewrites
+         * those leaf entries to point at the pages. Pinned coarse files, files without metadata and files with invalid
+         * intervals stay whole.
+         * @param fileIds source file indices whose metadata was just gathered
+         */
+        private _initializeResidencyPages;
+        /**
+         * Asks the {@link IGaussianSplattingStreamOptions.rangePack} resolver for the split pack of one page.
+         * @param pageId page allocation ID
+         * @param source the page's source interval
+         * @param sourceData SOG metadata of the page's source file
+         * @returns the split pack, or null when the page decodes from its source pack
+         */
+        private _resolveSplitPack;
+        /**
+         * Downloads every image of a pack through the download manager, then creates its textures. The cancellable
+         * network phase completes before any GPU texture exists, so a cancelled or failed download cannot leave textures
+         * allocated by sibling image promises behind.
+         * @param meta SOG metadata and image URL prefix of the pack
+         * @param groupId download group, so the downloads can be cancelled together
+         * @returns the texture pack, or null when the stream was disposed meanwhile
+         */
+        private _loadPrefetchedPackAsync;
+        /**
+         * Returns the cached source pack of a file, loading it (and dropping any other cached source pack) when needed.
+         * @param file source file index
+         * @param meta SOG metadata and image URL prefix of the source file
+         * @returns the shared source pack, which the caller must not dispose
+         */
+        private _getRangeSourcePackAsync;
+        private _disposeRangeSourcePack;
+        /**
+         * Copies the parts of the LOD metadata a stream mutates (tree nodes and LOD entries), so a range-residency stream
+         * can rewrite entries without affecting the caller's object or another stream built from it.
+         * @param metadata caller metadata
+         * @returns metadata sharing every field except a freshly copied tree
+         */
+        private static _CloneLodMetadata;
+        private static _CloneLodNode;
         /**
          * Queues a file for on-demand decode if it isn't already decoded, in flight, or already queued.
          * @param fileId file index to decode
@@ -11721,6 +12253,7 @@ declare namespace BABYLON {
          * @param pack the parsed SOG pack (its `positions` is populated only on the CPU path)
          * @param base first splat index of the range in the work buffer
          * @param count number of splats in the range
+         * @param sourceOffset first splat of the range inside the pack, defaults to 0
          * @returns whether positions were applied
          */
         private _applyDecodedPositionsAsync;
@@ -11729,12 +12262,13 @@ declare namespace BABYLON {
          */
         private _decodeEnvironmentAsync;
         /**
-         * Loads one LOD source file as GPU textures, decodes it into its fixed work-buffer block, records its
-         * CPU centers for sorting, frees the source textures, then promotes any nodes that were waiting for it.
-         * Concurrent or repeat requests for the same file are ignored. If the file is cancelled mid-flight
+         * Loads one LOD source file or residency page, decodes it into its work-buffer block, records CPU
+         * centers for sorting, then promotes waiting nodes. Whole-file and split-page textures are freed
+         * after decoding; unsplit pages can reuse a cached source pack until no page needs it.
+         * Concurrent or repeat requests for the same allocation are ignored. If it is cancelled mid-flight
          * (because every node that wanted it retargeted), the decode bails cooperatively at the next checkpoint.
-         * @param fileId file index to decode
-         * @returns whether the file was decoded and published successfully
+         * @param fileId source file or residency page allocation ID to decode
+         * @returns whether the allocation was decoded and published successfully
          */
         private _decodeFileAsync;
         /**
@@ -11856,14 +12390,14 @@ declare namespace BABYLON {
         private _acquireFileRef;
         /**
          * Records that a node needs a not-yet-decoded file, bumping its reference count and queueing the decode.
-         * @param fileId file index the node now targets
+         * @param fileId source file or residency page allocation ID the node now targets
          */
         private _acquirePendingFile;
         /**
          * Releases a node's reference to a file. When the last reference is dropped: a decoded file is scheduled
          * for eviction (when streaming under a budget), and a still-downloading file has its queued decode dropped
          * and any in-flight download cancelled.
-         * @param fileId file index the node no longer references
+         * @param fileId source file or residency page allocation ID the node no longer references
          */
         private _releaseFileRef;
         /**
@@ -11999,6 +12533,56 @@ declare namespace BABYLON {
      * @experimental
      */
     export function AddGaussianSplattingStreamPartAsync(compound: GaussianSplattingMesh, name: string, metadata: ISOGLODMetadata, rootUrl: string, options?: IGaussianSplattingStreamOptions): Promise<GaussianSplattingPartProxyMesh>;
+
+
+    /**
+     * A LOD entry referencing an interval of a source file. Structurally an ISOGLODEntry.
+     * @internal
+     */
+    export interface ISplatResidencyEntry {
+        /** Index of the source file. */
+        file: number;
+        /** First splat of the interval inside the source file. */
+        offset: number;
+        /** Number of splats in the interval. */
+        count: number;
+    }
+    /**
+     * One resident allocation unit carved from a source file.
+     * @internal
+     */
+    export interface ISplatResidencyPage {
+        /** Allocation ID, never lower than the number of source files. */
+        id: number;
+        /** Merged source interval covered by the page. */
+        source: Readonly<IGaussianSplattingStreamSourceRange>;
+        /** LOD entries (by reference) that fall inside the source interval. */
+        entries: ISplatResidencyEntry[];
+    }
+    /**
+     * Result of {@link BuildSplatResidencyPages}.
+     * @internal
+     */
+    export interface ISplatResidencyPagesResult {
+        /** Pages to publish. */
+        pages: ISplatResidencyPage[];
+        /** Source files left whole because at least one of their entries was invalid. */
+        invalidFiles: number[];
+    }
+    /**
+     * Groups overlapping intervals, but not adjacent ones, into independently resident pages.
+     * Does not mutate entries; callers publish the mapping once the pages are returned.
+     * Pinned source files remain whole so the permanent fallback cannot be partially evicted.
+     * A source file with no known size, or with at least one invalid interval, produces no pages and stays whole.
+     * @param entries LOD entries referenced by leaves
+     * @param counts splat count of every source file whose metadata is available
+     * @param pinned source files that must stay whole
+     * @param sourceFileCount number of source files; valid source IDs are in [0, sourceFileCount)
+     * @param firstId first unused allocation ID, at least sourceFileCount
+     * @returns the pages plus the source files left whole because of invalid intervals
+     * @internal
+     */
+    export function BuildSplatResidencyPages(entries: readonly ISplatResidencyEntry[], counts: ReadonlyMap<number, number>, pinned: ReadonlySet<number>, sourceFileCount: number, firstId: number): ISplatResidencyPagesResult;
 
 
     /**
@@ -12155,9 +12739,8 @@ declare namespace BABYLON {
      *
      * Downloads can be tagged with a group id and cancelled together via {@link cancelGroup}: when a node's
      * target LOD changes before its file finishes loading, the streamer cancels that file's now-unneeded
-     * downloads. Cancellation aborts the underlying HTTP request (a queued download is dropped before it
-     * starts; an in-flight download is aborted and its concurrency slot freed), so no bandwidth is wasted on
-     * data that is no longer needed.
+     * downloads. A shared URL keeps downloading for consumers in other groups; its underlying HTTP request
+     * is aborted (or its queued task dropped) only when no consumers remain.
      *
      * Without this throttling, every on-demand LOD decode fans out into many parallel image fetches, so the
      * browser opens dozens of simultaneous connections that compete for bandwidth and delay the splats the
@@ -12199,8 +12782,8 @@ declare namespace BABYLON {
          */
         cancel(url: string): void;
         /**
-         * Cancels every pending download tagged with the given group id.
-         * @param groupId the group whose downloads should be cancelled
+         * Cancels callers in the given group. A shared URL continues for callers in other groups or with no group.
+         * @param groupId the group whose callers should be cancelled
          */
         cancelGroup(groupId: DownloadGroupId): void;
         /**
@@ -12210,15 +12793,17 @@ declare namespace BABYLON {
         dispose(): void;
         /**
          * Aborts a task: drops it from the queue (if not started), aborts its in-flight HTTP request (if started),
-         * unwinds its current attempt, settles its promise, and frees its concurrency slot.
+         * unwinds its current attempt, settles all remaining callers, and frees its concurrency slot.
          * @param task the task to abort
          * @param reason the rejection reason
          */
         private _abort;
+        private _cancelConsumer;
+        private _removeConsumer;
         /**
-         * Settles a task exactly once, removing it from the pending map and its group.
+         * Settles a task exactly once, removing it from the pending map and all consumer groups.
          * @param task the task to settle
-         * @param settleFn resolves or rejects the task's promise
+         * @param settleFn resolves or rejects each outstanding caller
          */
         private _settle;
         /**
@@ -12231,7 +12816,7 @@ declare namespace BABYLON {
          */
         private _pump;
         /**
-         * Runs a single download with retries, settling the task's shared promise. The idempotency entry is
+         * Runs a single download with retries, settling each outstanding consumer. The idempotency entry is
          * removed the moment the task settles so a later request for the same URL starts a fresh download.
          * @param task the queued download to run
          */
@@ -13139,7 +13724,8 @@ declare namespace BABYLON {
         /**
          * Baked keys are interpolated linearly by Babylon. Between two frames an FBX cubic segment can deviate from that
          * line, so sample times are refined (midpoints inserted, up to two levels) wherever the interpolated transform
-         * differs noticeably from the curve. Flat and linear segments stay at frame resolution.
+         * differs noticeably from the curve. Rotations are normalized so quaternion length error cannot trigger subdivision.
+         * Flat and linear segments stay at frame resolution.
          */
         private static _refineSampleTimes;
         /**

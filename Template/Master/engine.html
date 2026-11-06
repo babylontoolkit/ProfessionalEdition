@@ -42,7 +42,6 @@
     <script type="text/javascript" nonce="none">
         window._loadingDiv = null;
         window._loadingStyle = null;
-        window._loadingTextDiv = null;
         window.showSplashLoadingScreen = () => {
             const svgSupport = !!window.SVGSVGElement;
             // Loading div
@@ -60,56 +59,11 @@
             loadingDiv.style.gridTemplateColumns = "100%";
             loadingDiv.style.justifyItems = "center";
             loadingDiv.style.alignItems = "center";
+            // Note: positioned over the viewport, so its z-index holds above the (absolute) render canvas, which is shown under the splash before the reveal
+            loadingDiv.style.position = "fixed";
+            loadingDiv.style.inset = "0";
             loadingDiv.style.zIndex = "10001";
             window._loadingDiv = loadingDiv;
-            // Loading details (bottom right corner: asset counts, terrain stages) - same layout as the React framework splash
-            const statusTextDiv = document.createElement("div");
-            statusTextDiv.id = "xbabylonjsStatusTextDiv";
-            statusTextDiv.style.position = "absolute";
-            statusTextDiv.style.right = "18px";
-            statusTextDiv.style.bottom = "12px";
-            statusTextDiv.style.fontFamily = "Arial";
-            statusTextDiv.style.fontSize = "12px";
-            statusTextDiv.style.color = "white";
-            statusTextDiv.style.textAlign = "right";
-            statusTextDiv.style.zIndex = "2";
-            statusTextDiv.style.opacity = "0.9";
-            statusTextDiv.style.letterSpacing = "0.3px";
-            window._splashDetails = statusTextDiv;
-            loadingDiv.appendChild(statusTextDiv);
-            // Loading text and progress bar (under the spinner)
-            const loadingTextDiv = document.createElement("div");
-            loadingTextDiv.id = "xbabylonjsLoadingTextDiv";
-            loadingTextDiv.setAttribute("role", "progressbar");
-            loadingTextDiv.setAttribute("aria-valuemin", "0");
-            loadingTextDiv.setAttribute("aria-valuemax", "100");
-            loadingTextDiv.style.position = "absolute";
-            loadingTextDiv.style.left = "50%";
-            loadingTextDiv.style.top = "50%";
-            loadingTextDiv.style.marginTop = "180px";
-            loadingTextDiv.style.transform = "translateX(-50%)";
-            loadingTextDiv.style.width = "min(320px, calc(100% - 32px))";
-            loadingTextDiv.style.fontFamily = "Arial";
-            loadingTextDiv.style.fontSize = "14px";
-            loadingTextDiv.style.color = "white";
-            loadingTextDiv.style.textAlign = "center";
-            loadingTextDiv.style.zIndex = "1";
-            const statusLine = document.createElement("div");
-            statusLine.style.minHeight = "18px";
-            statusLine.style.marginBottom = "10px";
-            statusLine.style.letterSpacing = "0.3px";
-            statusLine.textContent = "Loading Scene ...";
-            loadingTextDiv.appendChild(statusLine);
-            const progressTrack = document.createElement("div");
-            progressTrack.className = "splash-progress";
-            const progressFill = document.createElement("div");
-            progressFill.className = "splash-progress-fill splash-progress-indeterminate";
-            progressTrack.appendChild(progressFill);
-            loadingTextDiv.appendChild(progressTrack);
-            window._splashStatus = statusLine;
-            window._splashFill = progressFill;
-            window._loadingTextDiv = loadingTextDiv;
-            loadingDiv.appendChild(loadingTextDiv);
             // Generating keyframes
             const loadingStyle = document.createElement("style");
             const keyFrames = `@-webkit-keyframes spin1 {\
@@ -119,17 +73,6 @@
                             @keyframes spin1 {\
                                 0% { transform: rotate(0deg);}
                                 100% { transform: rotate(360deg);}
-                            }\
-                            .splash-progress { position: relative; width: 100%; height: 4px; overflow: hidden; border-radius: 2px; background-color: rgba(255, 255, 255, 0.15); }\
-                            .splash-progress-fill { height: 100%; border-radius: 2px; background-color: #E0684B; transition: width 0.25s ease-out; }\
-                            .splash-progress-indeterminate { width: 30%; animation: splash-progress-slide 1.2s infinite ease-in-out; }\
-                            @keyframes splash-progress-slide {\
-                                0% { transform: translateX(-100%);}
-                                100% { transform: translateX(340%);}
-                            }\
-                            @media (prefers-reduced-motion: reduce) {\
-                                .splash-progress-fill { transition: none; }\
-                                .splash-progress-indeterminate { animation: none; width: 100%; opacity: 0.4; }\
                             }`;
             loadingStyle.innerHTML = keyFrames;
             window._loadingStyle = loadingStyle;
@@ -189,55 +132,19 @@
             loadingDiv.appendChild(imgBack);
             loadingDiv.appendChild(imageSpinnerContainer);
             document.body.appendChild(loadingDiv);
-            // ..
-            // Handle Hide Loading Div
-            // ..
-            const onTransitionEnd = (event) => {
-                // only the splash's own fade out ends it (the progress bar's transitions bubble up to here too)
-                if (event == null || event.target !== window._loadingDiv || event.propertyName !== "opacity") return;
-                if (window._loadingDiv) {
-                    window._loadingDiv.remove();
-                }
-                if (window._loadingTextDiv) {
-                    window._loadingTextDiv.remove();
-                    window._loadingTextDiv = null;
-                }
-                window._splashStatus = null;
-                window._splashDetails = null;
-                window._splashFill = null;
-                if (window._loadingStyle) {
-                    window._loadingStyle.remove();
-                    window._loadingStyle = null;
-                }
-                event.target.removeEventListener("transitionend", onTransitionEnd);
-            };
-            window._loadingDiv.addEventListener("transitionend", onTransitionEnd);
         };
-        // Splash status: main line + progress bar under the spinner, details in the bottom right corner (React framework layout).
-        // progress is a 0-1 fraction or null (indeterminate); the bar only moves forward within one loading state.
-        window._splashState = -1;
-        window._splashProgress = null;
-        window.toSplashText = (text) => {
-            if (text == null || text === "" || text !== text.toUpperCase()) return text;
-            const lower = text.toLowerCase();
-            return lower.charAt(0).toUpperCase() + lower.slice(1);
-        };
+        // The toolkit's built-in loading screen (InitializeRuntime, showDefaultLoadingScreen) puts its status line, bar and details on
+        // this cover and shows every stage from there. The page only paints the cover, so the player sees it while the scripts download.
         window.setSplashStatus = (status, details, progress, state) => {
-            if (window._splashStatus && status != null && status !== "") window._splashStatus.textContent = window.toSplashText(status);
-            if (window._splashDetails && details != null) window._splashDetails.textContent = window.toSplashText(details);
-            if (window._splashFill && typeof progress === "number" && isFinite(progress)) {
-                const value = Math.max(0, Math.min(1, progress));
-                const restart = (state !== window._splashState || !(state >= 0)); // Note: the download (state -1) follows the file progress as is
-                window._splashState = state;
-                window._splashProgress = (restart || window._splashProgress == null) ? value : Math.max(window._splashProgress, value);
-                window._splashFill.className = "splash-progress-fill";
-                window._splashFill.style.width = Math.round(window._splashProgress * 100) + "%";
-                if (window._loadingTextDiv) window._loadingTextDiv.setAttribute("aria-valuenow", "" + Math.round(window._splashProgress * 100));
-            }
+            if (TOOLKIT.LoadingScreenStages != null) TOOLKIT.LoadingScreenStages.ShowStatus(status, details, progress, state);
         };
         window.hideSplashLoadingScreen = () => {
             if (window._loadingDiv) {
-                window._loadingDiv.style.opacity = "0";
+                if (TOOLKIT.LoadingScreenStages != null) {
+                    TOOLKIT.LoadingScreenStages.FadeScreen(window._loadingDiv);
+                } else {
+                    window._loadingDiv.style.opacity = "0";
+                }
             }
             if (divcvs) {
                 divcvs.style.opacity = "1";
@@ -349,8 +256,20 @@
     const DOWNLOAD_SIZE_STEPS_PER_MEGABYTE = 10;
     /** How long a content toast stays on screen, in milliseconds (0 keeps it until a button closes it). */
     const CONTENT_TOAST_TIMEOUT_MS = 0;
+    /** How long the toast that reports a finished Prepare graphics stays on screen, in milliseconds. */
+    const GRAPHICS_RESULT_TOAST_TIMEOUT_MS = 5000;
+    /** The title of the content update toasts. */
+    const CONTENT_UPDATE_TOAST_TITLE = "UPDATE:";
+    /** The title of the Prepare graphics toasts. */
+    const GRAPHICS_TOAST_TITLE = "GRAPHICS:";
+    /** The Prepare graphics phase label, before its first progress report gives the counts. */
+    const PREPARING_GRAPHICS_TEXT = "Preparing graphics";
     /** The content toasts this page has shown, by kind: each shows at most once per page. */
-    window.shownContentToasts = { updateAvailable: false, updateReady: false, shellUpdateReady: false, contentChangedOnServer: false };
+    window.shownContentToasts = { updateAvailable: false, updateReady: false, shellUpdateReady: false, contentChangedOnServer: false, graphicsOffer: false };
+    /** The Prepare graphics progress toast while it shows (its message is rewritten on each progress report), else null. */
+    window.graphicsProgressToast = null;
+    /** True once the player pressed Cancel on the running Prepare graphics step, so its end shows no result toast. */
+    window.graphicsCancelled = false;
     /**
      * Formats a byte count as megabytes with one decimal, e.g. 12950000 -> "12.4".
      * @param {number} byteCount - Bytes.
@@ -386,19 +305,35 @@
         };
     };
     /**
-     * Shows the scene group's install progress on the splash status line and bar (the installer emits it at most every
-     * 250 ms, so this is event-driven, never a frame loop). Falls back to the whole install when the group has no entry.
+     * Formats the Prepare graphics phase line, e.g. "Preparing graphics — 3 of 18".
+     * @param {TOOLKIT.IContentInstallProgress} progress - A graphics progress report (phase "graphics").
+     * @returns {string} The line; the bare label while the report has no counts.
+     */
+    window.formatGraphicsProgress = (progress) => {
+        const current = progress.graphicsCurrent;
+        const total = progress.graphicsTotal;
+        if (current == null || total == null || total <= 0) return PREPARING_GRAPHICS_TEXT;
+        return PREPARING_GRAPHICS_TEXT + " — " + Math.min(current, total) + " of " + total;
+    };
+    /**
+     * Shows the scene group's download progress on the splash status line and bar (the installer emits it at most every
+     * 250 ms, so this is event-driven, never a frame loop). Falls back to the whole download when the group has no entry.
+     * A Prepare graphics report (phase "graphics") shows its phase line instead.
      * @param {string} sceneGroupId - The scene's group id.
      * @param {TOOLKIT.IContentInstallProgress} progress - The installer's progress report.
      */
     window.showContentInstallProgress = (sceneGroupId, progress) => {
+        if (progress.phase === "graphics") {
+            window.setSplashStatus(PREPARING_GRAPHICS_TEXT, window.formatGraphicsProgress(progress), progress.fraction, 0);
+            return;
+        }
         const groupProgress = (progress.groupProgress != null) ? progress.groupProgress[sceneGroupId] : null;
         const completedBytes = (groupProgress != null) ? groupProgress.completedBytes : progress.completedBytes;
         const totalBytes = (groupProgress != null) ? groupProgress.totalBytes : progress.totalBytes;
         const fraction = (totalBytes > 0) ? Math.min(1, completedBytes / totalBytes) : progress.fraction;
         const transferText = window.formatContentMegabytes(completedBytes) + " of " + window.formatContentMegabytes(totalBytes) + " MB";
         const speedText = window.formatContentMegabytes(progress.bytesPerSecond) + " MB/s";
-        window.setSplashStatus("INSTALLING", transferText + " · " + speedText, fraction, 0);
+        window.setSplashStatus("DOWNLOADING", transferText + " · " + speedText, fraction, 0);
     };
     /**
      * Installs the scene's own group before the scene loads, with splash progress, then lets every other group install
@@ -441,9 +376,152 @@
             }
             const installed = await installer.PrepareSceneLoad(sceneUrl);
             if (installed === true) window.setSplashStatus("LOADING FROM THIS DEVICE", "", null, null);
+            window.runWhenSceneLoaded(() => { void window.startGraphicsPreparation(); });
         } catch (error) {
             console.warn("[ContentInstaller] " + error);
         }
+    };
+    /**
+     * Builds the hidden priming engine's options from this page's engine switches (TOOLKIT.IPrimingEngineOptions), so
+     * Prepare graphics compiles the shaders this page's own engine asks for: WebGPU when the export renders with WebGPU
+     * and the browser has it, else WebGL2, with the same antialias, stencil, drawing buffer and large world switches and
+     * the same self-hosted glslang / twgsl scripts.
+     * @returns {TOOLKIT.IPrimingEngineOptions} The options.
+     */
+    window.createPrimingEngineOptions = () => {
+        return {
+            preferWebGPU: (renderengine === 1),
+            antialias: antialias,
+            adaptToDeviceRatio: false,
+            engineOptions: { stencil: stencil, preserveDrawingBuffer: (preserve > 0), useLargeWorldRendering: useLargeWorlds, premultipliedAlpha: false, doNotHandleContextLost: true },
+            webGPUOptions: { stencil: stencil, enableAllFeatures: true, setMaximumLimits: true, useLargeWorldRendering: useLargeWorlds, doNotHandleContextLost: true },
+            glslangOptions: { jsPath: "###SCRIPT###/glslang.js", wasmPath: "###SCRIPT###/glslang.wasm" },
+            twgslOptions: { jsPath: "###SCRIPT###/twgsl.js", wasmPath: "###SCRIPT###/twgsl.wasm" }
+        };
+    };
+    /**
+     * Lists what Prepare graphics prepares on this page: the scene folder's stored groups other than this page's own
+     * scene (which its own load just compiled) whose graphics are not prepared (never, stale after an update, or failed).
+     * @returns {string[]} The group ids, in manifest order.
+     */
+    window.findGraphicsGroupsToPrepare = () => {
+        const installer = TOOLKIT.ContentInstaller;
+        const sceneFolderUrl = new URL(scenepath, window.location.href).href;
+        const contentManifestUrl = new URL(window.contentInstallerOptions.contentManifestName, sceneFolderUrl).href;
+        const sceneGroupId = installer.GroupIdFromSceneFile(scenename);
+        return installer.GetGroupStatus()
+            .filter((group) => group.rootKey === contentManifestUrl && group.groupId !== sceneGroupId && group.installed === true && group.graphicsPrepared !== true)
+            .map((group) => group.groupId);
+    };
+    /**
+     * Gives the installer a graphics preparer once the scene has loaded: TOOLKIT.SceneShaderWarmup's priming preparer,
+     * which makes its own hidden engine (never the visible one) when a step starts and disposes it when the step ends.
+     * Then offers Prepare graphics from a toast when other scenes need it. It never runs on its own: priming a whole scene
+     * on the page's main thread during play would cost the playing scene frames, so the player starts it. A toolkit
+     * without Prepare graphics, or a browser where no hidden engine can be made, changes nothing.
+     * @returns {Promise<void>} Resolves once the preparer is set (or cannot be).
+     */
+    window.startGraphicsPreparation = async () => {
+        const installer = TOOLKIT.ContentInstaller;
+        const sceneWarmup = TOOLKIT.SceneShaderWarmup;
+        if (installer.GetState().availability !== "available") return;
+        if (typeof installer.SetGraphicsPreparer !== "function" || typeof installer.PrepareGraphicsAsync !== "function") return;
+        if (sceneWarmup == null || typeof sceneWarmup.CreatePrimingGraphicsPreparerAsync !== "function") return;
+        try {
+            const preparer = await sceneWarmup.CreatePrimingGraphicsPreparerAsync(window.createPrimingEngineOptions());
+            if (preparer == null) return;
+            installer.SetGraphicsPreparer(preparer);
+        } catch (error) {
+            console.warn("[ContentInstaller] Prepare graphics is not available here: " + error);
+            return;
+        }
+        installer.OnStateChangedObservable.add(window.offerGraphicsPreparation);
+        window.offerGraphicsPreparation(installer.GetState());
+    };
+    /**
+     * Offers Prepare graphics in a toast, once per page, when nothing is downloading or preparing and other stored scenes
+     * have graphics that are not prepared (with the "everything" policy that is once the background download ended).
+     * @param {TOOLKIT.IContentInstallerState} state - The installer's state.
+     */
+    window.offerGraphicsPreparation = (state) => {
+        if (state == null || window.shownContentToasts.graphicsOffer === true) return;
+        if (state.graphicsNeeded !== true || state.installing === true || state.graphicsPreparing === true) return;
+        const groupCount = window.findGraphicsGroupsToPrepare().length;
+        if (groupCount === 0) return;
+        window.shownContentToasts.graphicsOffer = true;
+        const sceneWord = (groupCount === 1) ? " scene" : " scenes";
+        const offerMessage = "Prepare graphics for " + groupCount + " more" + sceneWord + ", so they load faster";
+        window.showContentToast(offerMessage, [{ label: "Prepare graphics", action: window.prepareGraphicsNow }, { label: "Later", action: () => { } }], GRAPHICS_TOAST_TITLE);
+    };
+    /**
+     * Runs Prepare graphics for the other stored scenes the player asked for, with its progress in a toast ("Preparing
+     * graphics — n of N", rewritten on each progress report, at most every 250 ms) and Cancel, which stops it between
+     * scenes. The offer comes only after the scene has loaded; the step runs as background work with the page idle for
+     * it, as for a content update, and busy again when it ends, so a later scene load holds it between scenes.
+     */
+    window.prepareGraphicsNow = () => {
+        const installer = TOOLKIT.ContentInstaller;
+        const groupIds = window.findGraphicsGroupsToPrepare();
+        if (groupIds.length === 0) return;
+        window.graphicsCancelled = false;
+        window.showGraphicsProgressToast();
+        const progressObserver = installer.OnProgressObservable.add(window.showGraphicsProgress);
+        installer.SetBusy(false);
+        installer.PrepareGraphicsAsync(groupIds, { background: true })
+            .catch((error) => { console.warn("[ContentInstaller] Prepare graphics failed: " + error); })
+            .finally(() => {
+                installer.OnProgressObservable.remove(progressObserver);
+                installer.SetBusy(true);
+                window.hideGraphicsProgressToast();
+                if (window.graphicsCancelled !== true) window.showGraphicsResult(groupIds.length);
+            });
+    };
+    /**
+     * Shows the Prepare graphics progress toast, with Cancel; it stays until the step ends (its close button only hides
+     * it, the step goes on).
+     */
+    window.showGraphicsProgressToast = () => {
+        const cancelGraphics = (instance, toast) => {
+            window.graphicsCancelled = true;
+            instance.hide({ transitionOut: "fadeOut" }, toast, "button");
+            TOOLKIT.ContentInstaller.Cancel();
+        };
+        iziToast.show({
+            title: GRAPHICS_TOAST_TITLE,
+            message: PREPARING_GRAPHICS_TEXT,
+            timeout: CONTENT_TOAST_TIMEOUT_MS,
+            buttons: [['<button>Cancel</button>', cancelGraphics, false]],
+            onOpening: (settings, toast) => { window.graphicsProgressToast = toast; },
+            onClosed: () => { window.graphicsProgressToast = null; }
+        });
+    };
+    /**
+     * Writes a Prepare graphics progress report into the progress toast's message (download reports are ignored).
+     * @param {TOOLKIT.IContentInstallProgress} progress - The installer's progress report.
+     */
+    window.showGraphicsProgress = (progress) => {
+        if (progress.phase !== "graphics" || window.graphicsProgressToast == null || document.hidden) return;
+        const messageElement = window.graphicsProgressToast.querySelector(".iziToast-message");
+        const text = window.formatGraphicsProgress(progress);
+        if (messageElement != null && messageElement.textContent !== text) messageElement.textContent = text;
+    };
+    /** Hides the Prepare graphics progress toast when it still shows. */
+    window.hideGraphicsProgressToast = () => {
+        if (window.graphicsProgressToast == null) return;
+        iziToast.hide({ transitionOut: "fadeOut" }, window.graphicsProgressToast);
+        window.graphicsProgressToast = null;
+    };
+    /**
+     * Reports the end of a Prepare graphics step in a short toast: every scene prepared, how many of them, or none.
+     * @param {number} requestedCount - The scenes the step was asked to prepare.
+     */
+    window.showGraphicsResult = (requestedCount) => {
+        const remainingCount = window.findGraphicsGroupsToPrepare().length;
+        const preparedCount = Math.max(0, requestedCount - remainingCount);
+        let resultMessage = "Graphics prepared for " + preparedCount + " of " + requestedCount + " scenes";
+        if (remainingCount === 0) resultMessage = "Graphics prepared — the other scenes load faster";
+        else if (preparedCount === 0) resultMessage = "The graphics could not be prepared — scenes load as before";
+        iziToast.show({ title: GRAPHICS_TOAST_TITLE, message: resultMessage, timeout: GRAPHICS_RESULT_TOAST_TIMEOUT_MS });
     };
     /**
      * Runs an action once the scene has loaded, so an update never reloads the page while a scene is mid-load.
@@ -473,10 +551,11 @@
      * Shows a content toast with buttons; each button closes the toast before it runs its action.
      * @param {string} message - The toast message.
      * @param {Array<{label: string, action: () => void}>} buttons - The buttons, first one focused.
+     * @param {string} [title] - The toast title; "UPDATE:" when left out.
      */
-    window.showContentToast = (message, buttons) => {
+    window.showContentToast = (message, buttons, title) => {
         iziToast.show({
-            title: "UPDATE:",
+            title: title || CONTENT_UPDATE_TOAST_TITLE,
             message: message,
             timeout: CONTENT_TOAST_TIMEOUT_MS,
             buttons: buttons.map((button, index) => ['<button>' + button.label + '</button>', (instance, toast) => {
@@ -538,6 +617,7 @@
     var gzipcontent = "###GZIP###";
     var legacyAudio = ###LEGACYAUDIO###;
     var useLargeWorlds = ###LARGEWORLDS###;
+    var precompileShaders = ###PRECOMPILE###;
     var loaded = false, paused = false, reloader = false, downloaded = 0, edownloaded = 0;
     var kilobyte = 1024, megabyte = (kilobyte * kilobyte);
     var divcvs = document.getElementById("cvs");
@@ -583,60 +663,63 @@
     // STATS PANEL - Setup Performance Stats Information Panel                  //
     // ************************************************************************ //
     var showStatsPanel = ###STATS###;
-    if (showStatsPanel === true && typeof FPSMeter !== "undefined") {
-        var anchor = ###ANCHOR###;
-        var stats = '###MODE###';
-        var look = '###THEME###';
-        var atop = 'auto';
-        var aleft = 'auto';
-        var aright = 'auto';
-        var abottom = 'auto';
-        if (anchor === 0) {
-            atop = '5px';
-            aleft = '5px';
-        } else if (anchor === 1) {
-            atop = '5px';
-            aright = '5px';
-        } else if (anchor === 2) {
-            abottom = '5px';
-            aleft = '5px';
-        } else if (anchor === 3) {
-            abottom = '5px';
-            aright = '5px';
-        } else {
-            atop = '5px';
-            aright = '5px';
-        }
-        window.METER = new FPSMeter({
-            interval:  100,         // Update interval in milliseconds.
-            smoothing: 10,          // Spike smoothing strength. 1 means no smoothing.
-            show:      stats,       // Whether to show 'fps', or 'ms' = frame duration in milliseconds.
-            toggleOn:  'click',     // Toggle between show 'fps' and 'ms' on this event.
-            decimals:  0,           // Number of decimals in FPS number. 1 = 59.9, 2 = 59.94, ...
-            maxFps:    60,          // Max expected FPS value.
-            threshold: 100,         // Minimal tick reporting interval in milliseconds.
-            // ..
-            // Position Options
-            // ..
-            position: 'absolute',   // Meter position.
-            zIndex:   10,           // Meter Z index.
-            top:      atop,         // Meter top offset.
-            left:     aleft,        // Meter left offset.
-            right:    aright,       // Meter right offset.
-            bottom:   abottom,      // Meter bottom offset.
-            margin:   '0 0 0 0',    // Meter margin. Helps with centering the counter when left: 50%;
-            // ..
-            // Theme Options
-            // ..
-            theme: look,            // Meter theme. Build in: 'dark', 'light', 'transparent', 'colorful'.
-            heat:  1,               // Allow themes to use coloring by FPS heat. 0 FPS = red, maxFps = green.
-            // ..
-            // Graph Options
-            // ..
-            graph:   1,             // Whether to show history graph.
-            history: 20             // How many history states to show in a graph.
-        });
-    }
+    var cornerAnchor = ###ANCHOR###;
+    // if (showStatsPanel === true && typeof FPSMeter !== "undefined") {
+    //     var anchor = ###ANCHOR###;
+    //     var stats = '###MODE###';
+    //     var look = '###THEME###';
+    //     var atop = 'auto';
+    //     var aleft = 'auto';
+    //     var aright = 'auto';
+    //     var abottom = 'auto';
+    //     if (anchor === 0) {
+    //         atop = '5px';
+    //         aleft = '5px';
+    //     } else if (anchor === 1) {
+    //         atop = '5px';
+    //         aright = '5px';
+    //     } else if (anchor === 2) {
+    //         abottom = '5px';
+    //         aleft = '5px';
+    //     } else if (anchor === 3) {
+    //         abottom = '5px';
+    //         aright = '5px';
+    //     } else {
+    //         atop = '5px';
+    //         aright = '5px';
+    //     }
+    //     window.METER = new FPSMeter({
+    //         interval:  100,         // Update interval in milliseconds.
+    //         smoothing: 10,          // Spike smoothing strength. 1 means no smoothing.
+    //         show:      stats,       // Whether to show 'fps', or 'ms' = frame duration in milliseconds.
+    //         toggleOn:  'click',     // Toggle between show 'fps' and 'ms' on this event.
+    //         decimals:  0,           // Number of decimals in FPS number. 1 = 59.9, 2 = 59.94, ...
+    //         maxFps:    60,          // Max expected FPS value.
+    //         threshold: 100,         // Minimal tick reporting interval in milliseconds.
+    //         // ..
+    //         // Position Options
+    //         // ..
+    //         position: 'absolute',   // Meter position.
+    //         zIndex:   10,           // Meter Z index.
+    //         top:      atop,         // Meter top offset.
+    //         left:     aleft,        // Meter left offset.
+    //         right:    aright,       // Meter right offset.
+    //         bottom:   abottom,      // Meter bottom offset.
+    //         margin:   '0 0 0 0',    // Meter margin. Helps with centering the counter when left: 50%;
+    //         // ..
+    //         // Theme Options
+    //         // ..
+    //         theme: look,            // Meter theme. Build in: 'dark', 'light', 'transparent', 'colorful'.
+    //         heat:  1,               // Allow themes to use coloring by FPS heat. 0 FPS = red, maxFps = green.
+    //         // ..
+    //         // Graph Options
+    //         // ..
+    //         graph:   1,             // Whether to show history graph.
+    //         history: 20             // How many history states to show in a graph.
+    //     });
+    // }
+
+
     // ************************************************************************ //
     // LOADING SCREEN - Attach Project Loadeing Screen Event Handler            //
     // ************************************************************************ //
@@ -652,6 +735,8 @@
     // The splash hands its status line and bar to the toolkit once the scene file has downloaded: the runtime then posts its
     // own build stages (BUILDING SCENE NN%, SETTING UP SCENE) instead of the page's download percent sitting at 100%
     TOOLKIT.SceneManager.HostDefersSceneStatus = true;
+    // Note: the project's Pre Compile Shaders setting - set before InitializeRuntime, which reads it to install the shader code cache
+    TOOLKIT.SceneManager.PrecompileShaders = precompileShaders;
     BABYLON.SceneLoader.OnPluginActivatedObservable.addOnce((loader) => {
         loader.validate = validategltf;
     });
@@ -742,7 +827,7 @@
     window.handleLoadProgress = (evt) => {
         // Splash screen: the scene file download (same wording as the React framework splash), until the toolkit posts its own
         // scene build stages (a loader state from 1 on): later download events would overwrite them
-        if (window.setSplashStatus && evt != null && !(window._splashState >= 1)) {
+        if (evt != null && !(TOOLKIT.LoadingScreenStages != null && TOOLKIT.LoadingScreenStages.GetBarState() >= 1)) {
             if (evt.lengthComputable && evt.total > 0) {
                 var splashPercent = (evt.loaded / evt.total);
                 window.setSplashStatus("Loading Scene " + Math.round(splashPercent * 100) + "%", null, splashPercent, -1);
@@ -845,15 +930,20 @@
             }
         }
     };
-    TOOLKIT.SceneManager.OnAssetManagerProgress = (evt) => {
-        window.handleExtraProgress(evt);
-    };
-    // Splash screen: the toolkit asset preloader after the download (asset counts, terrain stages, preparing scene view)
-    if (TOOLKIT.SceneManager.OnLoaderStatusObservable != null) {
-        TOOLKIT.SceneManager.OnLoaderStatusObservable.add((data) => {
-            if (data != null && window.setSplashStatus) window.setSplashStatus(data.status, data.details, data.progress, data.state);
-        });
+    if (TOOLKIT.SceneManager.OnAssetManagerProgress != null) {
+        TOOLKIT.SceneManager.OnAssetManagerProgress = (evt) => {
+            window.handleExtraProgress(evt);
+        };
     }
+    if (TOOLKIT.SceneManager.OnSceneRevealedObservable != null) {
+        TOOLKIT.SceneManager.OnSceneRevealedObservable.add((scene) => {
+            if (TOOLKIT.SceneManager.ShowFPS) {
+                TOOLKIT.SceneManager.ShowFPS(true, cornerAnchor);
+            } else {
+                TOOLKIT.SceneManager.ShowFPS(false);
+            }
+        });        
+    }        
     // ************************************************************************ //
     // SCENE LOADER - Execute Scene Loading With Progress Information           //
     // ************************************************************************ //
@@ -1140,7 +1230,8 @@
         // DEPRECIATED: engine.renderEvenInBackground = renderinbackground;
         // DEPRECIATED: engine.clear(new BABYLON.Color3(0, 0, 0), true, true, true);
         engine.displayLoadingUI();
-        await TOOLKIT.SceneManager.InitializeRuntime(engine);
+        // The toolkit's built-in loading screen takes over the splash cover here: every loading stage shows on it from now on
+        await TOOLKIT.SceneManager.InitializeRuntime(engine, { showDefaultLoadingScreen: true, hideLoadingUIWithEngine: false, defaultLoadingUIMarginTop: "180px" });
         // ************************************************************************ //
         // if (handlecontext === true) {
         //     engine.onContextLostObservable.add(()=>{
