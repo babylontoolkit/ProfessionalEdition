@@ -159,12 +159,14 @@ public static class BabylonToolkitCliCommands
         [CliArg("folder",       "Absolute output folder (optional)")]        string folder = null,
         [CliArg("geometryOnly", "Skip script/web/PWA emit; export only the scene")] bool geometryOnly = true,
         [CliArg("compileScripts", "Compile Assets/**/*.ts into the project bundle even when geometryOnly (default true: generated Shader Graph classes must be in the bundle)")] bool compileScripts = true,
-        [CliArg("save", "Save open scenes with unsaved changes before opening --scene (otherwise refuse)")] bool save = false)
+        [CliArg("save", "Save open scenes with unsaved changes before opening --scene (otherwise refuse)")] bool save = false,
+        [CliArg("additive", "Comma-separated scene asset paths opened additively after --scene (optional)")] string additive = null)
     {
         if (EditorApplication.isCompiling) throw new Exception("Scripts are still compiling.");
         if (Lightmapping.isRunning)        throw new Exception("A lightmap bake is in progress.");
 
         if (!string.IsNullOrWhiteSpace(scene)) OpenSceneWithoutDiscardingChanges(scene, save, "Save them (save_all) or pass --save true.");
+        OpenAdditiveScenes(additive);
 
         PrepareExporter();
         var info = CanvasToolsInfo.Instance;
@@ -215,6 +217,24 @@ public static class BabylonToolkitCliCommands
 
         if (!string.IsNullOrWhiteSpace(scene)) OpenSceneWithoutDiscardingChanges(scene, false, "Save them (save_all) first.");
         return CanvasTools.TimelineExportTool.BakeOpenScenes(force);
+    }
+
+    /// <summary>
+    /// unity-gaia-terrain-port D29: opens each scene of a comma-separated list additively, so an export holds every loaded scene
+    /// (terrain tiles kept in scenes of their own export as one level). The scene opened first stays active.
+    /// </summary>
+    /// <param name="additiveScenes">Comma-separated scene asset paths, or null / empty for none.</param>
+    /// <exception cref="Exception">A listed scene does not exist.</exception>
+    private static void OpenAdditiveScenes(string additiveScenes)
+    {
+        if (string.IsNullOrWhiteSpace(additiveScenes)) return;
+        foreach (string listedScene in additiveScenes.Split(','))
+        {
+            string scenePath = listedScene.Trim();
+            if (scenePath.Length == 0) continue;
+            if (AssetDatabase.LoadAssetAtPath<SceneAsset>(scenePath) == null) throw new Exception("Additive scene not found: " + scenePath);
+            EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Additive);
+        }
     }
 
     /// <summary>
