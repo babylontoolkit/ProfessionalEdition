@@ -24,7 +24,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
-using Unity.Pipeline.Commands;   // [CliCommand] / [CliArg] - assembly Unity.Pipeline.Attributes (com.unity.pipeline 0.8+)
+using UnityEngine.SceneManagement;
+using Unity.Pipeline.Commands;  // [CliCommand] / [CliArg] - assembly Unity.Pipeline.Attributes (com.unity.pipeline 0.8+)
 
 public static class BabylonToolkitCliCommands
 {
@@ -261,15 +262,180 @@ public static class BabylonToolkitCliCommands
         EditorSceneManager.OpenScene(scene, OpenSceneMode.Single);
     }
 
+    /// <summary>Most candidate paths one error message lists before it says "… and N more".</summary>
+    private const int MAX_LISTED_CANDIDATES = 20;
+
+    /// <summary>
+    /// Resolves bt_export_prefab / bt_export_animation entries to scene objects. A bare name matches only root objects
+    /// of the loaded scenes, by exact name; a slash path ("Props/Crate" or "/Props/Crate") is an exact hierarchy path
+    /// from a root. Inactive objects are found. Every entry is checked before anything is returned, duplicates
+    /// (the same resolved object) are kept once in first-seen order, and any bad entry fails the whole call.
+    /// This is the rule Build All Game Assets uses to find its roots (GameAssetBuilder.FindOrCreateRoot); it replaces
+    /// GameObject.Find, which matched a same-named nested object anywhere in the scene and ignored inactive objects.
+    /// </summary>
+    /// <param name="entries">Trimmed, non-empty entries from --paths or --path.</param>
+    /// <returns>The resolved transforms, one per distinct object.</returns>
+    /// <exception cref="Exception">No loaded scene has objects, or one or more entries are missing, ambiguous or
+    /// malformed; the message lists every bad entry with its candidates.</exception>
+    public static Transform[] ResolveExportTargets(IEnumerable<string> entries)
+    {
+        List<string> entryList = entries.ToList();
+        List<Scene> loadedScenes = GetLoadedScenes();
+        if (!loadedScenes.Any(loadedScene => loadedScene.rootCount > 0))
+            throw new Exception("No open scene with objects to export. Open the scene that holds them first.");
+
+        bool includeSceneName = loadedScenes.Count > 1;
+        var resolvedTargets = new List<Transform>();
+        var problems = new List<string>();
+        foreach (string entry in entryList)
+        {
+            string problem = ResolveEntry(loadedScenes, entry, includeSceneName, out Transform target);
+            if (problem != null)
+            {
+                problems.Add(problem);
+                continue;
+            }
+            if (!resolvedTargets.Contains(target)) resolvedTargets.Add(target);
+        }
+        if (problems.Count > 0)
+        {
+            throw new Exception("Nothing exported — " + problems.Count + " of " + entryList.Count + " entries did not resolve:\n"
+                + string.Join("\n", problems.Select(problem => "  " + problem)));
+        }
+        return resolvedTargets.ToArray();
+    }
+
+    /// <summary>Resolves one entry, or describes why it cannot be resolved.</summary>
+    /// <param name="scenes">The loaded scenes.</param>
+    /// <param name="entry">A bare root name or a slash path.</param>
+    /// <param name="includeSceneName">Prefix candidate paths with their scene name (several scenes are loaded).</param>
+    /// <param name="target">The one object the entry names, or null when it fails.</param>
+    /// <returns>Null when the entry resolved; otherwise the sentence that explains the failure.</returns>
+    private static string ResolveEntry(List<Scene> scenes, string entry, bool includeSceneName, out Transform target)
+    {
+        target = null;
+        bool isHierarchyPath = entry.Contains("/");
+        string[] segments = (entry.StartsWith("/") ? entry.Substring(1) : entry).Split('/');
+        if (segments.Any(segment => segment.Length == 0)) return "\"" + entry + "\": empty path segment.";
+
+        List<Transform> matches = FindByHierarchyPath(scenes, segments);
+        if (matches.Count == 1)
+        {
+            target = matches[0];
+            return null;
+        }
+        if (matches.Count > 1)
+        {
+            return "\"" + entry + "\" is ambiguous — it matches " + matches.Count + " objects: "
+                + DescribeCandidates(matches, includeSceneName) + ". Rename one or pass a longer path.";
+        }
+
+        List<Transform> nestedMatches = FindNestedNamed(scenes, segments[segments.Length - 1]);
+        if (nestedMatches.Count == 0) return "\"" + entry + "\" was not found in the open scene(s).";
+        string missReason = isHierarchyPath ? "does not match a path from a root" : "is not a root of the open scene";
+        return "\"" + entry + "\" " + missReason + " — found nested at: " + DescribeCandidates(nestedMatches, includeSceneName)
+            + ". Pass the full path, e.g. \"" + DescribeHierarchyPath(nestedMatches[0], false) + "\".";
+    }
+
+    /// <summary>Lists the scenes the editor has loaded, in hierarchy order.</summary>
+    /// <returns>Every loaded scene (unloaded multi-scene entries are skipped).</returns>
+    private static List<Scene> GetLoadedScenes()
+    {
+        var loadedScenes = new List<Scene>();
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            Scene scene = SceneManager.GetSceneAt(i);
+            if (scene.isLoaded) loadedScenes.Add(scene);
+        }
+        return loadedScenes;
+    }
+
+    /// <summary>Finds every root object with exactly this name in the given scenes, inactive roots included.</summary>
+    /// <param name="scenes">The scenes to search.</param>
+    /// <param name="rootName">The exact root name.</param>
+    /// <returns>The matching roots' transforms.</returns>
+    private static List<Transform> FindRootsNamed(List<Scene> scenes, string rootName)
+    {
+        return scenes
+            .SelectMany(scene => scene.GetRootGameObjects())
+            .Where(root => root.name == rootName)
+            .Select(root => root.transform)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Follows a hierarchy path from the roots: the first segment names a root, each later segment a direct child, all by
+    /// exact name and inactive objects included. Every branch is followed, so two same-named siblings anywhere on the
+    /// path yield two results.
+    /// </summary>
+    /// <param name="scenes">The scenes to search.</param>
+    /// <param name="segments">The path's names, root first; none is empty.</param>
+    /// <returns>Every object at the end of the path.</returns>
+    private static List<Transform> FindByHierarchyPath(List<Scene> scenes, string[] segments)
+    {
+        List<Transform> candidates = FindRootsNamed(scenes, segments[0]);
+        for (int segmentIndex = 1; segmentIndex < segments.Length && candidates.Count > 0; segmentIndex++)
+        {
+            string childName = segments[segmentIndex];
+            var children = new List<Transform>();
+            foreach (Transform parent in candidates)
+            {
+                for (int childIndex = 0; childIndex < parent.childCount; childIndex++)
+                {
+                    Transform child = parent.GetChild(childIndex);
+                    if (child.name == childName) children.Add(child);
+                }
+            }
+            candidates = children;
+        }
+        return candidates;
+    }
+
+    /// <summary>Finds every non-root object with exactly this name, inactive included, to suggest the right path.</summary>
+    /// <param name="scenes">The scenes to search.</param>
+    /// <param name="objectName">The exact object name.</param>
+    /// <returns>The nested matches, in hierarchy order.</returns>
+    private static List<Transform> FindNestedNamed(List<Scene> scenes, string objectName)
+    {
+        return scenes
+            .SelectMany(scene => scene.GetRootGameObjects())
+            .SelectMany(root => root.GetComponentsInChildren<Transform>(true).Where(descendant => descendant != root.transform))
+            .Where(descendant => descendant.name == objectName)
+            .ToList();
+    }
+
+    /// <summary>Describes an object by its hierarchy path from its root, e.g. "Props/Crate".</summary>
+    /// <param name="target">The object.</param>
+    /// <param name="includeSceneName">Prefix the path with "[SceneName] ".</param>
+    /// <returns>The path text.</returns>
+    private static string DescribeHierarchyPath(Transform target, bool includeSceneName)
+    {
+        var names = new List<string>();
+        for (Transform current = target; current != null; current = current.parent) names.Insert(0, current.name);
+        string hierarchyPath = string.Join("/", names);
+        return includeSceneName ? "[" + target.gameObject.scene.name + "] " + hierarchyPath : hierarchyPath;
+    }
+
+    /// <summary>Lists candidate paths for an error message, at most MAX_LISTED_CANDIDATES of them.</summary>
+    /// <param name="candidates">The objects to list.</param>
+    /// <param name="includeSceneName">Prefix each path with its scene name.</param>
+    /// <returns>The paths joined with ", ", ending "… and N more" when some were left out.</returns>
+    private static string DescribeCandidates(List<Transform> candidates, bool includeSceneName)
+    {
+        string listed = string.Join(", ", candidates.Take(MAX_LISTED_CANDIDATES).Select(candidate => DescribeHierarchyPath(candidate, includeSceneName)));
+        int omittedCount = candidates.Count - MAX_LISTED_CANDIDATES;
+        return omittedCount > 0 ? listed + " … and " + omittedCount + " more" : listed;
+    }
+
     /// unity command bt_export_prefab --paths "Props/Crate,Props/Barrel" --filename Crates --folder /abs/out
     [CliCommand("bt_export_prefab",
                 "Export selected transforms as a Babylon Toolkit asset container (no scene metadata)",
                 MainThreadRequired = true)]
     public static string ExportPrefab(
-        [CliArg("paths",    "Comma-separated hierarchy paths, e.g. Props/Crate")] string paths = null,
-        [CliArg("filename", "Output name without extension")]                     string filename = null,
-        [CliArg("folder",   "Absolute output folder")]                            string folder = null,
-        [CliArg("metadata", "Emit extras.metadata component data")]               bool metadata = true)
+        [CliArg("paths",    "Comma-separated: bare name = scene root, A/B = exact path from a root (inactive included)")] string paths = null,
+        [CliArg("filename", "Output name without extension")]                                                            string filename = null,
+        [CliArg("folder",   "Absolute output folder")]                                                                   string folder = null,
+        [CliArg("metadata", "Emit extras.metadata component data")]                                                      bool metadata = true)
     {
         if (EditorApplication.isCompiling) throw new Exception("Scripts are still compiling.");
 
@@ -280,14 +446,7 @@ public static class BabylonToolkitCliCommands
         }
         else
         {
-            var found = new List<Transform>();
-            foreach (var p in paths.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0))
-            {
-                var go = GameObject.Find(p);
-                if (go == null) throw new Exception("GameObject not found: " + p);
-                found.Add(go.transform);
-            }
-            targets = found.ToArray();
+            targets = ResolveExportTargets(paths.Split(',').Select(entry => entry.Trim()).Where(entry => entry.Length > 0));
         }
         if (targets == null || targets.Length == 0) throw new Exception("Nothing selected to export.");
 
@@ -313,12 +472,12 @@ public static class BabylonToolkitCliCommands
     /// unity command bt_export_animation --path Characters/Hero --filename HeroRun
     [CliCommand("bt_export_animation", "Export one animated transform as a .glb", MainThreadRequired = true)]
     public static string ExportAnimation(
-        [CliArg("path",     "Hierarchy path of the animated root")] string path = null,
-        [CliArg("filename", "Output name without extension")]       string filename = null,
-        [CliArg("folder",   "Absolute output folder")]              string folder = null)
+        [CliArg("path",     "Bare name = scene root, A/B = exact path from a root (inactive included)")] string path = null,
+        [CliArg("filename", "Output name without extension")]                                         string filename = null,
+        [CliArg("folder",   "Absolute output folder")]                                                string folder = null)
     {
-        var go = GameObject.Find(path);
-        if (go == null) throw new Exception("GameObject not found: " + path);
+        if (string.IsNullOrWhiteSpace(path)) throw new Exception("bt_export_animation needs --path (a root name or a hierarchy path).");
+        Transform target = ResolveExportTargets(new[] { path.Trim() })[0];
 
         PrepareExporter();
         var info = CanvasToolsInfo.Instance;
@@ -328,8 +487,8 @@ public static class BabylonToolkitCliCommands
 
         // animationMode: true forces .glb and drops metadata.
         BuildProjectHeadless(
-            EditorBuildType.Scene, new[] { go.transform },
-            string.IsNullOrWhiteSpace(filename) ? go.name : filename,
+            EditorBuildType.Scene, new[] { target },
+            string.IsNullOrWhiteSpace(filename) ? target.name : filename,
             outDir, true, info.HandedExportSystem, 0, false);
         ThrowIfBuildFailed();
 
