@@ -16,8 +16,8 @@
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
   "author": {
-    "name": "CODEWRX",
-    "email": "mackeyk24@gmail.com",
-    "url": "https://www.babylontoolkit.com"
+    "name": "BABYLONJS",
+    "url": "https://www.babylontoolkit.com",
+    "email": "mackeyk24@gmail.com"
   }
 }
