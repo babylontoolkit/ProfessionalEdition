@@ -20,7 +20,7 @@ using Debug = UnityEngine.Debug;
 [InitializeOnLoad]
 public static class PlayableDirectorBaker
 {
-    private const string MENU_PATH = "Tools/Babylon Toolkit/Cinematics/Bake Timelines";
+    private const string MENU_PATH = "Tools/Babylon Toolkit/Camera Cinematics/Bake Timelines";
     /// <summary>Bytes per kilobyte, for the report's cache file size.</summary>
     private const double BYTES_PER_KILOBYTE = 1024.0;
     /// <summary>Indent and label of a skipped line under its director's report line.</summary>
@@ -33,7 +33,7 @@ public static class PlayableDirectorBaker
     }
 
     /// <summary>Menu item: bakes (or loads) every director in the open scenes and logs the report.</summary>
-    [MenuItem(MENU_PATH, false, 80)]
+    [MenuItem(MENU_PATH, false, 60)]
     private static void BakeFromMenu()
     {
         Debug.Log(TimelineExportTool.BakeOpenScenes(false));
