@@ -1,7 +1,7 @@
 {
   "name": "com.babylontoolkit.editor",
   "displayName": "Babylon Toolkit",
-  "version": "9.35.0",
+  "version": "9.35.1",
   "unity": "2022.3",
   "description": "Babylon Toolkit Professional Edition",
   "keywords": [
@@ -16,7 +16,7 @@
     "com.unity.nuget.newtonsoft-json": "3.2.1"
   },
   "author": {
-    "name": "BABYLONJS",
+    "name": "Mackey Kinard",
     "url": "https://www.babylontoolkit.com",
     "email": "mackeyk24@gmail.com"
   }
