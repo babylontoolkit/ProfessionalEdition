@@ -24826,9 +24826,9 @@ declare namespace TOOLKIT {
         private chaseCamera;
         /**
          * The main camera's local position under the chase rig's child node, units, from the Unity inspector
-         * (StandardKartCamera `cameraLocalPosition`; Unity Main Camera under Cam: 0, -0.1, 0).
+         * (StandardKartCamera `cameraLocalPosition`; Unity Main Camera under Cam: 0, -0.25, -5.0).
          */
-        private cameraLocalPosition;
+        private cameraPosition;
         /** Add the kart particles. */
         private kartEffects;
         /** Add the kart and driver sounds. */
