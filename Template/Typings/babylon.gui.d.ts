@@ -2083,7 +2083,7 @@ declare namespace BABYLON.GUI {
         private _attachedSlate;
         private _existingSlateScale;
         /**
-         * If set, the handles will increase in size based on the distance away from the camera to have a consistent screen size (Default: true)
+         * If set, the handles will increase in size based on the distance away from the camera to have a consistent screen size (Default: false)
          */
         fixedScreenSize: boolean;
         /**
@@ -6291,6 +6291,15 @@ declare namespace BABYLON.GUI {
          */
         set source(value: BABYLON.Nullable<string>);
         private _sanitizeSVG;
+        private static readonly _SVGSourceAttribute;
+        private static _FindSVGFrame;
+        /**
+         * Loads the SVG markup, sanitizes it, and exposes it to the hidden measuring frame. The frame is sandboxed without
+         * "allow-scripts", so any active content that survives sanitization still cannot run with the application's origin.
+         * @param svgsrc the url of the svg document
+         * @param svgFrame the sandboxed frame used to measure the svg elements
+         */
+        private _loadSanitizedSVG;
         /**
          * Checks for svg document with icon id present
          * @param value the source svg

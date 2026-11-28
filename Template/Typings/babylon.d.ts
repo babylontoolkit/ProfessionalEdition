@@ -19330,6 +19330,7 @@ declare namespace BABYLON {
          */
         getRenderingGroup(id: number): RenderingGroup;
         private _clearDepthStencilBuffer;
+        private _notifyRenderingGroupObservers;
         /**
          * Renders the entire managed groups. This is used by the scene or the different render targets.
          * @internal
@@ -19548,6 +19549,7 @@ declare namespace BABYLON {
         dispatchParticles(particleSystem: IParticleSystem): void;
         private _renderParticles;
         private _renderSprites;
+        private _notifySceneObservers;
     }
 
 
@@ -20400,6 +20402,7 @@ declare namespace BABYLON {
         _waitingRenderList?: string[];
         protected _currentRefreshId: number;
         protected _refreshRate: number;
+        private _renderScheduled;
         protected _currentApplyByPostProcessSetting: boolean;
         protected _activeMeshes: SmartArray<AbstractMesh>;
         protected _activeBoundingBoxes: SmartArray<BoundingBox>;
@@ -20478,9 +20481,15 @@ declare namespace BABYLON {
          * The output is based on the specified refresh rate.
          * When snapshot rendering is active, this always returns true to ensure render pass
          * topology stays consistent between the recording frame and playback frames.
+         * While mesh draws wait for their pipelines (WebGPU asynchronous pipeline creation), a renderer
+         * refreshed every N frames renders in every frame, up to the frame in which those meshes are drawn
+         * again (two frames after the last wait: that recovery frame included), so that it shows them in the
+         * same frames as the other passes. Every such renderer of the engine does, including one that does not
+         * draw the meshes that wait. Only a rendering it asks for lets them wait (see render).
          * @returns true if the renderer should render the current frame
          */
         shouldRender(): boolean;
+        private _isRenderDue;
         /**
          * This function will check if the renderer is ready to render (textures are loaded, shaders are compiled)
          * @param viewportWidth defines the width of the viewport
@@ -20508,10 +20517,13 @@ declare namespace BABYLON {
         finishRender(): void;
         /**
          * Renders all the objects (meshes, particles systems, sprites) to the currently bound render target texture.
+         * Its mesh draws may wait for their pipelines (WebGPU asynchronous pipeline creation) only in a rendering that shouldRender() asked
+         * for: any other rendering, as one with REFRESHRATE_RENDER_ONCE, draws every mesh.
          * @param passIndex defines the pass index to use (default: 0)
          * @param skipOnAfterRenderObservable defines a flag to skip raising the onAfterRenderObservable
          */
         render(passIndex?: number, skipOnAfterRenderObservable?: boolean): void;
+        private _render;
         /** @internal */
         _checkReadiness(): boolean;
         private _prepareRenderingManager;
@@ -20669,6 +20681,7 @@ declare namespace BABYLON {
         private _dummyTexture;
         private _iblSourceLoadUnsubscribe;
         private _iblSourceReadyRetryObserver;
+        private _iblSourceImageUnsubscribe;
         private _cachedDominantDirection;
         /**
          * Returns whether the CDF renderer is supported by the current engine
@@ -20684,6 +20697,7 @@ declare namespace BABYLON {
          */
         set iblSource(source: Nullable<BaseTexture>);
         private _isIblSourceReady;
+        private _clearIblSourceImageObserver;
         private _clearIblSourceReadinessObservers;
         private _recreateAssetsFromNewIbl;
         /**
@@ -30361,7 +30375,7 @@ declare namespace BABYLON {
          */
         totalStrength: number;
         /**
-         * The radius around the analyzed pixel used by the SSAO post-process. Default value is 0.0006
+         * The radius around the analyzed pixel used by the SSAO post-process. Default value is 0.0001
          */
         radius: number;
         /**
@@ -48424,7 +48438,8 @@ declare namespace BABYLON {
      */
     export interface AutoReleaseWorkerPoolOptions {
         /**
-         * Idle time elapsed before workers are terminated.
+         * Idle time elapsed before workers are terminated, in milliseconds. A time setTimeout cannot hold (Infinity, or more than
+         * 2^31 - 1 ms) keeps the workers until the pool is disposed.
          */
         idleTimeElapsedBeforeRelease: number;
     }
@@ -48492,6 +48507,14 @@ declare namespace BABYLON {
         static get IsCustomRequestAvailable(): boolean;
         private static _CleanUrl;
         private static _ShouldSkipRequestModifications;
+        /**
+         * Gets the lower-cased hostname of the URL a request will actually target. Uses the URL parser when it is available,
+         * and otherwise a string parser that applies the same input normalization, since not every environment provides a
+         * constructible URL (e.g. Babylon Native installs a non-constructible shim).
+         * @param url - The URL to inspect.
+         * @returns The hostname, or an empty string for URLs without a host.
+         */
+        private static _GetHostname;
         /**
          * Merges `CustomRequestHeaders` and `CustomRequestModifiers` into a plain headers record and returns the
          * (possibly rewritten) URL. Can be used to apply URL and header customizations without making a network
@@ -50190,8 +50213,8 @@ declare namespace BABYLON {
      * This is convenient to get 8-bit RGBA values for a texture in a GPU compressed format.
      * When direct readback returns non-RGBA channel layouts, the result is normalized to RGBA8.
      * @param texture the source texture
-     * @param width the target width of the result, which does not have to match the source texture width
-     * @param height the target height of the result, which does not have to match the source texture height
+     * @param width the target width of the result; direct readback returns the selected mip's width when this is the base or mip width
+     * @param height the target height of the result; direct readback returns the selected mip's height when this is the base or mip height
      * @param face if the texture has multiple faces, the face index to use for the source
      * @param lod if the texture has multiple LODs, the lod index to use for the source
      * @param forceRTT if true, forces the use of the RTT path for reading pixels (useful for cube maps to ensure correct orientation and gamma)
@@ -58127,6 +58150,31 @@ declare namespace BABYLON {
          * @internal
          */
         _getDrawWrapper(passId?: number, createIfNotExisting?: boolean): DrawWrapper | undefined;
+        /** @internal The buffers of GPU-written draw arguments bound per render pass (setIndirectDrawBuffer) */
+        _indirectDrawBuffers?: Map<number, {
+            buffer: DataBuffer;
+            byteOffset: number;
+        }>;
+        /**
+         * Makes the draw of this sub mesh in a render pass read its arguments from a buffer filled on the GPU (by a compute shader that
+         * culls instances, for example) instead of the arguments of the CPU. WebGPU only.
+         *
+         * The buffer stays the application's: it is never written into nor released here. It holds the arguments of drawIndexedIndirect
+         * for an indexed draw (indexCount, instanceCount and firstIndex as u32, baseVertex as i32, firstInstance as u32) or of drawIndirect
+         * otherwise (vertexCount, instanceCount, firstVertex and firstInstance, as u32). A firstInstance other than 0 needs the device to be
+         * created with the indirect-first-instance feature (engine.enabledExtensions), not only an adapter that supports it.
+         *
+         * Each draw of the sub mesh in the pass takes the binding, whatever draw context it goes through: the sub mesh's own, the one
+         * a material shares between its meshes, or a ShadowDepthWrapper's. Passes without a binding draw with the CPU arguments, as
+         * before: the arguments of a camera's pass never reach the shadow maps, which need bindings of their own. A new buffer or offset
+         * records the draw's bundle again; new contents written into the same buffer do not. A snapshot (snapshotRendering) must be
+         * recorded again after a binding changes. The binding of a pass goes with its render pass id (releaseRenderPassId).
+         * @param buffer the buffer of the arguments (created with the indirect usage), or null to clear the binding of the pass
+         * @param byteOffset the offset of the arguments in the buffer, in bytes (a multiple of 4)
+         * @param renderPassId the render pass of the binding: camera.renderPassId for a camera, the renderPassIds of a shadow map for a shadow
+         * generator. It is required: a camera rendering to the main framebuffer uses its own render pass id, not Constants.RENDERPASS_MAIN
+         */
+        setIndirectDrawBuffer(buffer: Nullable<DataBuffer>, byteOffset: number, renderPassId: number): void;
         /**
          * @internal
          */
@@ -58956,10 +59004,18 @@ declare namespace BABYLON {
     /**
      * Checks whether an engine supports the render-target and shader features required by mesh blending.
      * @param engine Engine to check.
-     * @returns True for WebGL2 and WebGPU engines, and false for Native and WebGL1 engines.
+     * @returns True for WebGL2 and WebGPU engines, and for Native engines whose runtime supports integer color attachments.
      * @internal
      */
     export function _IsMeshBlendingSupported(engine: AbstractEngine): boolean;
+    /**
+     * Checks whether an engine can render blended geometry into a target that includes the integer mesh-blending tag attachment.
+     * WebGPU and Native never blend integer attachments, while WebGL2 needs per-target blend parameters to disable blending on them.
+     * @param engine Engine to check.
+     * @returns True if blended draws can write mesh-blending tags.
+     * @internal
+     */
+    export function _CanBlendWithMeshBlendTag(engine: AbstractEngine): boolean;
     /**
      * Radius class stored in a packed mesh-blending tag.
      *
@@ -60754,6 +60810,103 @@ declare namespace BABYLON {
          * @see [perf test](https://playground.babylonjs.com/#5SPY1V#5)
          */
         directRender(): Mesh;
+        /**
+         * @internal Whether a full draw of the mesh notifies draw observers (onBeforeDrawObservable, in _draw), without creating the
+         * observable: a draw recorded by a snapshot is not encoded again for such a mesh, in its passes nor in the shadow maps
+         */
+        _hasDrawObservers(): boolean;
+        /**
+         * Whether a snapshot records a draw of the mesh to encode it again from its commands: its material can be (see
+         * Material._canReplayRecordedDraw), it writes no velocity (its bind keeps the previous world matrix of its mesh, once per frame), and
+         * nothing runs per draw outside of the engine (instances, bones, morph targets, baked animations, occlusion queries, render and draw
+         * observers, an outline or an overlay), which could set around the full draw states its commands would keep. The same predicate
+         * decides what is kept and what is encoded again: a draw that cannot be is neither checked nor kept, and what was recorded for it
+         * is dropped, so that it is recorded again once it can be
+         * @param subMesh the sub mesh to render
+         * @param batch the instances batch of the sub mesh
+         * @param effectiveMeshReplacement the mesh used in place of this one, if any
+         * @returns true if the draw is recorded
+         */
+        private _canRecordDraw;
+        private _runsCodeOnDraw;
+        /**
+         * Gets the draw wrapper of a draw the mesh records (see _canRecordDraw) that can be encoded again without rendering the mesh: it
+         * did not change since it was recorded (see _isRecordedDrawUnchanged)
+         * @param subMesh the sub mesh to render
+         * @returns the draw wrapper, or null when the mesh must be rendered
+         */
+        private _getUnchangedRecordedDraw;
+        /**
+         * Whether the thin instances of the mesh, if any, can be drawn from recorded commands: their buffers are bound as they are
+         * (their content can change), but not when their previous matrices are written from the current ones after each draw
+         * @returns true if they can
+         * @internal
+         */
+        _canRecordThinInstances(): boolean;
+        /**
+         * Whether a draw a snapshot recorded did not change since then: its per-draw values (what its effect sets when it binds: the
+         * material's values, fog, shadow matrices...) are the same bytes a full bind of a draw of the same material wrote in this frame,
+         * and it has the same material (version, GPU textures, the pipeline state it sets from plain fields), world matrix, visibility,
+         * sub mesh ranges (indices and vertices), geometry and thin instance
+         * buffers and instance count; with lights, the lights were bound in this frame (their uniform buffers are shared: the first bind of the
+         * frame writes them), and their shadow maps and the buffers their generators bind to receivers (the cascades of a camera) are the same.
+         * The shared uniform buffers it binds are still on the first buffer of their frame (see _areSharedBuffersFirst)
+         * @param drawWrapper the draw wrapper of the recorded draw
+         * @param subMesh the sub mesh
+         * @param material the material of the draw
+         * @param effectiveMesh the mesh providing the world matrix and the lights
+         * @param withLights whether the draw binds the lights (not in the shadow maps)
+         * @param domain what else writes its per-draw values (the shadow generator), or null
+         * @param domainState what the domain sets in its full draws outside of the per-draw values, from 0 to 3 (the culling of
+         * forceBackFacesOnly, the texture of the alpha test of useOpacityTextureForTransparentShadow), compared too
+         * @returns true if the draw can be encoded again
+         * @internal
+         */
+        _isRecordedDrawUnchanged(drawWrapper: DrawWrapper, subMesh: SubMesh, material: Material, effectiveMesh: AbstractMesh, withLights: boolean, domain?: Nullable<object>, domainState?: number): boolean;
+        /**
+         * Whether the shared uniform buffers a draw binds (the scene's, the mesh's and the lights') are on the first buffer of their frame.
+         * A draw recorded with a later one depends on the order of the frame's writes, and one encoded again while a buffer moved on (written
+         * again by an earlier pass of the frame) would bind the first buffer, with the earlier values, where a full draw binds the new one.
+         * Never in floating origin mode, where a bind writes the world matrix minus the eye in the mesh's uniform buffer
+         * @param effectiveMesh the mesh providing the world matrix and the lights
+         * @param withLights whether the draw binds the lights
+         * @returns true if they all are
+         */
+        private _areSharedBuffersFirst;
+        /**
+         * What a full draw sets in its bind from what is configured outside of its material: by its domain (domainState), and by the geometry
+         * rendering of its render pass, the culling it reverses and the per-mesh values it writes, the object ID and the mesh-blending tag
+         * (GeometryRendererTask.reverseCulling only updates the configuration a full bind reads, and mesh.meshBlendingTag or a provider
+         * invalidates nothing)
+         * @param domainState what the domain sets, from 0 to 3
+         * @returns the state, packed in a number
+         */
+        private _getConfiguredState;
+        private _getDrawnIndexBuffer;
+        private _getDrawnInstanceCount;
+        private static _RecordVertexBuffer;
+        private static _IsRecordedVertexBuffer;
+        /**
+         * Keeps what a draw recorded by a snapshot was rendered with (see _isRecordedDrawUnchanged), when the shared uniform buffers it
+         * bound were on the first buffer of their frame (see _areSharedBuffersFirst). Only a kept draw is the frame's reference for the
+         * per-draw values of its material and effect
+         * @param drawWrapper the draw wrapper of the recorded draw
+         * @param subMesh the sub mesh
+         * @param material the material of the draw
+         * @param effectiveMesh the mesh providing the world matrix and the lights
+         * @param withLights whether the draw binds the lights (not in the shadow maps)
+         * @param domain what else writes its per-draw values (the shadow generator), or null
+         * @param domainState what the domain sets in its full draws outside of the per-draw values, from 0 to 3 (the culling of
+         * forceBackFacesOnly, the texture of the alpha test of useOpacityTextureForTransparentShadow)
+         * @internal
+         */
+        _keepRecordedDraw(drawWrapper: DrawWrapper, subMesh: SubMesh, material: Material, effectiveMesh: AbstractMesh, withLights: boolean, domain?: Nullable<object>, domainState?: number): void;
+        /**
+         * Sets the alpha modes of a material, as a draw of the mesh with the alpha mode enabled does before it binds
+         * @param engine the engine
+         * @param material the material
+         */
+        private _setAlphaModes;
         /**
          * Triggers the draw call for the mesh. Usually, you don't need to call this method by your own because the mesh rendering is handled by the scene rendering manager
          * @param subMesh defines the subMesh to render
@@ -63454,6 +63607,17 @@ declare namespace BABYLON {
          * Used in frame graph mode only, to know which meshes to update when in frozen mode
          */
         _wasActiveLastFrame: boolean;
+        /**
+         * Asynchronous pipeline creation: the last frame in which a draw of the mesh waited for its render pipeline, and the last frame in
+         * which one was done (shared by the draw contexts of all the passes of the mesh)
+         */
+        _pipelinePendingFrameId: number;
+        _pipelineDrawnFrameId: number;
+        /**
+         * Asynchronous pipeline creation: the mesh whose draws the draws of this mesh wait with (a compositor drawn for another mesh), or
+         * null for its own
+         */
+        _pipelineWaitOwner: Nullable<_InternalAbstractMeshDataInfo>;
     }
     /**
      * Class used to store all common mesh properties
@@ -71643,7 +71807,7 @@ declare namespace BABYLON {
         /** @internal */
         _vertexCount: number;
         protected _worker: Nullable<Worker>;
-        private _modelViewProjectionMatrix;
+        private _nativeSortModelViewMatrix;
         private _depthMix;
         protected _canPostToWorker: boolean;
         private _readyToDisplay;
@@ -71680,6 +71844,7 @@ declare namespace BABYLON {
         protected _alwaysRetainSplatsData: boolean;
         protected _flipY: boolean;
         private _delayedTextureUpdate;
+        private _nativeTextureData;
         protected _useRGBACovariants: boolean;
         protected _useSog: boolean;
         protected _sogParams: Nullable<ISogPackInternal>;
@@ -72012,6 +72177,14 @@ declare namespace BABYLON {
          */
         protected _getGpuSortPartMatrices(): Nullable<ReadonlyArray<Matrix>>;
         /**
+         * Part index of each splat, for compound meshes. Null for a regular mesh.
+         * @returns the part indices
+         */
+        protected _getSortPartIndices(): Nullable<Uint8Array>;
+        private _nativeSortWorldMatrices;
+        private _getNativeSortWorldMatrices;
+        private _sortSplatIndicesNative;
+        /**
          * Synchronizes compound part transforms before checking whether the GPU sort is up to date.
          */
         protected _syncPartProxyWorldMatrices(): void;
@@ -72280,8 +72453,14 @@ declare namespace BABYLON {
          */
         refreshBoundingInfo(): Mesh;
         protected _updateSplatIndexBuffer(vertexCount: number): void;
+        private _updateTextureDataRects;
         protected _updateTextureFromData: (texture: BaseTexture, data: ArrayBufferView, width: number, lineStart: number, lineCount: number) => void;
         protected _updateTextureFromDataRect: (texture: BaseTexture, data: ArrayBufferView, xOffset: number, yOffset: number, width: number, height: number) => void;
+        /**
+         * Whether the engine can back the data atlas with render targets (WebGL, WebGPU, and Native with MRT support; not NullEngine).
+         * @returns true when render-target atlases can be created
+         */
+        protected _supportsRenderTargetAtlas(): boolean;
         protected _getTextureDataUpdateEngine(): ITextureDataUpdateCapableEngine;
         protected _updateShTextureData(texture: BaseTexture, shData: Uint8Array, textureWidth: number, lineStart: number, lineCount: number): void;
         protected _updateSubTextures(centers: Float32Array, covA: Uint16Array, covB: Uint16Array, colors: Uint8Array, lineStart: number, lineCount: number, sh?: Uint8Array[]): void;
@@ -72781,6 +72960,7 @@ declare namespace BABYLON {
         protected _instantiateWorker(): void;
         protected _getGpuSortPartIndicesTexture(): Nullable<BaseTexture>;
         protected _getGpuSortPartMatrices(): Nullable<ReadonlyArray<Matrix>>;
+        protected _getSortPartIndices(): Nullable<Uint8Array>;
         /**
          * Ensures the part-index GPU texture exists at the start of an incremental update.
          * Called before the sub-texture upload so the correct texture is available for the first batch.
@@ -79057,6 +79237,7 @@ declare namespace BABYLON {
          * Slerp between two vectors. See also `SmoothToRef`
          * Slerp is a spherical linear interpolation
          * giving a slow in and out effect
+         * Exactly opposite vectors have no unique rotation plane, so they rotate around an arbitrary axis perpendicular to `vector0`
          * Example Playground 1 https://playground.babylonjs.com/#R1F8YU#108
          * Example Playground 2 https://playground.babylonjs.com/#R1F8YU#109
          * @param vector0 Start vector
@@ -79513,9 +79694,10 @@ declare namespace BABYLON {
          * @param view defines the view matrix to use
          * @param projection defines the projection matrix to use
          * @param result defines the Vector3 where to store the result
+         * @param halfZRange whether the projection uses [0, 1] NDC depth (defaults to the last created engine's range)
          * @returns result input
          */
-        static UnprojectFloatsToRef<T extends Vector3>(sourceX: float, sourceY: float, sourceZ: float, viewportWidth: number, viewportHeight: number, world: DeepImmutable<Matrix>, view: DeepImmutable<Matrix>, projection: DeepImmutable<Matrix>, result: T): T;
+        static UnprojectFloatsToRef<T extends Vector3>(sourceX: float, sourceY: float, sourceZ: float, viewportWidth: number, viewportHeight: number, world: DeepImmutable<Matrix>, view: DeepImmutable<Matrix>, projection: DeepImmutable<Matrix>, result: T, halfZRange?: boolean): T;
         /**
          * Gets the minimal coordinate values between two Vector3
          * Example Playground https://playground.babylonjs.com/#R1F8YU#97
@@ -80631,6 +80813,13 @@ declare namespace BABYLON {
          * @see https://doc.babylonjs.com/features/featuresDeepDive/mesh/transforms/center_origin/rotation_conventions
          */
         toEulerAnglesToRef<T extends Vector3>(result: T): T;
+        /**
+         * @internal
+         * Same as toEulerAnglesToRef. With legacyPoles, every pitch whose sine is within 1e-7 of +-1 is treated as
+         * exactly +-90 degrees (roll forced to 0), which callers that keep only some of the axes rely on to avoid a
+         * 180 degree flip when the rotation crosses the vertical.
+         */
+        _toEulerAnglesToRef<T extends Vector3>(result: T, legacyPoles: boolean): T;
         /**
          * Sets the given vector3 "result" with the Alpha, Beta, Gamma Euler angles translated from the current quaternion
          * @param result defines the vector which will be filled with the Euler angles
@@ -83921,17 +84110,19 @@ declare namespace BABYLON {
         /**
          * Gets the planes representing the frustum
          * @param transform matrix to be applied to the returned planes
+         * @param halfZRange whether the transform uses an NDC depth range of [0, 1] (default: false)
          * @returns a new array of 6 Frustum planes computed by the given transformation matrix.
          */
-        static GetPlanes(transform: DeepImmutable<Matrix>): Plane[];
+        static GetPlanes(transform: DeepImmutable<Matrix>, halfZRange?: boolean): Plane[];
         /**
-         * Gets the near frustum plane transformed by the transform matrix
+         * Gets the frustum plane for the lower clip-space Z bound, which is the near plane in standard Z and the far plane in reversed Z.
          * @param transform transformation matrix to be applied to the resulting frustum plane
          * @param frustumPlane the resulting frustum plane
+         * @param halfZRange whether the transform uses an NDC depth range of [0, 1] (default: false)
          */
-        static GetNearPlaneToRef(transform: DeepImmutable<Matrix>, frustumPlane: Plane): void;
+        static GetNearPlaneToRef(transform: DeepImmutable<Matrix>, frustumPlane: Plane, halfZRange?: boolean): void;
         /**
-         * Gets the far frustum plane transformed by the transform matrix
+         * Gets the frustum plane for the upper clip-space Z bound, which is the far plane in standard Z and the near plane in reversed Z.
          * @param transform transformation matrix to be applied to the resulting frustum plane
          * @param frustumPlane the resulting frustum plane
          */
@@ -83964,8 +84155,9 @@ declare namespace BABYLON {
          * Sets the given array "frustumPlanes" with the 6 Frustum planes computed by the given transformation matrix.
          * @param transform transformation matrix to be applied to the resulting frustum planes
          * @param frustumPlanes the resulting frustum planes
+         * @param halfZRange whether the transform uses an NDC depth range of [0, 1] (default: false)
          */
-        static GetPlanesToRef(transform: DeepImmutable<Matrix>, frustumPlanes: Plane[]): void;
+        static GetPlanesToRef(transform: DeepImmutable<Matrix>, frustumPlanes: Plane[], halfZRange?: boolean): void;
         /**
          * Tests if a point is located between the frustum planes.
          * @param point defines the point to test
@@ -84360,7 +84552,8 @@ declare namespace BABYLON {
          */
         setAll(v: number): this;
         /**
-         * Compute the Color3 hexadecimal code as a string
+         * Compute the Color3 hexadecimal code as a string.
+         * Components outside of the [0, 1] range (HDR colors for instance) are clamped.
          * @returns a string containing the hexadecimal representation of the Color3 object
          */
         toHexString(): string;
@@ -84410,7 +84603,7 @@ declare namespace BABYLON {
         private static _BlackReadOnly;
         /**
          * Converts Hue, saturation and value to a Color3 (RGB)
-         * @param hue defines the hue (value between 0 and 360)
+         * @param hue defines the hue in degrees; any value is accepted and wrapped modulo 360 (e.g. 480 and 120 produce the same color)
          * @param saturation defines the saturation (value between 0 and 1)
          * @param value defines the value (value between 0 and 1)
          * @param result defines the Color3 where to store the RGB values
@@ -84419,7 +84612,7 @@ declare namespace BABYLON {
         static HSVtoRGBToRef<T extends IColor3Like>(hue: number, saturation: number, value: number, result: T): T;
         /**
          * Converts Hue, saturation and value to a new Color3 (RGB)
-         * @param hue defines the hue (value between 0 and 360)
+         * @param hue defines the hue in degrees; any value is accepted and wrapped modulo 360 (e.g. 480 and 120 produce the same color)
          * @param saturation defines the saturation (value between 0 and 1)
          * @param value defines the value (value between 0 and 1)
          * @returns a new Color3 object
@@ -84919,7 +85112,8 @@ declare namespace BABYLON {
          */
         setAll(v: number): this;
         /**
-         * Compute the Color4 hexadecimal code as a string
+         * Compute the Color4 hexadecimal code as a string.
+         * Components outside of the [0, 1] range (HDR colors for instance) are clamped.
          * @param returnAsColor3 defines if the string should only contains RGB values (off by default)
          * @returns a string containing the hexadecimal representation of the Color4 object
          */
@@ -85738,6 +85932,43 @@ declare namespace BABYLON {
          * @internal
          */
         _releaseOwnerSlot(owner: WebGPUDrawContext): void;
+        /**
+         * Whether the slots owned by two draw contexts hold the same bytes (see WebGPUEngine._hasSameDrawValues). Two slots flushed
+         * with the same data generation do; otherwise their CPU copies are compared, and a slot found equal takes the generation of
+         * the other one (the data generation changes on every change, also when the data comes back to what it was)
+         * @param owner the draw context
+         * @param reference the draw context it is compared to
+         * @returns true if the slots hold the same bytes
+         * @internal
+         */
+        _isOwnerSlotEqual(owner: WebGPUDrawContext, reference: WebGPUDrawContext): boolean;
+        /**
+         * Marks the slot owned by a draw context as used in the current frame, as a flush does: a draw encoded again from its recorded
+         * commands references it
+         * @param owner the draw context
+         * @internal
+         */
+        _markOwnerSlotUsed(owner: WebGPUDrawContext): void;
+        /**
+         * Whether the last flush on behalf of a draw context used the slot it owns (and not a slot taken for a second flush in the frame)
+         * @param owner the draw context
+         * @returns true if the owned slot is bound
+         * @internal
+         */
+        _isOwnerSlotBound(owner: WebGPUDrawContext): boolean;
+        /**
+         * Whether the buffer bound last is the first one of the frame: a draw recorded with a later one depends on the order of the
+         * frame's writes
+         * @returns true if it is the first buffer
+         * @internal
+         */
+        _isFirstBufferBound(): boolean;
+        /**
+         * Marks the buffer bound now as used in the current frame, as an update does: a draw encoded again from its recorded commands binds
+         * it without updating it, and the first write of a frame would otherwise go to that buffer, under the draw, instead of a new one
+         * @internal
+         */
+        _markBufferUsed(): void;
         private _removeOwnerBacklink;
         private _createNewBuffer;
         private _checkNewFrame;
@@ -86460,7 +86691,7 @@ declare namespace BABYLON {
         /**
          * Makes a duplicate of the material, and gives it a new name
          * @param name defines the new name for the duplicated material
-         * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g diffuse and opacity), only clone it once and reuse it on the other channels. Default false.
+         * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g diffuse and opacity), only clone it once and reuse it on the other channels. Default true.
          * @param rootUrl defines the root URL to use to load textures
          * @returns the cloned material
          */
@@ -86581,6 +86812,7 @@ declare namespace BABYLON {
          * So, if the variable holding the world position in your vertex shader is not named worldPos, you must tell the system
          * the name to use instead by using: ["worldPos", "myWorldPosVar"] assuming the variable is named myWorldPosVar in your code.
          * If the normal must also be remapped: ["worldPos", "myWorldPosVar", "vNormalW", "myWorldNormal"]
+         * WGSL shaders declaring a vNormalW varying default to vertexOutputs.vNormalW unless a vNormalW variable exists or is explicitly remapped.
          */
         remappedVariables?: string[];
         /** Set standalone to true if the base material wrapped by ShadowDepthMaterial is not used for a regular object but for depth shadow generation only */
@@ -86803,6 +87035,12 @@ declare namespace BABYLON {
          * Mainly use in serialization.
          * @returns the class name
          */
+        /**
+         * @internal Its setters only change dictionaries: a draw binding custom buffers or textures that the engine does not check
+         * (getActiveTextures) is not encoded again from its recorded commands
+         * @returns true if the recorded draws can be encoded again
+         */
+        _canReplayRecordedDraw(): boolean;
         getClassName(): string;
         /**
          * Specifies if the material will require alpha blending
@@ -87841,6 +88079,11 @@ declare namespace BABYLON {
         /** @internal */
         _plugins: MaterialPluginBase[];
         protected _activePlugins: MaterialPluginBase[];
+        /**
+         * @internal Whether an active plugin binds what can change on each draw: one that binds on extra events (hard bind), or one that does
+         * not it binds only values of its material and the scene (see MaterialPluginBase._bindsMaterialValuesOnly)
+         */
+        get _bindsOnEachDraw(): boolean;
         protected _activePluginsForExtraEvents: MaterialPluginBase[];
         protected _codeInjectionPoints: {
             [shaderType: string]: {
@@ -88081,6 +88324,13 @@ declare namespace BABYLON {
          * Indicates that this plugin should be notified for the extra events (HasRenderTargetTextures / FillRenderTargetTextures / HardBindForSubMesh)
          */
         registerForExtraEvents: boolean;
+        /**
+         * @internal Whether the plugin binds only what is the same for every draw of its material with the same effect: the values of its
+         * material, of the scene and of the defines of the sub mesh, never of the mesh or the sub mesh. A draw a snapshot recorded is encoded
+         * again without binding only when every active plugin of its material does (see Material._canReplayRecordedDraw): the built-in
+         * plugins that do set it
+         */
+        _bindsMaterialValuesOnly: boolean;
         /**
          * Specifies if the material plugin should be serialized, `true` to skip serialization
          */
@@ -88463,6 +88713,15 @@ declare namespace BABYLON {
          * @param defines The defines to update according to the geometry rendering configuration.
          */
         static PrepareDefines(renderPassId: number, mesh: AbstractMesh, defines: MaterialDefines): void;
+        /**
+         * @internal What a full bind of a mesh writes from the geometry rendering of a render pass besides its matrices, packed in a number:
+         * the culling it reverses, the object ID and the mesh-blending tag (see Bind). Their setters and providers invalidate nothing, so a
+         * draw recorded by a snapshot is compared to them
+         * @param renderPassId the render pass of the draw
+         * @param mesh the mesh of the draw
+         * @returns the state, 0 without geometry rendering in the pass
+         */
+        static _GetRecordedDrawState(renderPassId: number, mesh: AbstractMesh): number;
         /**
          * Binds geometry rendering data for a mesh.
          * @param renderPassId The render pass id the geometry rendering data is bound for.
@@ -89976,6 +90235,79 @@ declare namespace BABYLON {
          */
         private _scene;
         protected _needToBindSceneUbo: boolean;
+        /** @internal Changes when what the material binds may have changed (see DrawWrapper._recordedMaterialVersion) */
+        _drawCacheVersion: number;
+        private _texturesVersion;
+        private _recordedDrawReferences;
+        /**
+         * @internal Keeps the draw a full bind of this material did with an effect in this frame: the draws of this material recorded with
+         * the same per-draw values as that draw can be encoded again without binding. Without a domain (the main passes), it is kept for
+         * the current pass and view, those of the scene uniform buffer bound (an object renderer binds its own, for each of its passes):
+         * the per-draw values a material computes from them (from the camera's, say) are the same only for the draws that bind the same
+         * one. A domain's draws share it between its passes and views: the cascades of a shadow map only differ by the scene uniform
+         * buffer each one binds, and the per-draw values are the generator's
+         * @param effect the effect of the draw
+         * @param drawWrapper the draw wrapper of the draw, or null if its per-draw values cannot be compared
+         * @param domain what else wrote its per-draw values (a shadow generator its bias), or null
+         */
+        _keepRecordedDrawReference(effect: object, drawWrapper: Nullable<DrawWrapper>, domain?: Nullable<object>): void;
+        /**
+         * @internal Drops the draws kept by _keepRecordedDrawReference: a draw of the material that is not recorded runs code around it (the
+         * observers of its mesh, say), which can change the material after them, so the draws after it need a full draw to compare with
+         */
+        _dropRecordedDrawReferences(): void;
+        /**
+         * @internal Gets the draw kept by _keepRecordedDrawReference for an effect in this frame, in the current pass and view when it has
+         * no domain
+         * @param effect the effect of the draw
+         * @param domain what else wrote its per-draw values, or null
+         * @returns the draw wrapper, or null if no full bind of this material with this effect and domain was kept in this frame (without
+         * a domain, in the pass and view of the scene uniform buffer bound)
+         */
+        _getRecordedDrawReference(effect: object, domain?: Nullable<object>): Nullable<DrawWrapper>;
+        private _texturesVersionFrameId;
+        private _texturesVersionDrawCacheVersion;
+        private _texturesVersionTextures;
+        private _texturesVersionInternals;
+        private _texturesVersionSamplers;
+        private static _GetSamplerKey;
+        /**
+         * @internal Changes when a texture of the material uses another GPU texture or sampler without dirtying the material (a streamed
+         * texture swapping its internal texture, a wrap mode set). The textures are listed once per frame and when the material is dirtied (a
+         * texture set), their internal textures and samplers compared on each call: one can change between two passes of a frame (see
+         * DrawWrapper._recordedTexturesVersion)
+         * @returns the version
+         */
+        _getTexturesVersion(): number;
+        /**
+         * @internal Whether a full bind of the material runs code that is not the material's own: its bind observers, an active plugin
+         * that does not it binds only the values of its material (see MaterialPluginManager._bindsOnEachDraw), and for a node
+         * material a block or a value callback of the user. Such a draw is not encoded again, and the code can change any material
+         * @returns true if a full bind runs such code
+         */
+        _runsCodeOnBind(): boolean;
+        /**
+         * @internal Notifies the observers that an effect was created for a sub mesh, and ends the epoch of the references of the frame:
+         * an observer runs code of the user in the middle of a frame, where the defines of a material are dirty (another material's,
+         * say), and it can change any material in place, so no reference kept before it stands for the draws after it (see
+         * _getRecordedDrawReference). Without observers it does nothing. Each notification has its own object: an observer can compile
+         * another material, whose own notification would otherwise overwrite what the next observer of this one reads
+         * @param effect the effect created
+         * @param subMesh the sub mesh it was created for
+         */
+        _notifyEffectCreated(effect: Effect, subMesh: Nullable<SubMesh>): void;
+        /**
+         * @internal Whether a draw a snapshot recorded with this material can be encoded again without binding it: only WGSL (its values
+         * are in the effect's leftover uniform buffer, which the engine checks), and not when binding or unbinding it runs code that can
+         * change on each draw (bind and unbind observers, plugins binding on each draw) or sets states outside of the pipeline (stencil,
+         * two passes)
+         */
+        _canReplayRecordedDraw(): boolean;
+        /**
+         * @internal The plain fields the material applies to the pipeline state when it binds, packed in a number: changing them does not
+         * mark the material dirty, so a recorded draw compares them (with zOffset and zOffsetUnits) before it is encoded again
+         */
+        _getPipelineStateKey(): number;
         /**
          * Stores the fill mode state
          */
@@ -90175,6 +90507,13 @@ declare namespace BABYLON {
          * @internal
          */
         _preBind(effect?: Effect | DrawWrapper, overrideOrientation?: Nullable<number>): boolean;
+        /**
+         * @internal Sets the states a draw of the material sets in the engine before it binds (see _preBind): the culling, the depth offset
+         * and the stencil. A draw a snapshot encodes again without binding sets them too, as its full draw did: its render pass reads the
+         * stencil reference at the draw, and the draws after it inherit them
+         * @param reverse whether the culling is reversed
+         */
+        _setStates(reverse: boolean): void;
         /**
          * Binds the material to the mesh
          * @param world defines the world transformation matrix
@@ -91914,6 +92253,7 @@ declare namespace BABYLON {
         private _transformFeedbackVaryings;
         private _shaderLanguage;
         private _disableParallelShaderCompilation;
+        private readonly _useReverseDepthBuffer;
         /**
          * Compiled shader to webGL program.
          * @internal
@@ -92621,6 +92961,59 @@ declare namespace BABYLON {
          * Specifies if the effect was previously using instances
          */
         _wasPreviouslyUsingInstances: Nullable<boolean>;
+        /** @internal What the draw last recorded by a snapshot was rendered with: the draw is encoded again while they did not change */
+        _recordedMaterial: Nullable<object>;
+        /** @internal */
+        _recordedMaterialVersion: number;
+        /** @internal */
+        _recordedTexturesVersion: number;
+        /** @internal */
+        _recordedWorldFlag: number;
+        /** @internal */
+        _recordedVisibility: number;
+        /** @internal */
+        _recordedStart: number;
+        /** @internal */
+        _recordedCount: number;
+        /** @internal The vertex range, which unindexed and point draws use */
+        _recordedVerticesStart: number;
+        /** @internal */
+        _recordedVerticesCount: number;
+        /** @internal The plain fields its material applies to the pipeline state when it binds (Material._getPipelineStateKey) */
+        _recordedMaterialState: number;
+        /** @internal */
+        _recordedZOffset: number;
+        /** @internal */
+        _recordedZOffsetUnits: number;
+        /** @internal The states the draw inherited from the engine (see AbstractEngine._keepInheritedState) */
+        _recordedEngineState: Nullable<number[]>;
+        /**
+         * @internal What its domain and its render pass set in its full draws: the culling a shadow generator forces and the texture of its
+         * alpha test, and the culling, object ID and mesh-blending tag the geometry rendering of the pass writes
+         */
+        _recordedDomainState: number;
+        /** @internal The effective fill mode (Mesh._getRenderingFillMode), which sets the topology and the index buffer of a wireframe */
+        _recordedFillMode: number;
+        /** @internal The effective side orientation, which _preBind turns into the culling and front face state */
+        _recordedOrientation: number;
+        /** @internal Whether its full draw reversed the culling (Material._preBind): a draw encoded again sets the same states */
+        _recordedReverse: boolean;
+        /** @internal The index buffer the draw uses, null for an unindexed mesh */
+        _recordedIndexBuffer: Nullable<object>;
+        /**
+         * @internal The scene uniform buffer bound by the recorded bind groups: a scene rendered more than once in a frame (a render target
+         * of two active cameras) takes another one for each render, on the same draw contexts
+         */
+        _recordedSceneUbo: Nullable<object>;
+        /**
+         * @internal The vertex buffers of the geometry and of the thin instances, each with the GPU buffer it binds, where it is read and
+         * its hash code (the vertex layout of the pipeline)
+         */
+        _recordedVertexBuffers: Nullable<Array<Nullable<object> | number>>;
+        /** @internal */
+        _recordedInstances: number;
+        /** @internal The shadow map and the buffer the generator binds to receivers, for each light the draw was recorded with: they are in its bind groups */
+        _recordedLights: Nullable<Array<Nullable<object>>>;
         /**
          * Retrieves the effect from a DrawWrapper or Effect instance.
          * @param effect The effect or DrawWrapper instance to retrieve the effect from.
@@ -94606,6 +94999,7 @@ declare namespace BABYLON {
         /** @internal */
         _useSRGBBuffer?: boolean;
         private _forcedExtension?;
+        private _nameRoot?;
         /** Returns the texture mime type if it was defined by a loader (undefined else) */
         get mimeType(): string | undefined;
         /**
@@ -94651,6 +95045,40 @@ declare namespace BABYLON {
          * @param forcedExtension defines the extension to use to pick the right loader
          */
         updateURL(url: string, buffer?: Nullable<string | ArrayBuffer | ArrayBufferView | HTMLImageElement | Blob | ImageBitmap>, onLoad?: () => void, forcedExtension?: string): void;
+        private _onImageReplacedObservable;
+        /**
+         * Notified when replaceImage gives this texture another image. What was generated from the previous image (the IBL CDF maps)
+         * listens to it, since a replacement does not load anything and so does not notify onLoadObservable
+         * @internal
+         */
+        get _onImageReplaced(): Observable<Texture>;
+        /**
+         * Replaces the image of this texture with the image of another texture, already loaded, without loading it again. This texture shows
+         * the source's image from the next frame on and keeps its own settings for the materials (UV transform, coordinatesIndex, alpha and
+         * wrapping); it takes the source's loading description (url or buffer, mipmaps, sampling mode, format, sRGB buffer, loader options),
+         * so serializing it and loading it again gives the image it shows. Both textures then share the source's GPU texture, which stays alive
+         * until both are disposed.
+         * Texture.Parse loads from rootUrl + name: a name that followed the url the image was loaded from follows the source's url, relative to
+         * the same root (going up from it for a source outside it, when both urls are relative to the page), or the source's full url for an
+         * absolute or data url. The texture keeps that root for its next replacements, and gives it to its clones. A name of its own is kept: as
+         * for any texture, Texture.Parse then loads from that name.
+         * The materials that use this texture, frozen ones included, compute their defines again when something they turn into defines
+         * changes (gamma space, RGBD encoding, linear specular LOD, irradiance texture); for the scene's environment texture, every material
+         * of the scene, since materials read it without having it. What they only write into uniforms or bind (size, LOD generation, LOD
+         * textures) reaches the frozen ones only: the others write it at their next bind, so replacing an image with the same image at
+         * another size, as streaming does, marks no material that is not frozen. With snapshot rendering, the snapshot is recorded again
+         * when the image or the defines change. As with the gammaSpace setter, the node material post-processes and procedural textures,
+         * which keep their own defines, follow a change of gamma space once they are built again. The IBL CDF maps generated from this texture
+         * (IBL shadows) are generated again from the new image.
+         * @param source the loaded texture whose image this texture takes
+         * @returns true when this texture shows the source's image (replacing a texture with itself included); false when the image cannot be
+         * taken, both textures then left unchanged: one of them is not a plain Texture (render target, procedural, raw, dynamic and video
+         * textures manage their image, also a video texture showing its poster or a procedural texture its fallback), the image of one of
+         * them is not a 2D image loaded from a url or a buffer and ready, they belong to different engines, the source
+         * has no loading description (neither url nor buffer), or their effective orientations differ (invertY, and whether loading inverted
+         * the V scale)
+         */
+        replaceImage(source: Texture): boolean;
         /**
          * Finish the loading sequence of a texture flagged as delayed load.
          * @internal
@@ -95386,7 +95814,10 @@ declare namespace BABYLON {
         samplingMode?: number;
         /** Defines the texture type (Constants.TEXTURETYPE_UNSIGNED_BYTE by default) */
         textureType?: number;
-        /** Options forwarded to createImageBitmap when decoding each url */
+        /**
+         * Options forwarded to createImageBitmap when decoding each url. Babylon Native decodes images as stored: it rejects
+         * imageOrientation "flipY", premultiplyAlpha "premultiply" and resize options, and ignores the other options.
+         */
         imageBitmapOptions?: ImageBitmapOptions;
     }
     /**
@@ -99372,9 +99803,11 @@ declare namespace BABYLON {
      * The element is hosted as a drawable child of the engine's rendering canvas (marked `content="drawable"`,
      * or `layoutsubtree` on older implementations) so the browser can lay it out and snapshot it.
      * Content is uploaded through `WebGLRenderingContext.texElementSubImage2D` (WebGL) or
-     * `GPUQueue.drawElementImageToTexture` (WebGPU), with support for older browsers and the three-html-render
-     * polyfill (https://github.com/repalash/three-html-render). When neither is present, a built-in SVG
-     * `<foreignObject>` fallback is used instead (see `useSvgFallback`).
+     * `GPUQueue.drawElementImageToTexture` (WebGPU), with support for older browsers. In browsers without native
+     * support, import an HTML-in-Canvas polyfill such as `@underglass/html-in-canvas-polyfill` before creating
+     * the engine. The deprecated `three-html-render` polyfill installed through `InstallHtmlInCanvasPolyfill` is
+     * still supported. When neither is present, a built-in SVG `<foreignObject>` fallback is used instead
+     * (see `useSvgFallback`).
      *
      * As with {@link HtmlElementTexture}, updates are not automatic unless `autoUpdate` is enabled; in
      * that case the texture refreshes whenever the host canvas reports a paint change.
@@ -99616,6 +100049,8 @@ declare namespace BABYLON {
     /** This module has no top-level side effects: it only declares the optional HTML-in-Canvas polyfill installer */
     /**
      * Shape of the `three-html-render` polyfill module (only the parts this wrapper uses).
+     * @deprecated {@link InstallHtmlInCanvasPolyfill} is deprecated. Import an up-to-date polyfill, such as
+     * `@underglass/html-in-canvas-polyfill`, directly instead.
      */
     export interface IHtmlInCanvasPolyfillModule {
         /** Installs the WICG HTML-in-Canvas polyfill onto the relevant DOM prototypes. */
@@ -99627,6 +100062,8 @@ declare namespace BABYLON {
     }
     /**
      * Options for {@link InstallHtmlInCanvasPolyfill}.
+     * @deprecated {@link InstallHtmlInCanvasPolyfill} is deprecated. Import an up-to-date polyfill, such as
+     * `@underglass/html-in-canvas-polyfill`, directly instead.
      */
     export interface IInstallHtmlInCanvasPolyfillOptions {
         /** Install the polyfill even when the browser already supports the API natively (default false). */
@@ -99655,10 +100092,16 @@ declare namespace BABYLON {
      * flag is present.
      * @param options optional installation configuration
      * @returns a promise that resolves to true when the polyfill was installed, false otherwise
+     * @deprecated `three-html-render` implements an outdated version of the HTML-in-Canvas proposal, and polyfills
+     * installed through this function make `HtmlTexture` use legacy APIs. Import an up-to-date polyfill
+     * directly instead, before creating the engine, for example `import "@underglass/html-in-canvas-polyfill/auto";`.
+     * `HtmlTexture` and the interaction managers detect such a polyfill like a native implementation.
      */
     export function InstallHtmlInCanvasPolyfill(options?: IInstallHtmlInCanvasPolyfillOptions): Promise<boolean>;
     /**
      * Removes a polyfill previously installed by {@link InstallHtmlInCanvasPolyfill}.
+     * @deprecated {@link InstallHtmlInCanvasPolyfill} is deprecated. Polyfills imported directly provide their own
+     * removal API, such as `uninstall()` from `@underglass/html-in-canvas-polyfill`.
      */
     export function UninstallHtmlInCanvasPolyfill(): void;
 
@@ -100844,7 +101287,7 @@ declare namespace BABYLON {
         /**
          * Makes a duplicate of the current material.
          * @param name - name to use for the new material.
-         * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g diffuse and opacity), only clone it once and reuse it on the other channels. Default false.
+         * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g diffuse and opacity), only clone it once and reuse it on the other channels. Default true.
          * @param rootUrl defines the root URL to use to load textures
          * @returns cloned material instance
          */
@@ -103832,7 +104275,7 @@ declare namespace BABYLON {
         /**
          * Makes a duplicate of the current material.
          * @param name - name to use for the new material.
-         * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g baseColor and opacity), only clone it once and reuse it on the other channels. Default false.
+         * @param cloneTexturesOnlyOnce - if a texture is used in more than one channel (e.g baseColor and opacity), only clone it once and reuse it on the other channels. Default true.
          * @param rootUrl defines the root URL to use to load textures
          * @returns cloned material instance
          */
@@ -104357,6 +104800,13 @@ declare namespace BABYLON {
         _samplerLODFunc(): "textureSampleLevel" | "texture2DLodEXT";
         _toLinearSpace(output: NodeMaterialConnectionPoint): string;
         /**
+         * @internal The conversion of an output to gamma space. WGSL has no overloads: its helper functions convert a vec4 (toGammaSpace)
+         * and a vec3 (toGammaSpaceVec3), and a float is converted as a vec3, with the same exact or approximate conversion
+         * @param output the output to convert
+         * @returns the expression of the converted output
+         */
+        _toGammaSpace(output: NodeMaterialConnectionPoint): string;
+        /**
          * @internal
          */
         _generateTextureSample(uv: string, samplerName: string): string;
@@ -104756,6 +105206,12 @@ declare namespace BABYLON {
          * @param state defines the state that will be used for the build
          */
         initialize(state: NodeMaterialBuildState): void;
+        /**
+         * @internal Whether bind writes only values a recorded draw checks: those of the material and of the scene, and of the mesh its
+         * world matrix and its lights. A node material encodes again a draw only when the class that defines the bind of each of its
+         * bindable blocks declares it (see NodeMaterial._runsCodeOnBind): a bind of the user does not. This bind writes nothing
+         */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect. Will only be called for blocks with isBindable === true
          * @param effect defines the effect to bind data to
@@ -105453,6 +105909,14 @@ declare namespace BABYLON {
          * @param world defines the world transformation matrix
          */
         bindOnlyWorldMatrix(world: Matrix): void;
+        /**
+         * @internal A full bind of a node material also runs code that is not the material's own when what defines the bind of one of its
+         * bindable blocks does not that it writes only values a recorded draw checks (see NodeMaterialBlock._bindsMaterialValuesOnly:
+         * a block of the user, a bind it overrides, or a bind of the block's own), or when an input block has a value callback
+         * @returns true if a full bind runs such code
+         */
+        _runsCodeOnBind(): boolean;
+        private static _BindsMaterialValuesOnly;
         /**
          * Binds the submesh to this material by preparing the effect and shader to draw
          * @param world defines the world transformation matrix
@@ -106440,6 +106904,8 @@ declare namespace BABYLON {
          * @returns true if the block is ready
          */
         isReady(): boolean;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind the block
          * @param effect - the effect to bind
@@ -109471,6 +109937,8 @@ declare namespace BABYLON {
          * @param mesh - the mesh
          */
         prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -109557,6 +110025,8 @@ declare namespace BABYLON {
          * Gets the shadow depth range component
          */
         get shadowDepthRange(): NodeMaterialConnectionPoint;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -109729,6 +110199,8 @@ declare namespace BABYLON {
          * @param mesh - the mesh
          */
         provideFallbacks(fallbacks: EffectFallbacks, mesh?: AbstractMesh): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -110409,6 +110881,8 @@ declare namespace BABYLON {
          * @returns true if ready
          */
         isReady(): boolean;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -110554,6 +111028,8 @@ declare namespace BABYLON {
          * @param defines - the list of defines to update
          */
         prepareDefines(defines: NodeMaterialDefines): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind data to
@@ -110908,6 +111384,11 @@ declare namespace BABYLON {
          */
         isReady(mesh: AbstractMesh, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines): boolean;
         /**
+         * @internal See NodeMaterialBlock._bindsMaterialValuesOnly: not with an explicit light, whose buffers a recorded draw does not check
+         * (only the lights of its mesh)
+         */
+        get _bindsMaterialValuesOnly(): boolean;
+        /**
          * Bind data to effect
          * @param effect - the effect to bind data to
          * @param nodeMaterial - the node material
@@ -111111,6 +111592,8 @@ declare namespace BABYLON {
          * @param defines - the list of defines to update
          */
         prepareDefines(defines: NodeMaterialDefines): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind data to
@@ -111233,6 +111716,8 @@ declare namespace BABYLON {
          * @param defines - the list of defines to update
          */
         prepareDefines(defines: NodeMaterialDefines): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind data to
@@ -111340,6 +111825,8 @@ declare namespace BABYLON {
          */
         getClassName(): string;
         protected _buildBlock(state: NodeMaterialBuildState): this | undefined;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - defines the effect to bind data to
@@ -111594,6 +112081,8 @@ declare namespace BABYLON {
          */
         initialize(state: NodeMaterialBuildState): void;
         private _initShaderSourceAsync;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly: the splat data of the mesh, which it binds, is not checked */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - defines the effect to bind data to
@@ -111988,6 +112477,8 @@ declare namespace BABYLON {
          * Gets the y component
          */
         get y(): NodeMaterialConnectionPoint;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - defines the effect to bind data to
@@ -112176,6 +112667,8 @@ declare namespace BABYLON {
          * @param nodeMaterial - defines the node material requesting the update
          */
         prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - defines the effect to bind data to
@@ -112270,6 +112763,8 @@ declare namespace BABYLON {
          * @param nodeMaterial - the node material
          */
         prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -112494,6 +112989,8 @@ declare namespace BABYLON {
          * @param nodeMaterial - the node material
          */
         prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -112753,6 +113250,8 @@ declare namespace BABYLON {
          * Gets the occlusion output
          */
         get occlusion(): NodeMaterialConnectionPoint;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -112871,6 +113370,7 @@ declare namespace BABYLON {
         private _defineName;
         private _linearDefineName;
         private _gammaDefineName;
+        private _conversionDefinesData;
         private _tempTextureRead;
         private _samplerName;
         private _transformedUVName;
@@ -113007,6 +113507,8 @@ declare namespace BABYLON {
          * @returns true if ready
          */
         isReady(): boolean;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -113179,6 +113681,8 @@ declare namespace BABYLON {
         /** {@inheritDoc} */
         get target(): NodeMaterialBlockTargets.Fragment | NodeMaterialBlockTargets.VertexAndFragment;
         private _getTexture;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -113415,6 +113919,8 @@ declare namespace BABYLON {
          * @returns true if ready
          */
         isReady(): boolean;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -113594,6 +114100,11 @@ declare namespace BABYLON {
          */
         updateUniformsAndSamples(state: NodeMaterialBuildState, nodeMaterial: NodeMaterial, defines: NodeMaterialDefines, uniformBuffers: string[]): void;
         /**
+         * @internal See NodeMaterialBlock._bindsMaterialValuesOnly: not with an explicit light, whose buffers a recorded draw does not check
+         * (only the lights of its mesh)
+         */
+        get _bindsMaterialValuesOnly(): boolean;
+        /**
          * Bind data to effect
          * @param effect - the effect to bind to
          * @param nodeMaterial - the node material
@@ -113655,6 +114166,8 @@ declare namespace BABYLON {
          * @param name defines the block name
          */
         constructor(name: string);
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -113765,6 +114278,8 @@ declare namespace BABYLON {
          * @param mesh - the mesh to prepare for
          */
         prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -113802,6 +114317,8 @@ declare namespace BABYLON {
          */
         get texture(): Nullable<Texture>;
         set texture(texture: Nullable<Texture>);
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -113990,6 +114507,8 @@ declare namespace BABYLON {
          * @param mesh - the mesh to prepare for
          */
         prepareDefines(defines: NodeMaterialDefines, nodeMaterial: NodeMaterial, mesh?: AbstractMesh): void;
+        /** @internal See NodeMaterialBlock._bindsMaterialValuesOnly */
+        get _bindsMaterialValuesOnly(): boolean;
         /**
          * Bind data to effect
          * @param effect - the effect to bind to
@@ -118760,6 +119279,11 @@ declare namespace BABYLON {
          */
         bindShadowLight(lightIndex: string, effect: Effect): void;
         /**
+         * @internal The uniform buffer of the generator that a receiver bound now gets (the cascades of the camera, or of the eye in
+         * floating origin mode), if any: a draw recorded by a snapshot with another one is bound again
+         */
+        _getReceiversUniformBuffer?(): Nullable<UniformBuffer>;
+        /**
          * Gets the transformation matrix used to project the meshes into the map from the light point of view.
          * (eq to shadow projection matrix * light transform matrix)
          * @returns The transform matrix used to create the shadow map
@@ -118988,6 +119512,8 @@ declare namespace BABYLON {
          * This can override the scale stored on the light.
          */
         set depthScale(value: number);
+        private _recordedDrawsDomain;
+        private _getRecordedDrawsDomain;
         protected _validateFilter(filter: number): number;
         protected _filter: number;
         /**
@@ -119272,6 +119798,7 @@ declare namespace BABYLON {
         protected _initializeBlurRTTAndPostProcesses(): void;
         protected _renderForShadowMap(opaqueSubMeshes: SmartArray<SubMesh>, alphaTestSubMeshes: SmartArray<SubMesh>, transparentSubMeshes: SmartArray<SubMesh>, depthOnlySubMeshes: SmartArray<SubMesh>): void;
         protected _bindCustomEffectForRenderSubMeshForShadowMap(subMesh: SubMesh, effect: Effect, mesh: AbstractMesh): void;
+        private _runsCodeOnShadowMapRender;
         protected _renderSubMeshForShadowMap(subMesh: SubMesh, isTransparent?: boolean): void;
         protected _applyFilterValues(): void;
         /**
@@ -119618,6 +120145,8 @@ declare namespace BABYLON {
          * @param effect The effect we are binfing the information for
          */
         bindShadowLight(lightIndex: string, effect: Effect): void;
+        /** @internal */
+        _getReceiversUniformBuffer(): Nullable<UniformBuffer>;
         private _computePCSSCorrections;
         /**
          * Writes the cascades just computed in the buffer of the camera they were computed for, and makes it the one receivers bind
@@ -128385,6 +128914,7 @@ declare namespace BABYLON {
         private readonly _renderLightingVolumeTask;
         private readonly _blendLightingVolumeTask;
         private _renderLightingVolumeMaterial;
+        private _materialReverseDepth;
         /**
          * Creates a new FrameGraphVolumetricLightingTask.
          * @param name The name of the task.
@@ -128394,6 +128924,7 @@ declare namespace BABYLON {
         constructor(name: string, frameGraph: FrameGraph, enableExtinction?: boolean);
         initAsync(): Promise<unknown>;
         isReady(): boolean;
+        private _updateMaterialDepthOrder;
         getClassName(): string;
         record(skipCreationOfDisabledPasses?: boolean): void;
         dispose(): void;
@@ -143320,8 +143851,25 @@ declare namespace BABYLON {
         set snapshotRenderingMode(mode: number);
         /**
          * Creates a new snapshot at the next frame using the current snapshotRenderingMode
+         * @param forceFullRecording with snapshotRenderingReuseDraws on, reuses none of the commands recorded so far: every draw of the new
+         * snapshot is recorded in full, and keeps new commands that the snapshots after it reuse (default: false)
          */
-        snapshotRenderingReset(): void;
+        snapshotRenderingReset(forceFullRecording?: boolean): void;
+        /**
+         * Gets or sets whether a new snapshot (see snapshotRenderingReset) reuses, for a draw whose mesh and material did not change since
+         * it was last recorded, the commands it was recorded with, instead of binding its mesh and material again (default: false, every
+         * new snapshot records every draw in full). The scene is walked again at each recording, as without it: culling, LOD, the order
+         * and the set of draws
+         */
+        snapshotRenderingReuseDraws: boolean;
+        private _recordedDrawsGeneration;
+        /** @internal */
+        get _recordsDraws(): boolean;
+        private _recordedDrawContext;
+        /** @internal */
+        _keepInheritedState(drawWrapper: DrawWrapper): void;
+        /** @internal */
+        protected _getInheritedState(target: number[]): number;
         /**
          * Enables or disables the snapshot rendering mode
          * Note that the WebGL engine does not support snapshot rendering so setting the value won't have any effect for this engine
@@ -143338,6 +143886,28 @@ declare namespace BABYLON {
          */
         get disableCacheRenderPipelines(): boolean;
         set disableCacheRenderPipelines(disable: boolean);
+        /**
+         * Asynchronous pipeline creation (off by default). When enabled, a draw of a mesh whose render pipeline is not created yet is
+         * omitted while the pipeline is created asynchronously (one creation per pipeline configuration, shared with preWarmPipeline),
+         * instead of creating it synchronously in the frame. The mesh is omitted in all of its passes (shadow maps, depth, main pass...)
+         * from the frame one of its draws had to wait until a frame in which none did. Meanwhile, a render target refreshed every N frames
+         * renders in every frame, up to the frame in which the mesh is drawn again (two frames after the last wait: that recovery frame
+         * included), so that it shows the mesh in the same frames as the other passes. That is the case of every such render target of the
+         * engine, including those that do not draw the meshes that wait: while pipelines are created, these extra renders are the cost of
+         * the option. A pass that nothing renders again (a render target or a frame graph task with REFRESHRATE_RENDER_ONCE, such as a GPU
+         * picking; an object renderer rendered by a direct call to render() that its shouldRender() did not ask for, such as the
+         * voxelization of IBL shadows or a decal of MeshUVSpaceRenderer; a screenshot through a render target) draws every mesh, creating
+         * the pipelines it lacks synchronously. Limitation:
+         * in the frame of that first wait, the passes rendered before it have already drawn the mesh, so that frame can show the mesh in
+         * some of its passes only (the shadow of a mesh whose main pass draw waits, for instance). Other draws (the bounding boxes of
+         * occlusion queries, post-processes, sprites, particles...) still create their pipelines synchronously. A snapshot recorded while
+         * draws were omitted is replayed until their pipelines are created, then recorded again.
+         */
+        asynchronousPipelineCreation: boolean;
+        private _snapshotPendingPipelines;
+        private _snapshotRecordAgain;
+        private _snapshotHeldBack;
+        private _pendingPipelinesGeneration;
         /**
          * When true (default), the "leftover" uniform buffer of an effect (the buffer that holds the uniforms not declared in a named
          * uniform block) keeps one GPU buffer per draw context, so a given draw call always binds the same buffer for a given effect.
@@ -143767,6 +144337,7 @@ declare namespace BABYLON {
          * @internal
          */
         _releaseEffect(effect: Effect): void;
+        private _releasingEffects;
         /**
          * Force the engine to release all cached effects. This means that next effect compilation will have to be done completely even if a similar effect was already compiled
          */
@@ -144106,8 +144677,26 @@ declare namespace BABYLON {
          */
         setState(culling: boolean, zOffset?: number, force?: boolean, reverseSide?: boolean, cullBackFaces?: boolean, stencil?: IStencilState, zOffsetUnits?: number): void;
         private _applyRenderPassChanges;
+        private _omitDraw;
+        private _forgetPendingPipelines;
         private _getTextureState;
         private _draw;
+        private _keepRecordedDraw;
+        private static _HasSameFormats;
+        /** @internal */
+        _canEncodeRecordedDraw(drawWrapper: DrawWrapper, waitOwner?: Nullable<{
+            _pipelinePendingFrameId: number;
+            _pipelineDrawnFrameId: number;
+        }>): boolean;
+        /** @internal */
+        _replayRecordedDraw(drawWrapper: DrawWrapper, waitOwner?: Nullable<{
+            _pipelinePendingFrameId: number;
+            _pipelineDrawnFrameId: number;
+        }>): boolean;
+        /** @internal */
+        _canKeepRecordedDraw(drawWrapper: DrawWrapper): boolean;
+        /** @internal */
+        _hasSameDrawValues(drawWrapper: DrawWrapper, reference: DrawWrapper): boolean;
         /**
          * Draw a list of indexed primitives
          * @param fillMode defines the primitive to use
@@ -144362,6 +144951,7 @@ declare namespace BABYLON {
         protected _engine: INativeEngine;
         private _camera;
         private _commandBufferEncoder;
+        private _alphaToCoverage;
         private _frameStats;
         private _boundBuffersVertexArray;
         private _fontMeasureCanvas?;
@@ -144373,6 +144963,10 @@ declare namespace BABYLON {
          * Only used to mask clears (see bindAttachments).
          */
         private _clearAttachmentMask;
+        /**
+         * Operation flags ORed into the attachment mask of the next COMMAND_CLEAR2 only (see clearAttachments).
+         */
+        private _clearOperationFlags;
         private _currentDepthTest;
         private _depthTestEnabled;
         private _stencilTest;
@@ -144427,6 +145021,7 @@ declare namespace BABYLON {
          */
         protected _queueNewFrame(bindedRenderFunction: any, requester?: any): number;
         protected _restoreEngineAfterContextLost(): void;
+        protected _rebuildGraphicsResources(): void;
         /**
          * Override default engine behavior.
          * @param framebuffer
@@ -144704,6 +145299,16 @@ declare namespace BABYLON {
          * @param targetIndex MRT attachment index (Native applies equation globally; kept for API parity)
          */
         setAlphaEquation(equation: number, targetIndex?: number): void;
+        /**
+         * Gets a boolean indicating if alpha-to-coverage is enabled
+         * @returns true if alpha-to-coverage is enabled
+         */
+        getAlphaToCoverage(): boolean;
+        /**
+         * Enable or disable alpha-to-coverage. Like WebGL, it has no effect on single-sample targets.
+         * @param enable defines the state to set
+         */
+        setAlphaToCoverage(enable: boolean): void;
         setInt(uniform: WebGLUniformLocation, int: number): boolean;
         setInt2(uniform: Nullable<WebGLUniformLocation>, x: number, y: number): boolean;
         setInt3(uniform: Nullable<WebGLUniformLocation>, x: number, y: number, z: number): boolean;
@@ -144733,6 +145338,12 @@ declare namespace BABYLON {
         protected _createTexture(): WebGLTexture;
         protected _deleteTexture(texture: Nullable<WebGLHardwareTexture>): void;
         /**
+         * Deletes a native texture after the commands already encoded in the command stream, like WebGL keeps a deleted
+         * texture alive for draws issued before the delete. Runtimes without the command delete it immediately.
+         * @internal
+         */
+        _deleteNativeTexture(texture: NativeTexture): void;
+        /**
          * Update the content of a dynamic texture
          * @param texture defines the texture to update
          * @param canvas defines the canvas containing the source
@@ -144748,6 +145359,26 @@ declare namespace BABYLON {
         createRawTexture2DArray(data: Nullable<ArrayBufferView>, width: number, height: number, depth: number, format: number, generateMipMaps: boolean, invertY: boolean, samplingMode: number, compression?: Nullable<string>, textureType?: number): InternalTexture;
         createRawTexture3D(data: Nullable<ArrayBufferView>, width: number, height: number, depth: number, format: number, generateMipMaps: boolean, invertY: boolean, samplingMode: number, compression?: Nullable<string>, textureType?: number): InternalTexture;
         updateRawTexture3D(texture: Nullable<InternalTexture>, bufferView: Nullable<ArrayBufferView>, format: number, invertY: boolean, compression?: Nullable<string>, textureType?: number): void;
+        updateRawTexture2DArray(texture: Nullable<InternalTexture>, bufferView: Nullable<ArrayBufferView>, format: number, invertY: boolean, compression?: Nullable<string>, textureType?: number, mipLevel?: number): void;
+        private _updateRawTexture2DArrayMip;
+        /**
+         * Uploads an image bitmap created by createImageBitmap into a single layer of a 2D array texture.
+         * @param texture defines the 2D array texture to update
+         * @param source defines the image bitmap to upload
+         * @param layer defines the array layer to upload into
+         * @param invertY defines if the source must be stored with the Y axis inverted (false by default)
+         * @param premultiplyAlpha defines if the source alpha must be premultiplied (not supported)
+         */
+        updateTextureArrayLayerFromImageSource(texture: InternalTexture, source: ImageSource, layer: number, invertY?: boolean, premultiplyAlpha?: boolean): void;
+        /**
+         * Writes an uploaded layer into the base data that context-loss rebuilds recreate the array from.
+         * The layer is stored in the texture layout and orientation so the rebuild reproduces the live texture.
+         * @param texture defines the 2D array texture
+         * @param layerData defines the uploaded layer, already resolved to the texture layout
+         * @param layer defines the uploaded layer
+         * @param invertY defines the orientation the layer was uploaded with
+         */
+        private _retainRawTexture2DArrayLayer;
         updateRawTexture(texture: Nullable<InternalTexture>, bufferView: Nullable<ArrayBufferView>, format: number, invertY: boolean, compression?: Nullable<string>, type?: number, useSRGBBuffer?: boolean): void;
         /**
          * Creates a raw cube texture on the native engine.
@@ -144850,6 +145481,23 @@ declare namespace BABYLON {
          * @internal
          */
         _attachDepthStencilTexture(nativeRTWrapper: NativeRenderTargetWrapper, texture: InternalTexture, width: number, height: number, generateStencil: boolean, samples: number): void;
+        /**
+         * Reports whether this runtime can share an auto-generated depth/stencil buffer.
+         * @internal
+         */
+        _supportsGeneratedDepthSharing(): boolean;
+        /**
+         * Creates a lazy source framebuffer, if needed, and applies its pending generated depth shares.
+         * @param nativeRTWrapper Source render target wrapper
+         * @internal
+         */
+        _resolvePendingGeneratedDepthShares(nativeRTWrapper: NativeRenderTargetWrapper): void;
+        /**
+         * Wraps a render target's auto-generated depth/stencil buffer in a depth texture without rebuilding the render
+         * target, so it can be shared with its current contents.
+         * @internal
+         */
+        _wrapGeneratedDepthStencil(nativeRTWrapper: NativeRenderTargetWrapper): Nullable<InternalTexture>;
         private _recreateDepthStencilTexture;
         /**
          * Returns whether a render-target texture was created with mip storage, independently of generateMipMaps.
@@ -144942,6 +145590,12 @@ declare namespace BABYLON {
          * @returns ImageBitmap
          */
         createImageBitmap(image: ImageBitmapSource, options?: ImageBitmapOptions): Promise<ImageBitmap>;
+        /**
+         * Throws for image bitmap options that createImageBitmap would silently ignore on Babylon Native.
+         * @param options defines the options to validate
+         * @internal
+         */
+        _validateImageBitmapOptions(options?: ImageBitmapOptions): void;
         /**
          * Resize an image and returns the image data as an uint8array
          * @param image image to resize
@@ -145113,6 +145767,18 @@ declare namespace BABYLON {
          */
         disableWebGL2Support?: boolean;
         /**
+         * Requests an NDC depth range of [0, 1] using EXT_clip_control (default: false).
+         * Applies to engines created from a canvas. With `doNotHandleContextLost` enabled, resume rendering after context loss
+         * by creating a new engine on a new or restored canvas. When reusing a restored canvas, dispose the old engine
+         * before creating its replacement, since disposal can reset the context's clip depth range.
+         * Check engine.isNDCHalfZRange to see if the extension was enabled. If it is unavailable, WebGL uses [-1, 1].
+         * This option is fixed at engine creation and can be used independently of useReverseDepthBuffer.
+         * To get the full precision benefit of reversed depth, render to a floating-point depth attachment.
+         * For WebXR rendering, use this option with `useReverseDepthBuffer` disabled.
+         * This option does not change the default framebuffer's depth format.
+         */
+        useNDCHalfZRange?: boolean;
+        /**
          * Defines that engine should compile shaders with high precision floats (if supported). True by default
          */
         useHighPrecisionFloats?: boolean;
@@ -145158,6 +145824,8 @@ declare namespace BABYLON {
         })[];
         /** @internal */
         protected _name: string;
+        /** @inheritdoc */
+        readonly isNDCHalfZRange: boolean;
         /**
          * Gets or sets the name of the engine
          */
@@ -145234,8 +145902,9 @@ declare namespace BABYLON {
         protected get _supportsHardwareTextureRescaling(): boolean;
         /**
          * Creates a new snapshot at the next frame using the current snapshotRenderingMode
+         * @param _forceFullRecording reuses none of the recorded commands (WebGPU only, see WebGPUEngine.snapshotRenderingReuseDraws)
          */
-        snapshotRenderingReset(): void;
+        snapshotRenderingReset(_forceFullRecording?: boolean): void;
         /**
          * Creates a new engine
          * @param canvasOrContext defines the canvas or WebGL context to use for rendering. If you provide a WebGL context, Babylon.js will not hook events on the canvas (like pointers, keyboards, etc...) so no event observables will be available. This is mostly used when Babylon.js is used as a plugin on a system which already used the WebGL context
@@ -145254,6 +145923,7 @@ declare namespace BABYLON {
          * @returns true if all effects are ready
          */
         areAllEffectsReady(): boolean;
+        private _setClipDepthRange;
         protected _initGLContext(): void;
         protected _initFeatures(): void;
         /**
@@ -147097,6 +147767,20 @@ declare namespace BABYLON {
          */
         updateRawTexture(texture: Nullable<InternalTexture>, data: Nullable<ArrayBufferView>, format: number, invertY: boolean, compression?: Nullable<string>, type?: number, useSRGBBuffer?: boolean): void;
         /**
+         * Update a portion of an internal texture. NullEngine has no GPU texture, so only a complete update of the base level
+         * is recorded, like updateRawTexture does.
+         * @param texture defines the texture to update
+         * @param imageData defines the data to store into the texture
+         * @param xOffset defines the x coordinates of the update rectangle
+         * @param yOffset defines the y coordinates of the update rectangle
+         * @param width defines the width of the update rectangle
+         * @param height defines the height of the update rectangle
+         * @param faceIndex defines the face index if texture is a cube (0 by default)
+         * @param lod defines the lod level to update (0 by default)
+         * @param generateMipMaps defines whether to generate mipmaps or not (ignored by NullEngine)
+         */
+        updateTextureData(texture: InternalTexture, imageData: ArrayBufferView, xOffset: number, yOffset: number, width: number, height: number, faceIndex?: number, lod?: number, generateMipMaps?: boolean): void;
+        /**
          * Binds the frame buffer to the specified texture.
          * @param rtWrapper The render target wrapper to render to
          * @param faceIndex The face of the texture to render to in case of cube texture
@@ -147390,6 +148074,8 @@ declare namespace BABYLON {
         supportSSAO2: boolean;
         /** Indicates that IBL Shadows are supported */
         supportIBLShadows: boolean;
+        /** Indicates that mesh blending (which renders integer mesh-blending tags alongside other color attachments) is supported */
+        supportMeshBlending: boolean;
         /** Indicates that some additional texture formats are supported (like TEXTUREFORMAT_R for eg) */
         supportExtendedTextureFormats: boolean;
         /** Indicates that the switch/case construct is supported in shaders */
@@ -149258,11 +149944,12 @@ declare namespace BABYLON {
          * applied during construction, so it is already in effect for the first frame.
          *
          * A reversed depth buffer gives more depth precision to distant objects and reduces z-fighting, especially when the
-         * camera covers a large depth range. It is recommended for WebGPU. With WebGL it brings little or no gain, because the
-         * [-1, 1] clip space depth range loses the extra precision.
+         * camera covers a large depth range. It is recommended for WebGPU and for WebGL with the `useNDCHalfZRange` option
+         * and a floating-point depth attachment. WebGL's default [-1, 1] clip-space depth range provides little or no gain.
          * For the best precision, pair it with a floating-point depth buffer (on WebGPU, creating the engine with `stencil: false`
          * makes the main depth buffer `depth32float` instead of `depth24plus-stencil8`).
          *
+         * For WebXR rendering, keep this disabled so depth testing matches the runtime's projection.
          * Custom shaders that write or read depth values must account for the reversed range (see the `USE_REVERSE_DEPTHBUFFER` define).
          */
         useReverseDepthBuffer?: boolean;
@@ -149500,6 +150187,34 @@ declare namespace BABYLON {
          */
         currentRenderPassId: number;
         /**
+         * @internal True while the scene renders a pass it renders again in the next frames (its cameras, the render targets of its frame,
+         * the frame graph): only there can a mesh draw wait for its pipeline (WebGPU asynchronous pipeline creation). A pass rendered once
+         * (an object renderer, of a render target or a frame graph task, with REFRESHRATE_RENDER_ONCE or rendered by a call that its
+         * shouldRender() did not ask for: a GPU picking, the voxelization of IBL shadows, a decal of MeshUVSpaceRenderer; a screenshot through
+         * a render target, a render outside the scene's frame) draws every mesh in that rendering.
+         */
+        _drawsMayWait: boolean;
+        /**
+         * @internal The depth of the renderings done once that are in progress (an object renderer rendered once, a screenshot through a
+         * render target): while it is not zero, the passes of the scene's frame they render do not let their draws wait either.
+         */
+        _renderingOnce: number;
+        /**
+         * @internal The mesh whose draws are being submitted (Mesh._processRendering, in any of its passes and whatever draw context its
+         * material gives them): its draws wait together for their render pipelines (WebGPU asynchronous pipeline creation). Null for every
+         * other draw (the bounding box of an occlusion query, a post-process, sprites, particles...), which never waits.
+         */
+        _pipelineWaitOwner: Nullable<{
+            _pipelinePendingFrameId: number;
+            _pipelineDrawnFrameId: number;
+        }>;
+        /**
+         * @internal The last frame in which a mesh draw waited for its render pipeline (WebGPU asynchronous pipeline creation). A mesh is held
+         * back in its passes in the frame of its last wait and the next one; until the frame after those, a render target refreshed every N
+         * frames renders in every frame (ObjectRenderer.shouldRender), so that it shows a mesh in the same frames as the other passes.
+         */
+        _lastPipelineWaitFrameId: number;
+        /**
          * Gets a boolean indicating if the pointer is currently locked
          */
         isPointerLock: boolean;
@@ -149528,7 +150243,7 @@ declare namespace BABYLON {
         private _useReverseDepthBuffer;
         /**
          * Gets or sets a boolean indicating if depth buffer should be reverse, going from far to near.
-         * This can provide greater z depth for distant objects.
+         * This can provide greater z depth for distant objects. Keep this disabled while rendering WebXR views.
          */
         get useReverseDepthBuffer(): boolean;
         set useReverseDepthBuffer(useReverse: boolean);
@@ -150414,6 +151129,66 @@ declare namespace BABYLON {
          */
         _reportDrawCall(numDrawCalls?: number): void;
         /**
+         * @internal Whether a snapshot is recording with the recorded draws switched on: only then do the meshes and the shadow maps
+         * check a draw against what it was recorded with, and keep what it is rendered with (nothing of it runs otherwise)
+         */
+        get _recordsDraws(): boolean;
+        /**
+         * @internal While a snapshot records, encodes again the draw last recorded for this draw wrapper, if it is still valid,
+         * instead of binding its mesh and material. Returns false when the draw must be rendered normally. waitOwner is the owner its full
+         * draw would have (see _pipelineWaitOwner): the draws of a mesh wait together for their render pipelines, recorded ones too
+         */
+        _replayRecordedDraw(_drawWrapper: DrawWrapper, _waitOwner?: Nullable<{
+            _pipelinePendingFrameId: number;
+            _pipelineDrawnFrameId: number;
+        }>): boolean;
+        /**
+         * @internal Changes when code of the user runs between the draws of the frame (the observers of a mesh and the bind callbacks of its
+         * material, see Mesh.render, the bind callbacks of an effect, the observers of a rendering group and of its sprites and particles,
+         * and its callback before the transparent meshes): it can change any material in place, so the references the materials kept before
+         * it no longer stand for the draws after it (see Material._getRecordedDrawReference)
+         */
+        _recordedDrawReferencesEpoch: number;
+        /**
+         * @internal Whether _replayRecordedDraw would encode again the draw last recorded for this draw wrapper now: a mesh runs the scene's
+         * steps around its draw only once it knows the draw will not be rendered normally instead
+         */
+        _canEncodeRecordedDraw(_drawWrapper: DrawWrapper, _waitOwner?: Nullable<{
+            _pipelinePendingFrameId: number;
+            _pipelineDrawnFrameId: number;
+        }>): boolean;
+        /**
+         * @internal Whether the draw just done for a draw wrapper wrote its per-draw values (what its effect sets when it binds) in a
+         * slot of its own, which a draw recorded with it keeps referencing
+         */
+        _canKeepRecordedDraw(_drawWrapper: DrawWrapper): boolean;
+        /**
+         * @internal Whether the per-draw values of a draw wrapper are the same bytes as the ones of another draw wrapper of the same effect
+         */
+        _hasSameDrawValues(_drawWrapper: DrawWrapper, _reference: DrawWrapper): boolean;
+        private _inheritedState;
+        /**
+         * @internal Keeps the states a draw inherits from the engine (see _getInheritedState) where it starts, before it sets any: where a
+         * recorded draw is checked before it is encoded again. A draw recorded with others is bound again
+         * @param drawWrapper the draw wrapper of the draw
+         */
+        _keepInheritedState(drawWrapper: DrawWrapper): void;
+        /**
+         * @internal Whether the engine has the states kept by _keepInheritedState for a draw wrapper
+         * @param drawWrapper the draw wrapper of the draw
+         * @returns true if they did not change
+         */
+        _hasInheritedState(drawWrapper: DrawWrapper): boolean;
+        /**
+         * @internal Writes the states the pipeline of a draw reads from the engine, which the draw inherits unless it sets them (the depth
+         * prepass turns the color writes off, the rendering groups set the stencil, ThinDepthPeelingRenderer the blend equation): the color
+         * writes, the depth test, writes and function, the stencil of both faces, the culled faces the engine forces over the material's
+         * (cullBackFaces) and the blend of each target
+         * @param target the array to write them in, from its start
+         * @returns how many were written
+         */
+        protected _getInheritedState(target: number[]): number;
+        /**
          * Gets the current framerate
          * @returns a number representing the framerate
          */
@@ -150943,6 +151718,8 @@ declare namespace BABYLON {
         _invalidateVertexBuffers?(): void;
         /** Releases effect-specific uniform-buffer reservations. @internal */
         _releaseUniformBufferSlots?(): void;
+        /** Binds the application's buffer of GPU-written draw arguments, or clears it with null (SubMesh.setIndirectDrawBuffer). @internal */
+        _setExternalIndirectDraw?(buffer: Nullable<DataBuffer>, byteOffset: number): void;
         /**
          * Disposes the draw context and its resources.
          */
@@ -151644,6 +152421,11 @@ declare namespace BABYLON {
         updateMipLevelCountForInternalTexture(texture: InternalTexture, mipLevelCount?: number): void;
         readPixels(texture: GPUTexture, x: number, y: number, width: number, height: number, format: GPUTextureFormat, faceIndex?: number, mipLevel?: number, buffer?: Nullable<ArrayBufferView>, noDataConversion?: boolean): Promise<ArrayBufferView>;
         releaseTexture(texture: InternalTexture | GPUTexture): void;
+        /**
+         * Releases a hardware texture wrapper at the end of the frame, because the objects it holds could still be used by commands recorded in the current frame.
+         * @param hardwareTexture the wrapper to release
+         */
+        releaseHardwareTexture(hardwareTexture: IHardwareTextureWrapper): void;
         destroyDeferredTextures(): void;
     }
 
@@ -151734,6 +152516,10 @@ declare namespace BABYLON {
         set mode(mode: number);
         /** @internal */
         handleRenderPassRestart(): void;
+        /**
+         * The frame being recorded misses draws: it is recorded again at the next frame
+         */
+        invalidateRecording(): void;
         endRenderPass(currentRenderPass: GPURenderPassEncoder): boolean;
         endFrame(): void;
         reset(): void;
@@ -152016,6 +152802,16 @@ declare namespace BABYLON {
      * (IWebGPURenderPassCommandRecorderProvider) rather than read from the _native global, command
      * tokens are protocol integers rather than native-provided handles, and commands carry WebGPU
      * render-pass semantics (pipelines, bind groups, draws) referencing host resource-handle ids.
+     *
+     * Ownership and recovery contract:
+     * - Every backend object referenced by a pending command word (pipeline, buffers, bind groups) is
+     *   retained by the stream until the host has consumed the batch, the same guarantee the
+     *   CommandBufferEncoder gives through its pending-argument list. Hosts whose wrappers release the
+     *   backend resource from a GC finalizer therefore never see a dangling id while words are pending.
+     * - Recording is all-or-nothing on the host side (see IWebGPUCommandRecordingRenderPass). When the
+     *   host rejects a batch, the stream replays that batch through direct encoder calls from the words
+     *   and the retained objects, so no draw of the frame is lost (render-once targets never keep an
+     *   incomplete result), then disables itself for the engine's lifetime and reports why.
      */
     /**
      * Version of the render-pass command-stream encoding. The host decoder reports the version it was
@@ -152026,6 +152822,13 @@ declare namespace BABYLON {
      * command layouts change.
      */
     export const WebGPURenderPassCommandStreamProtocolVersion = 1;
+    /**
+     * Upper bound on the draws batched into one host recording call. Bounding the batch keeps the
+     * command words and the retained resource references at a fixed, reusable capacity over long
+     * sessions (no unbounded growth, no regrowth churn) while still amortizing the bridge crossing over
+     * up to this many draws.
+     */
+    export const WebGPURenderPassCommandStreamMaxDrawsPerBatch = 1024;
     /** @internal */
     export var WebGPURenderPassCommandOpcode: {
         readonly setPipeline: 1;
@@ -152046,12 +152849,46 @@ declare namespace BABYLON {
     export type WebGPURenderPassDrawKind = (typeof WebGPURenderPassDrawKind)[keyof typeof WebGPURenderPassDrawKind];
     /**
      * Render pass encoder extended with an optional host recording hook.
-     * The recorder must consume the command words synchronously: the buffer is owned by the stream and
-     * is reused as soon as the call returns.
      * @internal
      */
     export interface IWebGPUCommandRecordingRenderPass extends GPURenderPassEncoder {
+        /**
+         * Records a batch of commands encoded by WebGPURenderPassCommandStream into this pass.
+         *
+         * The recorder must consume the command words synchronously: the buffer is owned by the stream
+         * and is reused as soon as the call returns. A provider that declares
+         * IWebGPURenderPassCommandRecorderProvider.recordsAtomically promises that recording is
+         * all-or-nothing: the host returns true once every command of the batch has been recorded, and
+         * returns false (or throws) without having recorded any of them when it rejects the batch,
+         * leaving the encoder usable. The stream relies on that promise to replay a rejected batch
+         * through direct encoder calls, and never batches for a provider that does not make it. The JS
+         * objects of every resource referenced by the batch are retained by the stream until this call
+         * returns; from then on the host owns their lifetime for the rest of the pass.
+         */
         _recordCommands?: (commands: Uint32Array, drawCount: number, multiDrawCallCount: number, multiDrawDrawCount: number, wordCount: number) => boolean;
+    }
+    /**
+     * Why a render-pass command stream disabled itself (see IWebGPURenderPassCommandStreamDisableInfo).
+     * - "protocol-mismatch": the host decoder was built against another WebGPURenderPassCommandStreamProtocolVersion.
+     * - "atomic-recording-unsupported": the provider does not recordsAtomically, so a rejected batch could not be replayed safely.
+     * - "recorder-missing": the active render pass stopped exposing a recording hook while commands were pending.
+     * - "recording-rejected": the host returned false from _recordCommands.
+     * - "recording-threw": the host threw from _recordCommands.
+     */
+    export type WebGPURenderPassCommandStreamDisableReason = "protocol-mismatch" | "atomic-recording-unsupported" | "recorder-missing" | "recording-rejected" | "recording-threw";
+    /**
+     * Details reported once when a render-pass command stream disables itself, so integrating
+     * applications can surface the event (telemetry, diagnostics) alongside the Logger.Error entry.
+     */
+    export interface IWebGPURenderPassCommandStreamDisableInfo {
+        /** Why the stream disabled itself. */
+        reason: WebGPURenderPassCommandStreamDisableReason;
+        /** The message that was logged. */
+        message: string;
+        /** The host's last backend error when the provider exposes one (see IWebGPURenderPassCommandRecorderProvider.getLastError). */
+        hostError?: string;
+        /** Number of draws from the rejected batch that were replayed through direct encoder calls (0 when nothing was pending). */
+        replayedDrawCount: number;
     }
     /**
      * Contract implemented by hosts whose WebGPU backend can record batched render-pass command streams
@@ -152068,6 +152905,15 @@ declare namespace BABYLON {
          */
         protocolVersion: number;
         /**
+         * True when the host decoder records every batch atomically: a rejected batch (false returned or
+         * an exception thrown from _recordCommands) has recorded none of its commands and leaves the
+         * encoder usable, so the stream can replay it through direct encoder calls. The stream never
+         * batches for a provider that does not this; such draws use direct encoder calls and the
+         * stream reports "atomic-recording-unsupported" once. Omit this for legacy providers that cannot
+         * guarantee atomic recording.
+         */
+        recordsAtomically?: boolean;
+        /**
          * Returns true while command-stream recording is enabled on the host.
          */
         isEnabled(): boolean;
@@ -152075,7 +152921,9 @@ declare namespace BABYLON {
          * Returns the host handle id for a backend resource (pipeline, buffer or bind group), or 0 when
          * the resource has no host handle (which makes the draw fall back to direct encoder calls).
          * Ids must be positive safe integers (at most Number.MAX_SAFE_INTEGER) so they encode losslessly
-         * into 64-bit command words; out-of-range ids are treated as missing.
+         * into 64-bit command words; out-of-range ids are treated as missing. The stream retains the
+         * resource object itself until the words referencing its id have been consumed by the host, so
+         * an id never outlives its object while pending.
          * @param resource the backend resource to identify
          */
         getResourceId(resource: Nullable<object>): number;
@@ -152083,6 +152931,12 @@ declare namespace BABYLON {
          * Optionally returns the host's last backend error, used to enrich diagnostics when recording fails.
          */
         getLastError?(): string | undefined;
+        /**
+         * Optionally invoked once, after the failure has been logged and the rejected batch replayed,
+         * when the stream disables itself for the rest of the engine's lifetime.
+         * @param info what happened and how much was replayed
+         */
+        onDisabled?(info: IWebGPURenderPassCommandStreamDisableInfo): void;
     }
     /** @internal */
     interface IWebGPURenderPassDrawCommandBase {
@@ -152095,6 +152949,8 @@ declare namespace BABYLON {
         instancesCount: number;
         start: number;
         indirectDrawBuffer: Nullable<GPUBuffer>;
+        /** The offset of the arguments in indirectDrawBuffer, in bytes (0 but for the application's buffers of GPU-written arguments) */
+        indirectDrawByteOffset: number;
     }
     /** @internal */
     export interface IWebGPURenderPassIndexedDrawCommand extends IWebGPURenderPassDrawCommandBase {
@@ -152146,11 +153002,16 @@ declare namespace BABYLON {
         private _scratchVertexBufferIds;
         private _scratchVertexBufferOffsets;
         private _scratchBindGroupIds;
+        private _pendingResources;
+        private _pendingResourceCount;
         private _disabledAfterFailure;
         constructor(_options: IWebGPURenderPassCommandStreamOptions);
         flush(): boolean;
         reset(): void;
         tryAppend(command: IWebGPURenderPassDrawCommand): boolean;
+        private _recoverFromRejectedBatch;
+        private _replayPending;
+        private _retain;
         private _getValidResourceId;
         private _disable;
         private _ensureCapacity;
@@ -152233,6 +153094,11 @@ declare namespace BABYLON {
          * Release all associated resources.
          **/
         dispose(): void;
+        private _isDisposed;
+        /**
+         * Gets whether the pipeline context has been disposed
+         */
+        get isDisposed(): boolean;
         /**
          * Sets an integer value on a uniform variable.
          * @param uniformName Name of the variable.
@@ -152519,6 +153385,7 @@ declare namespace BABYLON {
     /** @internal */
     interface IWebGPUMaterialContextTextureCache {
         texture: Nullable<InternalTexture | ExternalTexture>;
+        uniqueId: number;
         isFloatOrDepthTexture: boolean;
         isExternalTexture: boolean;
     }
@@ -152625,6 +153492,31 @@ declare namespace BABYLON {
      * WebGPU implementation of the IDrawContext interface.
      * This class manages the draw context for WebGPU, including buffers and indirect draw data.
      */
+    /** @internal The commands of a draw encoded while a snapshot recorded, to encode it again in a later recording without binding its mesh */
+    export interface IWebGPURecordedDraw {
+        /** whether these are the commands of the last full draw */
+        kept: boolean;
+        /** the engine's generation of recorded commands they belong to (see WebGPUEngine.snapshotRenderingReset) */
+        generation: number;
+        renderTarget: Nullable<object>;
+        sampleCount: number;
+        /** the formats of the color attachments, which a render target can change under the same wrapper (setInternalTexture of a multi render target) */
+        colorFormats: (GPUTextureFormat | null)[];
+        /** the format of the depth attachment */
+        depthFormat: GPUTextureFormat | undefined;
+        pipeline: GPURenderPipeline;
+        bindGroups: GPUBindGroup[];
+        indexBuffer: Nullable<GPUBuffer>;
+        indexFormat: GPUIndexFormat;
+        vertexBuffers: Nullable<GPUBuffer>[];
+        vertexOffsets: number[];
+        indirectBuffer: Nullable<GPUBuffer>;
+        indirectByteOffset: number;
+        indexed: boolean;
+        count: number;
+        instances: number;
+        start: number;
+    }
     export class WebGPUDrawContext implements IDrawContext {
         private _dummyIndexBuffer;
         private static _Counter;
@@ -152636,6 +153528,8 @@ declare namespace BABYLON {
          * Cache of the bind groups. Will be reused for the next draw if isDirty==false (and materialContext.isDirty==false)
          */
         bindGroups?: GPUBindGroup[];
+        /** @internal */
+        _recordedDraw?: IWebGPURecordedDraw;
         uniqueId: number;
         /**
          * @internal
@@ -152650,6 +153544,13 @@ declare namespace BABYLON {
             [name: string]: Nullable<WebGPUDataBuffer>;
         };
         indirectDrawBuffer?: GPUBuffer;
+        /**
+         * @internal The application's buffer the draw reads its arguments from, filled on the GPU (SubMesh.setIndirectDrawBuffer): it goes
+         * before indirectDrawBuffer, in every mode, and the draw context never writes into it nor releases it
+         */
+        _externalIndirectDrawBuffer: Nullable<DataBuffer>;
+        /** @internal The offset of the arguments in _externalIndirectDrawBuffer, in bytes */
+        _externalIndirectDrawByteOffset: number;
         private _materialContextUpdateId;
         private _bufferManager;
         private _useInstancing;
@@ -152685,6 +153586,12 @@ declare namespace BABYLON {
          * storage buffer when no index buffer is provided.
          */
         constructor(bufferManager: WebGPUBufferManager, _dummyIndexBuffer: WebGPUDataBuffer);
+        /**
+         * @internal Binds the application's buffer of GPU-written arguments, or clears the binding with null. A new buffer or offset
+         * records the draw's bundle again; new contents written into the same buffer do not, the bundle reading them at each execution.
+         * A reset keeps the binding, which belongs to the sub mesh's pass and not to the effect.
+         */
+        _setExternalIndirectDraw(buffer: Nullable<DataBuffer>, byteOffset: number): void;
         reset(): void;
         /** Invalidates cached vertex bindings without releasing draw resources. @internal */
         _invalidateVertexBuffers(): void;
@@ -153320,7 +154227,37 @@ declare namespace BABYLON {
         static NumCacheMiss: number;
         static NumPipelineCreationLastFrame: number;
         disabled: boolean;
+        /**
+         * The pipeline being created for the last tryGetRenderPipeline call that returned null
+         */
+        lastPendingPipeline: Nullable<Promise<GPURenderPipeline>>;
         private static _NumPipelineCreationCurrentFrame;
+        private static _PendingPipelines;
+        private static _FailedPipelines;
+        private static _AsyncGeneration;
+        /**
+         * The number of pipelines being created asynchronously, for all the engines (they share the pipeline cache). The readiness of an
+         * engine counts only the creations it waits for (numAwaitedPipelines of its cache)
+         */
+        static get NumPendingPipelines(): number;
+        /**
+         * Forgets the asynchronous creations, pending and failed (the cache was reset): one that completes later, on the device it was
+         * started on, is ignored, neither kept nor reported.
+         * @internal
+         */
+        static _ResetAsyncCreations(): void;
+        private _awaitedPipelines;
+        /**
+         * The number of pipelines this cache waits for while they are created asynchronously: the readiness of its engine. A creation
+         * for another engine counts once this one draws the same pipeline
+         */
+        get numAwaitedPipelines(): number;
+        /**
+         * Forgets the creations this cache waits for (its device was lost, its engine disposed): they no longer count, even when they
+         * complete later.
+         * @internal
+         */
+        _forgetAwaitedPipelines(): void;
         protected _states: number[];
         protected _statesLength: number;
         protected _stateDirtyLowestIndex: number;
@@ -153397,6 +154334,17 @@ declare namespace BABYLON {
          */
         private _lookupRenderPipeline;
         getRenderPipeline(fillMode: number, effect: Effect, sampleCount: number, textureState?: number): GPURenderPipeline;
+        /**
+         * Like getRenderPipeline, but a pipeline missing from the cache is created asynchronously (preWarmPipeline) and null is returned
+         * until it is cached; the pending creation is then in lastPendingPipeline. A pipeline whose asynchronous creation failed is
+         * created synchronously at its next miss, so that its error is reported as with getRenderPipeline.
+         * @param fillMode defines the fill mode used to configure the rasterization state
+         * @param effect defines the effect containing the shader and vertex input layout
+         * @param sampleCount defines the number of samples to use for MSAA
+         * @param textureState defines the encoded texture state used for the pipeline cache key
+         * @returns the pipeline, or null while it is being created
+         */
+        tryGetRenderPipeline(fillMode: number, effect: Effect, sampleCount: number, textureState?: number): Nullable<GPURenderPipeline>;
         endFrame(): void;
         setAlphaToCoverage(enabled: boolean): void;
         setFrontFace(frontFace: number): void;
@@ -153465,6 +154413,7 @@ declare namespace BABYLON {
          * @returns a Promise that resolves when the pipeline is compiled and cached, or null if already cached
          */
         preWarmPipeline(fillMode: number, effect: Effect, sampleCount: number, textureState?: number): Nullable<Promise<GPURenderPipeline>>;
+        private _awaitPipeline;
     }
 
 
@@ -154993,6 +155942,7 @@ declare namespace BABYLON {
 
 
     export class NativeRenderTargetWrapper extends RenderTargetWrapper {
+        private static _HasWarnedAboutGeneratedDepthSharing;
         readonly _engine: ThinNativeEngine;
         private __framebuffer;
         private __framebufferDepthStencil;
@@ -155006,6 +155956,10 @@ declare namespace BABYLON {
             autoGenerateMips: boolean[];
         }>;
         _isMixedTypeMRT: boolean;
+        /** @internal */
+        _generatedDepthShareSource: Nullable<NativeRenderTargetWrapper>;
+        private _pendingGeneratedDepthShares;
+        private _pendingGeneratedDepthShareSources;
         get _framebuffer(): Nullable<NativeFramebuffer>;
         set _framebuffer(framebuffer: Nullable<NativeFramebuffer>);
         get _framebuffers(): Nullable<NativeFramebuffer[]>;
@@ -155041,11 +155995,22 @@ declare namespace BABYLON {
         protected _swapRenderTargetWrapper(target: NativeRenderTargetWrapper): void;
         /**
          * Shares this wrapper's depth texture with another render target and rebuilds the destination
-         * framebuffer when needed so Native actually samples the shared depth (bgfx attaches depth at
+         * framebuffer when needed so Native actually uses the shared depth (bgfx attaches depth at
          * framebuffer creation time; a pointer-only shareDepth would leave the auto-depth from creation).
+         * An auto-generated depth buffer is handed over as is, keeping its contents, like WebGL shares its depth
+         * renderbuffer. Runtimes that cannot share generated depth leave both wrappers unchanged.
          * @param renderTarget The render target that receives the shared depth texture
          */
         shareDepth(renderTarget: RenderTargetWrapper): void;
+        private _applyDepthShare;
+        /** @internal */
+        _resolvePendingGeneratedDepthShares(): void;
+        /** @internal */
+        _resolvePendingGeneratedDepthShareSources(): void;
+        private _removePendingGeneratedDepthShare;
+        private _cancelPendingGeneratedDepthShares;
+        private _cancelPendingGeneratedDepthShareDestinations;
+        private _warnGeneratedDepthSharingUnsupported;
         dispose(disposeOnlyFramebuffers?: boolean): void;
     }
 
@@ -155380,9 +156345,14 @@ declare namespace BABYLON {
         readonly supportsMultisampledMipmaps?: boolean;
         /**
          * True when the runtime can copy a canvas into a dynamic texture with a mip chain and
-         * premultiplied-alpha option (`Canvas.getCanvasTexture(premulAlpha, generateMipMaps)`).
+         * premultiplied-alpha option (`Canvas.getCanvasTexture(premulAlpha, generateMipMaps, invertY)`).
          */
         readonly supportsDynamicTextureMipMaps?: boolean;
+        /**
+         * True when the runtime runs on a mobile platform (Android or iOS/iPadOS). Native runtimes
+         * have no `navigator.userAgent`, so this feeds `hostInformation.isMobile`.
+         */
+        readonly isMobile?: boolean;
         dispose(): void;
         requestAnimationFrame(callback: () => void): void;
         /**
@@ -155431,6 +156401,13 @@ declare namespace BABYLON {
         createImageBitmap(data: ArrayBuffer | IImage): ImageBitmap;
         resizeImageBitmap(image: ImageBitmap, bufferWidth: number, bufferHeight: number): Uint8Array;
         createFrameBuffer(texture: Nullable<NativeTexture>, width: number, height: number, generateStencilBuffer: boolean, generateDepthBuffer: boolean, samples: number, layer?: number, mip?: number, autoGenerateMips?: boolean): NativeFramebuffer;
+        /**
+         * Moves a framebuffer's generated depth/stencil into a texture without rebuilding the framebuffer, so it can be
+         * attached elsewhere with its current contents; it cannot be sampled. Layered render targets share one generated
+         * depth allocation across their face/layer framebuffers. Returns false when the framebuffer has no generated
+         * depth/stencil of its own.
+         */
+        shareFrameBufferDepthStencil?(frameBuffer: NativeFramebuffer, texture: NativeTexture): boolean;
         /** Optional: older runtimes only support single-attachment framebuffers. Omitted mip flags retain automatic generation for all color attachments. */
         createMultiFrameBuffer?(colorTextures: NativeTexture[], width: number, height: number, generateStencilBuffer: boolean, generateDepthBuffer: boolean, samples: number, layers?: number[], explicitDepthTexture?: NativeTexture, autoGenerateMips?: boolean[]): NativeFramebuffer;
         getRenderWidth(): number;
@@ -155453,6 +156430,7 @@ declare namespace BABYLON {
         readonly PROTOCOL_VERSION: number;
         readonly CAPS_LIMITS_MAX_TEXTURE_SIZE: number;
         readonly CAPS_LIMITS_MAX_TEXTURE_LAYERS: number;
+        readonly CAPS_INTEGER_COLOR_ATTACHMENTS?: boolean;
         readonly TEXTURE_NEAREST_NEAREST: number;
         readonly TEXTURE_LINEAR_LINEAR: number;
         readonly TEXTURE_LINEAR_LINEAR_MIPLINEAR: number;
@@ -155652,6 +156630,7 @@ declare namespace BABYLON {
         readonly COMMAND_SETTEXTURE: NativeData;
         readonly COMMAND_UNSETTEXTURE: NativeData;
         readonly COMMAND_DISCARDALLTEXTURES: NativeData;
+        readonly COMMAND_DELETETEXTURE?: NativeData;
         readonly COMMAND_BINDVERTEXARRAY: NativeData;
         readonly COMMAND_SETSTATE: NativeData;
         readonly COMMAND_DELETEPROGRAM: NativeData;
@@ -155662,6 +156641,7 @@ declare namespace BABYLON {
         readonly COMMAND_SETCOLORWRITE: NativeData;
         readonly COMMAND_SETBLENDMODE: NativeData;
         readonly COMMAND_SETBLENDEQUATION?: NativeData;
+        readonly COMMAND_SETALPHATOCOVERAGE?: NativeData;
         readonly COMMAND_SETFLOAT: NativeData;
         readonly COMMAND_SETFLOAT2: NativeData;
         readonly COMMAND_SETFLOAT3: NativeData;
@@ -155676,6 +156656,8 @@ declare namespace BABYLON {
         readonly COMMAND_DRAWINSTANCED: NativeData;
         readonly COMMAND_CLEAR: NativeData;
         readonly COMMAND_CLEAR2?: NativeData;
+        /** Flag ORed into the COMMAND_CLEAR2 attachment mask by clearAttachments(). */
+        readonly CLEAR_ATTACHMENTS_OPERATION?: number;
         readonly COMMAND_SETSTENCIL: NativeData;
         readonly COMMAND_SETSTENCIL2?: NativeData;
         readonly COMMAND_SETVIEWPORT: NativeData;
@@ -155762,7 +156744,27 @@ declare namespace BABYLON {
         disablePerformanceLogging?(): void;
         startPerformanceCounter?(counter: string): unknown;
         endPerformanceCounter?(counter: unknown): void;
+        /**
+         * Sorts splats back to front using model-view depth.
+         * @param modelViewMatrix mesh world matrix multiplied by the camera view matrix
+         * @param splatPositions splat centers (stride 4)
+         * @param splatIndex receives the sorted splat indices
+         * @param useRightHandedSystem whether the scene uses a right-handed coordinate system
+         */
         sortSplats?(modelViewMatrix: Matrix, splatPositions: Float32Array, splatIndex: Float32Array, useRightHandedSystem: boolean): void;
+        /**
+         * Writes the active splats to `splatIndex` sorted back to front, like the Gaussian Splatting sort worker.
+         * @param view camera view matrix
+         * @param worldMatrices the mesh world matrix, or one world matrix per part when `partIndices` is set
+         * @param splatPositions splat centers (stride 4)
+         * @param splatIndex receives the sorted active splat indices, padded with `vertexCount`
+         * @param vertexCount number of source splats
+         * @param intervals active source splat ranges as [start0, count0, ...], or null for every splat
+         * @param partIndices part index of each splat for compound meshes, or null
+         * @param useRightHandedSystem whether the scene uses a right-handed coordinate system
+         * @returns false when a part index has no world matrix, leaving `splatIndex` unchanged
+         */
+        sortSplatIndices?(view: Matrix, worldMatrices: ReadonlyArray<Matrix>, splatPositions: Float32Array, splatIndex: Float32Array, vertexCount: number, intervals: Nullable<Uint32Array>, partIndices: Nullable<Uint8Array>, useRightHandedSystem: boolean): boolean;
         decodeDracoMesh?(data: Int8Array, attributes?: {
             [kind: string]: number;
         }): {
@@ -155811,8 +156813,12 @@ declare namespace BABYLON {
 
 
     /** @internal */
+    export interface INativeTextureDeleter {
+        _deleteNativeTexture(texture: NativeTexture): void;
+    }
+    /** @internal */
     export class NativeHardwareTexture implements IHardwareTextureWrapper {
-        private readonly _engine;
+        private readonly _deleter;
         private _nativeTexture;
         /**
          * Shared bgfx framebuffer lazily built for frame graph render targets that attach this texture.
@@ -155822,7 +156828,7 @@ declare namespace BABYLON {
          */
         _frameGraphFramebuffer: Nullable<NativeFramebuffer>;
         get underlyingResource(): Nullable<NativeTexture>;
-        constructor(existingTexture: NativeTexture, engine: INativeEngine);
+        constructor(existingTexture: NativeTexture, deleter: INativeTextureDeleter);
         setUsage(): void;
         set(hardwareTexture: NativeTexture): void;
         reset(): void;
@@ -159659,6 +160665,7 @@ declare namespace BABYLON {
      */
 
 
+    type RayDepthConvention = Pick<AbstractEngine, "isNDCHalfZRange" | "useReverseDepthBuffer">;
     /**
      * Type used to define predicate for selecting meshes and instances (if exist)
      */
@@ -159802,9 +160809,10 @@ declare namespace BABYLON {
          * @param view view matrix
          * @param projection projection matrix
          * @param enableDistantPicking defines if picking should handle large values for mesh position/scaling (false by default)
+         * @param depthConvention defines the projection's depth range and order (defaults to the last created engine's convention)
          * @returns this ray updated
          */
-        update(x: number, y: number, viewportWidth: number, viewportHeight: number, world: DeepImmutable<Matrix>, view: DeepImmutable<Matrix>, projection: DeepImmutable<Matrix>, enableDistantPicking?: boolean): Ray;
+        update(x: number, y: number, viewportWidth: number, viewportHeight: number, world: DeepImmutable<Matrix>, view: DeepImmutable<Matrix>, projection: DeepImmutable<Matrix>, enableDistantPicking?: boolean, depthConvention?: RayDepthConvention): Ray;
         /**
          * Creates a ray with origin and direction of 0,0,0
          * @returns the new ray
@@ -159865,8 +160873,9 @@ declare namespace BABYLON {
          * @param world defines the world matrix to use (can be set to Identity to go to world space)
          * @param view defines the view matrix to use
          * @param projection defines the projection matrix to use
+         * @param depthConvention defines the projection's depth range and order (defaults to the last created engine's convention)
          */
-        unprojectRayToRef(sourceX: float, sourceY: float, viewportWidth: number, viewportHeight: number, world: DeepImmutable<Matrix>, view: DeepImmutable<Matrix>, projection: DeepImmutable<Matrix>): void;
+        unprojectRayToRef(sourceX: float, sourceY: float, viewportWidth: number, viewportHeight: number, world: DeepImmutable<Matrix>, view: DeepImmutable<Matrix>, projection: DeepImmutable<Matrix>, depthConvention?: RayDepthConvention): void;
     }
     /**
      * Creates a ray that can be used to pick in the scene
@@ -161640,6 +162649,7 @@ declare namespace BABYLON {
         private _createGaussianSplattingPickingMaterial;
         private _readTexturePixelsAsync;
         private _readDepthTexturePixelsAsync;
+        private _getDepthPickingView;
         private _getDepthPickingInfoAsync;
         private _getDepthPickingInfoFromBuffer;
         private _getDepthPointFromBufferToRef;
@@ -171548,30 +172558,30 @@ declare namespace BABYLON {
          */
         textureFromBakedVertexData(vertexData: Float32Array | Uint16Array): RawTexture;
         /**
-         * Serializes our vertexData to an object, with a nice string for the vertexData.
-         * @param vertexData The vertex array data.
+         * Serializes our vertexData to an object, preserving its full-float or half-float precision.
+         * @param vertexData The vertex array data, as full floats (Float32Array) or half-float bit patterns (Uint16Array).
          * @returns This object serialized to a JS dict.
          */
-        serializeBakedVertexDataToObject(vertexData: Float32Array): Record<string, any>;
+        serializeBakedVertexDataToObject(vertexData: Float32Array | Uint16Array): Record<string, any>;
         /**
-         * Loads previously baked data.
+         * Loads previously baked data, preserving its precision. Data without precision metadata is loaded as full floats.
          * @param data The object as serialized by serializeBakedVertexDataToObject()
-         * @returns The array of matrix transforms for each vertex (columns) and frame (rows), as a Float32Array.
+         * @returns The array of matrix transforms for each vertex (columns) and frame (rows), as a Float32Array or Uint16Array.
          */
-        loadBakedVertexDataFromObject(data: Record<string, any>): Float32Array;
+        loadBakedVertexDataFromObject(data: Record<string, any>): Float32Array | Uint16Array;
         /**
-         * Serializes our vertexData to a JSON string, with a nice string for the vertexData.
-         * Should be called right after bakeVertexData().
-         * @param vertexData The vertex array data.
+         * Serializes our vertexData to a JSON string, preserving its full-float or half-float precision.
+         * Should be called right after bakeVertexData() or bakeVertexDataSync().
+         * @param vertexData The vertex array data, as full floats (Float32Array) or half-float bit patterns (Uint16Array).
          * @returns This object serialized to a safe string.
          */
-        serializeBakedVertexDataToJSON(vertexData: Float32Array): string;
+        serializeBakedVertexDataToJSON(vertexData: Float32Array | Uint16Array): string;
         /**
-         * Loads previously baked data in string format.
+         * Loads previously baked data in string format, preserving its precision. Data without precision metadata is loaded as full floats.
          * @param json The json string as serialized by serializeBakedVertexDataToJSON().
-         * @returns The array of matrix transforms for each vertex (columns) and frame (rows), as a Float32Array.
+         * @returns The array of matrix transforms for each vertex (columns) and frame (rows), as a Float32Array or Uint16Array.
          */
-        loadBakedVertexDataFromJSON(json: string): Float32Array;
+        loadBakedVertexDataFromJSON(json: string): Float32Array | Uint16Array;
     }
 
 
@@ -181388,6 +182398,20 @@ interface WebGL2RenderingContext extends WebGL2RenderingContextBase {
     enableIndexed(target: GLenum, index: GLuint): void;
 }
 
+interface WebGLRenderingContextBase {
+    getExtension(extensionName: "EXT_clip_control"): EXT_clip_control | null;
+}
+
+interface EXT_clip_control {
+    readonly LOWER_LEFT_EXT: 0x8ca1;
+    readonly UPPER_LEFT_EXT: 0x8ca2;
+    readonly NEGATIVE_ONE_TO_ONE_EXT: 0x935e;
+    readonly ZERO_TO_ONE_EXT: 0x935f;
+    readonly CLIP_ORIGIN_EXT: 0x935c;
+    readonly CLIP_DEPTH_MODE_EXT: 0x935d;
+    clipControlEXT(origin: GLenum, depth: GLenum): void;
+}
+
 interface EXT_disjoint_timer_query {
     QUERY_COUNTER_BITS_EXT: number;
     TIME_ELAPSED_EXT: number;
@@ -181519,7 +182543,7 @@ declare var OffscreenCanvasRenderingContext2D: {
 /* eslint-disable no-var */
 // Type definitions for the WICG HTML-in-Canvas proposal (https://github.com/WICG/html-in-canvas).
 // These augment the standard DOM, WebGL and WebGPU types so Babylon can consume the API - whether
-// provided natively (behind chrome://flags/#canvas-draw-element) or by the three-html-render polyfill -
+// provided natively (behind chrome://flags/#canvas-draw-element) or by a polyfill -
 // without TypeScript errors. The proposal is experimental; signatures track the explainer IDL and
 // may change. Members removed from the explainer are kept (and deprecated) while implementations still ship them.
 

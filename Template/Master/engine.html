@@ -1278,6 +1278,15 @@
             BABYLON.KhronosTextureContainer2.URLConfig.wasmUASTCToR8_UNORM = path + "###SCRIPT###/uastc_r8_unorm.wasm";
             BABYLON.KhronosTextureContainer2.URLConfig.wasmUASTCToRG8_UNORM = path + "###SCRIPT###/uastc_rg8_unorm.wasm";
         }
+        // ************************************************************************ //
+        // EXR DECODER - Self-hosted fflate (zip-compressed EXRs: VAT textures)       //
+        // ************************************************************************ //
+        // Babylon's default is https://unpkg.com/fflate@0.8.2, which a Discord Activity's proxy and CSP (and any offline
+        // page) block: zip-compressed EXRs, such as vertex-animation textures, then never decode and VAT models draw huge.
+        if (BABYLON.ExrLoaderGlobalConfiguration) {
+            var exrHref = window.location.href;
+            BABYLON.ExrLoaderGlobalConfiguration.FFLATEUrl = exrHref.substring(0, exrHref.lastIndexOf('/')) + "/###SCRIPT###/fflate.js";
+        }
         if (window.useServiceWorker === true) {
             // The content installer starts first (it never throws), so installed scene files load from this device
             window.updateStatus("PLEASE WAIT", "STARTING CONTENT", 0);

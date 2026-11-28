@@ -10577,9 +10577,9 @@ declare namespace BABYLON {
      * This is a babylon scene loader plugin.
      */
     export class STLFileLoader implements ISceneLoaderPlugin {
-        /** @internal */
+        /** @internal Kept for backward compatibility; ASCII parsing uses linear delimiter scans instead. */
         solidPattern: RegExp;
-        /** @internal */
+        /** @internal Kept for backward compatibility; ASCII parsing uses linear delimiter scans instead. */
         facetsPattern: RegExp;
         /** @internal */
         normalPattern: RegExp;
